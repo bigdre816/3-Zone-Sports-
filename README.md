@@ -2,7 +2,7 @@
 
 Phase 1 (Days 0–30) browser prototype for the Moten master specification.
 
-Open `System` in a browser to use the confidential control-plane surface:
+Open `index.html` in a browser to use the confidential control-plane surface:
 
 - Command center with irreversible-risk queue and control health
 - Exact-wording Research Registry with immutable question versions
