@@ -1,0 +1,81 @@
+:root {
+  --bg: #0b1220;
+  --panel: #131c2e;
+  --panel-2: #1a2740;
+  --ink: #e8edf7;
+  --muted: #93a1bf;
+  --line: #26324d;
+  --accent: #6ea8fe;
+  --green: #2fbf71;
+  --amber: #e0a83d;
+  --red: #e05c5c;
+  --black: #b23bd6;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 24px; background: linear-gradient(120deg, #0e1830, #142446);
+  border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 14px; }
+.mark { font-size: 28px; color: var(--accent); }
+.brand-name { font-weight: 700; font-size: 18px; }
+.brand-sub { font-size: 12px; color: var(--muted); }
+.actor label { font-size: 12px; color: var(--muted); margin-right: 8px; }
+.actor select {
+  background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 10px; font-size: 13px;
+}
+.nav { display: flex; gap: 4px; padding: 10px 24px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.nav a {
+  color: var(--muted); text-decoration: none; padding: 8px 14px; border-radius: 8px; font-size: 14px;
+}
+.nav a:hover { background: var(--panel-2); color: var(--ink); }
+.content { padding: 24px; max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 22px; margin: 0 0 6px; }
+h2 { font-size: 16px; margin: 22px 0 10px; color: var(--ink); }
+.sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+tr:hover td { background: var(--panel-2); }
+a.inv { color: var(--accent); text-decoration: none; }
+a.inv:hover { text-decoration: underline; }
+.badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.state { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); }
+.filed { background: rgba(47,191,113,0.16); color: var(--green); border: 1px solid rgba(47,191,113,0.4); }
+.posture { background: rgba(110,168,254,0.14); color: var(--accent); border: 1px solid rgba(110,168,254,0.4); }
+.risk-green { background: rgba(47,191,113,0.16); color: var(--green); }
+.risk-amber { background: rgba(224,168,61,0.16); color: var(--amber); }
+.risk-red { background: rgba(224,92,92,0.18); color: var(--red); }
+.risk-black { background: rgba(178,59,214,0.18); color: var(--black); }
+.datelabel { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; display: block; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
+.pill { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+.ok { color: var(--green); font-weight: 700; }
+.warn { color: var(--red); font-weight: 700; }
+form.stack { display: grid; gap: 12px; max-width: 640px; }
+form.stack label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px; }
+form.stack input[type=text], form.stack textarea, form.stack select {
+  width: 100%; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px; font-size: 14px;
+}
+form.stack textarea { min-height: 80px; }
+.checkline { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 13px; }
+button {
+  background: var(--accent); color: #04122e; border: none; border-radius: 8px;
+  padding: 11px 16px; font-weight: 700; font-size: 14px; cursor: pointer;
+}
+button:hover { filter: brightness(1.08); }
+.kv { display: grid; grid-template-columns: 200px 1fr; gap: 6px 16px; font-size: 13px; }
+.kv .k { color: var(--muted); }
+.reasons { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
+.callout { border-left: 3px solid var(--accent); padding: 8px 14px; background: var(--panel-2); border-radius: 8px; font-size: 13px; color: var(--muted); }
+code { font-family: ui-monospace, monospace; font-size: 12px; color: var(--ink); }

@@ -1,0 +1,17 @@
+{
+  "name": "Moten Control Plane (Phase 1)",
+  "install": "pip install --break-system-packages -r apps/control-plane/requirements.txt",
+  "terminals": [
+    {
+      "name": "control-plane",
+      "command": "cd apps/control-plane && PORT=8100 python3 manage.py serve",
+      "description": "Moten IP & Invention Control Plane workbench at http://localhost:8100/ (seeds the dev store on start)."
+    }
+  ],
+  "ports": [
+    {
+      "name": "control-plane",
+      "port": 8100
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}{{ inv.inv_id }} · Moten{% endblock %}
+{% block content %}
+<h1>{{ inv.inv_id }} — {{ inv.title }}</h1>
+<div class="sub">
+  <span class="badge state">{{ inv.lifecycle_state }}</span>
+  <span class="badge posture">{{ inv.ip_posture }}</span>
+</div>
+
+<div class="card">
+  <h2>Mechanism (latest version)</h2>
+  {% set v = versions[-1] %}
+  <div class="kv">
+    <div class="k">Problem</div><div>{{ v.problem }}</div>
+    <div class="k">Inputs</div><div>{{ v.mechanism.get('inputs') }}</div>
+    <div class="k">Transformation</div><div>{{ v.mechanism.get('transformation') }}</div>
+    <div class="k">Outputs</div><div>{{ v.mechanism.get('outputs') }}</div>
+    <div class="k">Technical effect</div><div>{{ v.technical_effect or '—' }}</div>
+    <div class="k">Alternatives</div><div>{{ v.alternatives }}</div>
+    <div class="k">Version hash</div><div class="mono">{{ v.payload_sha256 }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Version history (immutable)</h2>
+  <table>
+    <thead><tr><th>Rev</th><th>Semver</th><th>Recorded</th><th>Change reason</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for ver in versions %}
+      <tr>
+        <td>{{ ver.revision }}</td>
+        <td>{{ ver.semver_label }}</td>
+        <td><span class="datelabel">internal provenance</span>{{ ver.recorded_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>{{ ver.change_reason or '—' }}</td>
+        <td><span class="pill">{{ ver.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Human contributions &amp; AI assistance</h2>
+  <table>
+    <thead><tr><th>Type</th><th>Actor</th><th>Class / purpose</th><th>Statement / action</th><th>Attested</th></tr></thead>
+    <tbody>
+      {% for c in pkg.contributions %}
+      <tr><td>Human</td><td class="mono">{{ c.person_id }}</td><td>{{ c['class'] }}</td><td>{{ c.statement }}</td><td>{{ 'yes' if c.attested else 'no' }}</td></tr>
+      {% endfor %}
+      {% for a in pkg.ai_interactions %}
+      <tr><td>AI ({{ a.inventor_status_of_ai }})</td><td class="mono">{{ a.tool }}</td><td>{{ a.purpose }}</td><td>{{ a.human_action }}</td><td>—</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="callout" style="margin-top:12px">AI is recorded as a tool only and can never be a named inventor (spec §06).</div>
+</div>
+
+<div class="card">
+  <h2>Evidence export package</h2>
+  <div class="kv">
+    <div class="k">Chain verified</div><div>{% if pkg.chain_verified %}<span class="ok">yes</span>{% else %}<span class="warn">no</span>{% endif %}</div>
+    <div class="k">Manifest hash</div><div class="mono">{{ pkg.manifest_sha256 }}</div>
+    <div class="k">Objects in manifest</div><div>{{ pkg.hash_manifest | length }}</div>
+    <div class="k">Filings</div><div>{{ pkg.filings }}</div>
+  </div>
+  <div class="callout" style="margin-top:12px">
+    Full JSON export: <code>GET /v1/exports/invention/{{ inv.inv_id }}</code> ·
+    <span class="datelabel" style="display:inline">legal effect</span> provenance_only
+  </div>
+</div>
+{% endblock %}

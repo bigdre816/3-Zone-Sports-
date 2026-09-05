@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Evidence Log · Moten{% endblock %}
+{% block content %}
+<h1>Evidence log (append-only, hash-chained)</h1>
+<div class="sub">Chain status:
+  {% if chain_ok %}<span class="ok">verified</span>{% else %}<span class="warn">BROKEN</span>{% endif %}.
+  Every event records a payload hash and links to the previous event's hash.</div>
+<div class="card">
+  <table>
+    <thead><tr><th>Event ID</th><th>Type</th><th>Recorded</th><th>Legal effect</th><th>Payload SHA-256</th></tr></thead>
+    <tbody>
+      {% for e in events %}
+      <tr>
+        <td class="mono">{{ e.event_id }}</td>
+        <td>{{ e.event_type }}</td>
+        <td><span class="datelabel">internal provenance</span>{{ e.recorded_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td><span class="pill">{{ e.legal_effect }}</span></td>
+        <td class="mono">{{ e.payload_sha256[:16] }}…</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

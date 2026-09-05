@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Filing Calendar · Moten{% endblock %}
+{% block content %}
+<h1>Filing calendar</h1>
+<div class="sub">Generated from the verified USPTO filing date. 6/9/10/11-month escalation; the 12-month deadline is hard and cannot be silently snoozed.</div>
+<div class="card">
+  <table>
+    <thead><tr><th>ID</th><th>Invention</th><th>Clock point</th><th>Due date</th><th>Type</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="mono">{{ r.e.cal_id }}</td>
+        <td class="mono">{{ r.inv_id }}</td>
+        <td>{{ r.e.clock_point }}</td>
+        <td><span class="datelabel">USPTO-filing-derived</span>{{ r.e.due_date }}</td>
+        <td>{% if r.e.is_hard_deadline %}<span class="badge risk-red">hard deadline</span>{% else %}<span class="pill">escalation</span>{% endif %}</td>
+        <td><span class="pill">{{ r.e.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

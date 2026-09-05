@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Moten{% endblock %}
+{% block content %}
+<h1>Invention candidate dashboard</h1>
+<div class="sub">Every candidate shows lifecycle state, IP posture, and its next irreversible deadline. Evidence hash chain:
+  {% if chain_ok %}<span class="ok">verified</span>{% else %}<span class="warn">BROKEN</span>{% endif %}.
+</div>
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Title</th><th>Lifecycle</th><th>IP posture</th><th>Filed</th><th>Next deadline</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><a class="inv" href="/inventions/{{ r.inv.inv_id }}?actor={{ actor_id }}">{{ r.inv.inv_id }}</a></td>
+        <td>{{ r.inv.title }}</td>
+        <td><span class="badge state">{{ r.inv.lifecycle_state }}</span></td>
+        <td><span class="badge posture">{{ r.inv.ip_posture }}</span></td>
+        <td>
+          {% if r.filed %}
+            <span class="badge filed">Filed</span>
+            <span class="datelabel">USPTO filing date</span>{{ r.filing_date }}
+          {% else %}<span class="pill">not filed</span>{% endif %}
+        </td>
+        <td>
+          {% if r.next_deadline %}
+            <span class="datelabel">next irreversible deadline</span>{{ r.next_deadline }}
+          {% else %}<span class="pill">—</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
