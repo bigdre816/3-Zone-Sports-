@@ -3,6 +3,19 @@
 from __future__ import annotations
 
 
+def test_list_and_get_inventions(seeded_client):
+    lst = seeded_client.get("/v1/inventions")
+    assert lst.status_code == 200
+    items = lst.json()
+    assert isinstance(items, list) and len(items) >= 1
+    assert {"inv_id", "title", "lifecycle_state", "ip_posture"} <= set(items[0])
+    one = seeded_client.get("/v1/inventions/INV-2026-000002")
+    assert one.status_code == 200
+    body = one.json()
+    assert body["inv_id"] == "INV-2026-000002" and isinstance(body["versions"], list)
+    assert seeded_client.get("/v1/inventions/INV-9999-000000").status_code == 404
+
+
 def test_counsel_decision_api(seeded_client):
     r = seeded_client.post(
         "/v1/inventions/INV-2026-000002/counsel-decision",

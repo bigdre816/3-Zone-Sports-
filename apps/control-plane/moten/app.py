@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.engine import Engine
@@ -142,6 +142,47 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             failure_behavior=body.failure_behavior,
         )
         return {"inv_id": inv.inv_id, "semver": v.semver_label, "lifecycle_state": inv.lifecycle_state}
+
+    @app.get("/v1/inventions")
+    def list_inventions(s=Depends(get_session)):
+        from .models import Invention
+
+        rows = s.query(Invention).order_by(Invention.inv_id.asc()).all()
+        return [
+            {
+                "inv_id": r.inv_id,
+                "title": r.title,
+                "lifecycle_state": r.lifecycle_state,
+                "ip_posture": r.ip_posture,
+                "current_revision": r.current_revision,
+            }
+            for r in rows
+        ]
+
+    @app.get("/v1/inventions/{inv_id}")
+    def get_invention(inv_id: str, s=Depends(get_session)):
+        from .models import Invention, InventionVersion
+
+        inv = s.get(Invention, inv_id)
+        if inv is None:
+            raise HTTPException(status_code=404, detail=f"unknown invention {inv_id}")
+        versions = (
+            s.query(InventionVersion)
+            .filter(InventionVersion.inv_id == inv_id)
+            .order_by(InventionVersion.revision.asc())
+            .all()
+        )
+        return {
+            "inv_id": inv.inv_id,
+            "title": inv.title,
+            "lifecycle_state": inv.lifecycle_state,
+            "ip_posture": inv.ip_posture,
+            "current_revision": inv.current_revision,
+            "versions": [
+                {"revision": v.revision, "semver": v.semver_label, "problem": v.problem}
+                for v in versions
+            ],
+        }
 
     @app.post("/v1/inventions/{inv_id}/versions", status_code=201)
     def add_version(inv_id: str, body: VersionCreate, actor=Depends(current_actor), s=Depends(get_session)):
