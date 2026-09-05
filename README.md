@@ -1,6 +1,6 @@
 # Moten IP & Invention Control Plane
 
-Phase 1 (Days 0–30) and Phase 2 (Days 31–90) browser prototype for the Moten master specification.
+Phase 1 (Days 0–30), Phase 2 (Days 31–90), and Phase 3 (Months 3–6) browser prototype for the Moten master specification.
 
 Open `index.html` in a browser to use the confidential control-plane surface:
 
@@ -16,5 +16,10 @@ Open `index.html` in a browser to use the confidential control-plane surface:
 - AI gateway ingress filtering and human-approval gating
 - Provisional support matrix and prior-art review record
 - Rights registry with authority, scope, version, expiry, and verification
+- Policy decision point with fail-closed rights lease evaluation
+- Short-lived rights lease register with event, territory, destination, use, and hard expiry binding
+- Live-socket admission simulation with per-message scope and close-on-failure behavior
+- Source ingest qualification and rights-bound media-object metadata
+- Revocation propagation and runtime audit/SIEM feed
 
-This prototype uses browser local storage for demonstration state. Phase 2 hashes and events are browser demonstrations, not a production WORM store or signed event service. It does not implement production authentication, encrypted storage, rights leases, sockets, media, settlement, or legal advice.
+This prototype uses browser local storage for demonstration state. Phase 2 hashes/events and Phase 3 policy/lease/socket workflows are browser demonstrations, not production WORM, KMS, identity, gateway, or SIEM services. It does not implement production authentication, encrypted storage, media delivery, discovery, measurement, settlement, or legal advice.
