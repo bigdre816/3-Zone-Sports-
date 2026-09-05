@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Three-Zone Control Plane</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <div>
+        <div class="brand-title">Three-Zone Control Plane</div>
+        <div class="brand-sub">event &rarr; rights + production clearance &rarr; live &rarr; playback lease &rarr; replay</div>
+      </div>
+    </div>
+    <div class="identity">
+      <label for="account">Identity</label>
+      <select id="account">
+        <option value="demo-viewer">demo-viewer</option>
+        <option value="demo-admin">demo-admin</option>
+      </select>
+      <button id="login-btn" type="button">Sign in</button>
+      <button id="logout-btn" type="button" class="ghost hidden">Sign out</button>
+      <span id="who" class="who"></span>
+    </div>
+  </header>
+
+  <main id="app" class="layout">
+    <section id="catalog" class="panel">
+      <div class="panel-head">
+        <h2>Catalog</h2>
+        <div class="filters" id="zone-filters"></div>
+      </div>
+      <div id="events" class="events"></div>
+    </section>
+
+    <section id="player-panel" class="panel">
+      <div class="panel-head"><h2>Player</h2><span id="player-mode" class="badge"></span></div>
+      <div id="player-empty" class="empty">Select an event to request a playback lease.</div>
+      <div id="player" class="player hidden">
+        <div class="player-title" id="player-title"></div>
+        <video id="video" controls playsinline muted></video>
+        <div class="player-meta">
+          <div id="player-status"></div>
+          <div id="player-score" class="score"></div>
+          <div id="player-feed" class="feed"></div>
+          <div id="socket-log" class="socket-log"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="operator" class="panel hidden">
+      <div class="panel-head"><h2>Operator console</h2></div>
+
+      <details open>
+        <summary>Create event</summary>
+        <form id="create-form" class="form-grid">
+          <label>Title <input name="title" required /></label>
+          <label>Zone
+            <select name="zone"><option>midwest</option><option>west</option><option>east</option></select>
+          </label>
+          <label>Category <input name="category" value="general" /></label>
+          <label>Production mode
+            <select name="production_mode">
+              <option value="single_camera">single_camera</option>
+              <option value="multi_camera">multi_camera</option>
+              <option value="backup_active">backup_active</option>
+            </select>
+          </label>
+          <button type="submit">Create</button>
+        </form>
+      </details>
+
+      <details open>
+        <summary>Controls for <span id="op-event-label">(select an event)</span></summary>
+        <div id="op-controls" class="op-controls">
+          <div class="op-row">
+            <span class="op-label">Lifecycle</span>
+            <div id="transition-buttons" class="btn-row"></div>
+          </div>
+          <div class="op-row">
+            <span class="op-label">Rights</span>
+            <div class="btn-row">
+              <button id="revoke-btn" type="button" class="danger">Revoke rights</button>
+              <button id="restore-btn" type="button">Restore rights</button>
+            </div>
+          </div>
+          <div class="op-row">
+            <span class="op-label">Scoreboard</span>
+            <form id="score-form" class="btn-row">
+              <input name="home" type="number" placeholder="home" />
+              <input name="away" type="number" placeholder="away" />
+              <input name="period" placeholder="period" />
+              <input name="clock" placeholder="clock" />
+              <button type="submit">Update</button>
+            </form>
+          </div>
+          <div class="op-row">
+            <span class="op-label">Ingest</span>
+            <div class="btn-row">
+              <select id="ingest-source"><option>primary</option><option>backup</option></select>
+              <button id="ingest-btn" type="button">Issue ingest token</button>
+            </div>
+          </div>
+          <pre id="ingest-out" class="code hidden"></pre>
+        </div>
+      </details>
+
+      <details>
+        <summary>Analytics &amp; audit</summary>
+        <div class="btn-row">
+          <button id="analytics-btn" type="button">Refresh analytics</button>
+          <button id="audit-btn" type="button">Refresh audit</button>
+        </div>
+        <pre id="analytics-out" class="code"></pre>
+        <div id="audit-out" class="audit"></div>
+      </details>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
