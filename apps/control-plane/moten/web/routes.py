@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from ..config import APP_ROOT
 from ..models import (
     CalendarEntry,
+    CounselDecision,
     Disclosure,
     Event,
     Filing,
@@ -22,7 +23,7 @@ from ..models import (
     ResearchQuestion,
     SecurityIncident,
 )
-from ..planes import decision, evidence, export, signal
+from ..planes import decision, evidence, export, invention, signal
 
 TEMPLATES = Jinja2Templates(directory=str(APP_ROOT / "web" / "templates"))
 
@@ -79,8 +80,32 @@ def mount_web(app: FastAPI) -> None:
             ctx.update({"rows": rows, "chain_ok": evidence.verify_chain(s)})
             return TEMPLATES.TemplateResponse("dashboard.html", ctx)
 
+    @app.post("/inventions/new")
+    def create_candidate(
+        request: Request,
+        title: str = Form(...),
+        problem: str = Form(...),
+        inputs: str = Form(""),
+        transformation: str = Form(""),
+        outputs: str = Form(""),
+        technical_effect: str = Form(""),
+    ):
+        actor_id = actor_of(request)
+        mechanism = {
+            "inputs": [x.strip() for x in inputs.split(",") if x.strip()],
+            "transformation": transformation,
+            "outputs": [x.strip() for x in outputs.split(",") if x.strip()],
+        }
+        with scope() as s:
+            inv, _ = invention.create_invention(
+                s, title=title, problem=problem, mechanism=mechanism,
+                authored_by=actor_id, alternatives=[], technical_effect=technical_effect or None,
+            )
+            inv_id = inv.inv_id
+        return RedirectResponse(url=f"/inventions/{inv_id}?actor={actor_id}", status_code=303)
+
     @app.get("/inventions/{inv_id}", response_class=HTMLResponse)
-    def invention_detail(inv_id: str, request: Request):
+    def invention_detail(inv_id: str, request: Request, err: str | None = None):
         with scope() as s:
             inv = s.get(Invention, inv_id)
             versions = (
@@ -90,9 +115,99 @@ def mount_web(app: FastAPI) -> None:
                 .all()
             )
             pkg = export.build_invention_export(s, inv_id)
+            decisions = (
+                s.query(CounselDecision)
+                .filter(CounselDecision.subject_object_id == inv_id)
+                .order_by(CounselDecision.dec_id.asc())
+                .all()
+            )
             ctx = base_ctx(request, s)
-            ctx.update({"inv": inv, "versions": versions, "pkg": pkg})
+            ctx.update({"inv": inv, "versions": versions, "pkg": pkg, "decisions": decisions, "lifecycle": invention.LIFECYCLE, "err": err})
             return TEMPLATES.TemplateResponse("invention.html", ctx)
+
+    def _back(inv_id: str, actor_id: str, exc: Exception | None = None):
+        url = f"/inventions/{inv_id}?actor={actor_id}"
+        if exc is not None:
+            from urllib.parse import quote
+
+            url += f"&err={quote(str(exc))}"
+        return RedirectResponse(url=url, status_code=303)
+
+    @app.post("/inventions/{inv_id}/contribution")
+    def web_contribution(
+        inv_id: str,
+        request: Request,
+        person_id: str = Form(...),
+        contribution_class: str = Form(...),
+        statement: str = Form(...),
+        attested: str = Form(""),
+    ):
+        actor_id = actor_of(request)
+        try:
+            with scope() as s:
+                invention.add_contribution(
+                    s, inv_id=inv_id, person_id=person_id, contribution_class=contribution_class,
+                    statement=statement, attested=bool(attested),
+                )
+        except Exception as exc:  # surface guard/invariant messages in the UI
+            return _back(inv_id, actor_id, exc)
+        return _back(inv_id, actor_id)
+
+    @app.post("/inventions/{inv_id}/transition")
+    def web_transition(
+        inv_id: str,
+        request: Request,
+        target_state: str = Form(...),
+        approver_person_id: str = Form(""),
+    ):
+        actor_id = actor_of(request)
+        try:
+            with scope() as s:
+                invention.transition(
+                    s, inv_id=inv_id, target_state=target_state, actor_person_id=actor_id,
+                    approver_person_id=approver_person_id or None,
+                )
+        except Exception as exc:
+            return _back(inv_id, actor_id, exc)
+        return _back(inv_id, actor_id)
+
+    @app.post("/inventions/{inv_id}/inventors")
+    def web_inventors(
+        inv_id: str,
+        request: Request,
+        inventor_person_ids: str = Form(...),
+        approver_person_id: str = Form(""),
+    ):
+        actor_id = actor_of(request)
+        ids = [x.strip() for x in inventor_person_ids.split(",") if x.strip()]
+        try:
+            with scope() as s:
+                invention.name_inventors(
+                    s, inv_id=inv_id, inventor_person_ids=ids, actor_person_id=actor_id,
+                    approver_person_id=approver_person_id or None,
+                )
+        except Exception as exc:
+            return _back(inv_id, actor_id, exc)
+        return _back(inv_id, actor_id)
+
+    @app.post("/inventions/{inv_id}/counsel-decision")
+    def web_counsel(
+        inv_id: str,
+        request: Request,
+        kind: str = Form(...),
+        outcome: str = Form(...),
+        reason: str = Form(""),
+    ):
+        actor_id = actor_of(request)
+        try:
+            with scope() as s:
+                decision.record_counsel_decision(
+                    s, subject_object_id=inv_id, kind=kind, outcome=outcome,
+                    decided_by=actor_id, reason=reason or None,
+                )
+        except Exception as exc:
+            return _back(inv_id, actor_id, exc)
+        return _back(inv_id, actor_id)
 
     @app.get("/research", response_class=HTMLResponse)
     def research(request: Request):
@@ -149,6 +264,20 @@ def mount_web(app: FastAPI) -> None:
             ctx = base_ctx(request, s)
             ctx.update({"rows": rows})
             return TEMPLATES.TemplateResponse("calendar.html", ctx)
+
+    @app.post("/calendar/{cal_id}/ack")
+    def web_ack(cal_id: str, request: Request):
+        actor_id = actor_of(request)
+        with scope() as s:
+            decision.acknowledge_calendar_entry(s, cal_id=cal_id, actor_person_id=actor_id)
+        return RedirectResponse(url=f"/calendar?actor={actor_id}", status_code=303)
+
+    @app.post("/calendar/escalate")
+    def web_escalate(request: Request):
+        actor_id = actor_of(request)
+        with scope() as s:
+            decision.escalate_overdue(s)
+        return RedirectResponse(url=f"/calendar?actor={actor_id}", status_code=303)
 
     @app.get("/events", response_class=HTMLResponse)
     def events_view(request: Request):

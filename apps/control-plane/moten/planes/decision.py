@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from ..errors import DisclosureBlocked, GuardViolation, NotFound, TwoPersonRequired
 from ..models import (
     CalendarEntry,
+    CounselDecision,
     Disclosure,
     Event,
     Filing,
@@ -252,6 +253,42 @@ def record_filing(
         links=[inv_id, filing.app_id],
     )
     return filing
+
+
+def record_counsel_decision(
+    session: Session,
+    *,
+    subject_object_id: str,
+    kind: str,
+    outcome: str,
+    decided_by: str,
+    reason: str | None = None,
+    source_versions: list[str] | None = None,
+) -> CounselDecision:
+    """Record an immutable counsel/portfolio decision (spec §01 checkpoints)."""
+    dec = CounselDecision(
+        dec_id=allocate_id(session, "DEC"),
+        subject_object_id=subject_object_id,
+        kind=kind,
+        decided_by=decided_by,
+        decided_at=now(),
+        outcome=outcome,
+        reason=reason,
+        source_versions=source_versions or [],
+    )
+    session.add(dec)
+    session.flush()
+    evidence.append_event(
+        session,
+        event_type="counsel.decision.recorded",
+        object_id=dec.dec_id,
+        actor_person_id=decided_by,
+        actor_role="counsel",
+        payload={"subject": subject_object_id, "kind": kind, "outcome": outcome},
+        legal_effect="counsel_decision",
+        links=[subject_object_id, dec.dec_id],
+    )
+    return dec
 
 
 def acknowledge_calendar_entry(

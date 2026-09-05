@@ -33,4 +33,18 @@
     </tbody>
   </table>
 </div>
+
+<div class="card">
+  <h2>Capture a new invention candidate</h2>
+  <div class="sub">Playbook A — a new idea in one problem sentence and a mechanism (inputs → transformation → outputs).</div>
+  <form class="stack" method="post" action="/inventions/new?actor={{ actor_id }}">
+    <div><label>Title</label><input type="text" name="title" placeholder="TZ-0X …" required></div>
+    <div><label>Problem (one sentence, no marketing)</label><textarea name="problem" required></textarea></div>
+    <div><label>Mechanism — inputs (comma-separated)</label><input type="text" name="inputs" placeholder="demand observations, rights windows"></div>
+    <div><label>Mechanism — transformation</label><input type="text" name="transformation" placeholder="join + constrained ranking, fail-closed"></div>
+    <div><label>Mechanism — outputs (comma-separated)</label><input type="text" name="outputs" placeholder="ranked opportunity set"></div>
+    <div><label>Technical effect (optional)</label><input type="text" name="technical_effect"></div>
+    <div><button type="submit">Create candidate</button></div>
+  </form>
+</div>
 {% endblock %}

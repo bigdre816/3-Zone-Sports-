@@ -3,6 +3,47 @@
 from __future__ import annotations
 
 
+def test_counsel_decision_api(seeded_client):
+    r = seeded_client.post(
+        "/v1/inventions/INV-2026-000002/counsel-decision",
+        json={"subject_object_id": "INV-2026-000002", "kind": "triage", "outcome": "proceed-to-provisional"},
+    )
+    assert r.status_code == 201 and r.json()["dec_id"].startswith("DEC-")
+
+
+def test_calendar_ack_and_escalate(seeded_client):
+    cal = seeded_client.get("/v1/calendar").json()
+    assert cal, "seed should have produced calendar entries"
+    first = cal[0]["cal_id"]
+    ack = seeded_client.post(f"/v1/calendar/{first}/acknowledge")
+    assert ack.status_code == 200 and ack.json()["status"] == "acknowledged"
+    # Escalate everything past-due as of a far-future date.
+    esc = seeded_client.post("/v1/calendar/escalate", json={"as_of": "2030-01-01"})
+    assert esc.status_code == 200
+    assert len(esc.json()["escalated"]) >= 1
+
+
+def test_web_create_candidate(seeded_client):
+    r = seeded_client.post(
+        "/inventions/new",
+        data={"title": "TZ-99 test", "problem": "p", "inputs": "a,b", "transformation": "t", "outputs": "o"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "/inventions/INV-2026-" in r.headers["location"]
+
+
+def test_web_contribution_ai_rejected_shows_error(seeded_client):
+    # Posting an AI principal as a contributor must fail closed and surface an error.
+    r = seeded_client.post(
+        "/inventions/INV-2026-000001/contribution",
+        data={"person_id": "P-2026-000099", "contribution_class": "mechanism", "statement": "x"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "err=" in r.headers["location"]
+
+
 def test_reserved_routes_fail_closed_501(client):
     assert client.get("/v1/discovery").status_code == 501
     assert client.post("/v1/settlements/2026Q3/close").status_code == 501

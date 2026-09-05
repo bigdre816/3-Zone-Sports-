@@ -116,6 +116,18 @@ class DisclosureRelease(BaseModel):
     approver_person_id: str | None = None
 
 
+class CounselDecisionCreate(BaseModel):
+    subject_object_id: str | None = None
+    kind: str
+    outcome: str
+    reason: str | None = None
+    source_versions: list[str] = Field(default_factory=list)
+
+
+class EscalateRequest(BaseModel):
+    as_of: date | None = None
+
+
 class FilingCreate(BaseModel):
     inv_id: str
     uspto_receipt_ref: str

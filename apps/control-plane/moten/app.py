@@ -22,9 +22,11 @@ from .planes import decision, evidence, export, invention, signal
 from .schemas import (
     AiInteractionCreate,
     ContributionCreate,
+    CounselDecisionCreate,
     DisclosurePreflight,
     DisclosureRelease,
     EmbodimentCreate,
+    EscalateRequest,
     FilingCreate,
     InventionCreate,
     InventorsName,
@@ -272,6 +274,19 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         )
         return {"app_id": filing.app_id, "verified_filing_date": str(filing.verified_filing_date), "date_label": "uspto_filing"}
 
+    @app.post("/v1/inventions/{inv_id}/counsel-decision", status_code=201)
+    def counsel_decision(inv_id: str, body: CounselDecisionCreate, actor=Depends(current_actor), s=Depends(get_session)):
+        dec = decision.record_counsel_decision(
+            s,
+            subject_object_id=body.subject_object_id or inv_id,
+            kind=body.kind,
+            outcome=body.outcome,
+            decided_by=actor,
+            reason=body.reason,
+            source_versions=body.source_versions,
+        )
+        return {"dec_id": dec.dec_id, "outcome": dec.outcome}
+
     @app.get("/v1/calendar")
     def calendar(s=Depends(get_session)):
         from .models import CalendarEntry
@@ -289,6 +304,16 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             }
             for r in rows
         ]
+
+    @app.post("/v1/calendar/{cal_id}/acknowledge")
+    def acknowledge_calendar(cal_id: str, actor=Depends(current_actor), s=Depends(get_session)):
+        entry = decision.acknowledge_calendar_entry(s, cal_id=cal_id, actor_person_id=actor)
+        return {"cal_id": entry.cal_id, "status": entry.status}
+
+    @app.post("/v1/calendar/escalate")
+    def escalate_calendar(body: EscalateRequest, s=Depends(get_session)):
+        escalated = decision.escalate_overdue(s, as_of=body.as_of)
+        return {"escalated": [e.cal_id for e in escalated]}
 
     # ---- Evidence plane ---------------------------------------------------
     @app.get("/v1/exports/invention/{inv_id}")
