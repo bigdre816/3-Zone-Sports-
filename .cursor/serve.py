@@ -10,6 +10,7 @@ any other path.
 import http.server
 import os
 import socketserver
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP_FILE = os.path.join(ROOT, "System")
@@ -42,6 +43,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 def main():
+    sys.path.insert(0, ROOT)
     from moten_audit.server import serve
     serve()
 

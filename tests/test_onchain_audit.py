@@ -94,6 +94,10 @@ class AuditTests(unittest.TestCase):
     def test_reconciliation_clean_for_simulation(self):
         self.assertEqual(build().reconcile()["status"], "CLEAN")
 
+    def test_browser_has_no_xrpl_secret_reference(self):
+        with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "index.html"), encoding="utf-8") as page:
+            self.assertNotIn("MOTEN_XRPL_SECRET", page.read())
+
 
 if __name__ == "__main__":
     unittest.main()

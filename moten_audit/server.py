@@ -54,6 +54,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"events": self.service.list_events()})
             if path == "/api/onchain/publications":
                 return self._send(200, {"publications": self.service.list_requests()})
+            if path == "/api/onchain/signing-profile":
+                return self._send(200, {"signing_profile": self.service.signing_profile()})
             match = re.fullmatch(r"/api/audit/events/([^/]+)", path)
             if match:
                 event = self.service.get_event(match.group(1))
@@ -61,6 +63,18 @@ class Handler(BaseHTTPRequestHandler):
             match = re.fullmatch(r"/api/onchain/receipts/([^/]+)", path)
             if match:
                 return self._send(200, {"receipts": self.service.receipts(match.group(1))})
+            match = re.fullmatch(r"/api/onchain/publications/([^/]+)", path)
+            if match:
+                publication = self.service.publication(match.group(1))
+                return self._send(200 if publication else 404, {"publication": publication} if publication else {"error": "not found"})
+            match = re.fullmatch(r"/api/onchain/transactions/([^/]+)", path)
+            if match:
+                row = self.service.db.one("SELECT * FROM blockchain_receipts WHERE transaction_hash=?", (match.group(1),))
+                return self._send(200 if row else 404, {"receipt": dict(row) if row else None} if row else {"error": "not found"})
+            match = re.fullmatch(r"/api/onchain/reconciliation/([^/]+)", path)
+            if match:
+                row = self.service.db.one("SELECT * FROM reconciliation_runs WHERE run_id=?", (match.group(1),))
+                return self._send(200 if row else 404, {"reconciliation": dict(row) if row else None} if row else {"error": "not found"})
             match = re.fullmatch(r"/api/treasure/verifications/([^/]+)", path)
             if match:
                 verification = self.service.get_verification(match.group(1))
@@ -84,6 +98,9 @@ class Handler(BaseHTTPRequestHandler):
             match = re.fullmatch(r"/api/onchain/publications/([^/]+)/(approve|retry)", path)
             if match:
                 return self._send(200, {"publication": self.service.publish(match.group(1))})
+            match = re.fullmatch(r"/api/onchain/publications/([^/]+)/hold", path)
+            if match:
+                return self._send(200, {"publication": self.service.hold_publication(match.group(1), self._role())})
             if path == "/api/onchain/reconcile":
                 return self._send(201, self.service.reconcile())
             return self._send(404, {"error": "not found"})

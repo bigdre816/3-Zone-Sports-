@@ -97,7 +97,7 @@ class AuditService:
             "INSERT OR IGNORE INTO signing_profiles VALUES (?,?,?,?,?,?,?)",
             (self.config.signing_profile_id, "Andre / Moten authorized signer",
              self.config.xrpl_account or None, self.config.xrpl_network,
-             "CONFIGURED" if self.config.xrpl_account else "NOT_CONFIGURED", timestamp(), "IP Steward"),
+             "CONFIGURED" if self.config.is_simulation or self.config.xrpl_account else "NOT_CONFIGURED", timestamp(), "IP Steward"),
         )
 
     def _seed_policies(self) -> None:
@@ -151,7 +151,7 @@ class AuditService:
         if self.db.one("SELECT 1 FROM audit_events WHERE event_id=?", (event["event_id"],)):
             raise ValueError("event_id is immutable and already exists")
         self.db.execute(
-            "INSERT INTO audit_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO audit_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (event["event_id"], event["event_type"], "v1", event["organization_id"], event["source_system"], event["object_id"],
              event["object_version"], event["occurred_at"], event["recorded_at"], event["canonical_event_hash"], event["previous_event_id"],
              event["previous_event_hash"], event["classification"], event["on_chain_policy"], event["legal_effect"], dumps(event), timestamp()),
@@ -238,7 +238,7 @@ class AuditService:
         mode = policy["publication_mode"]
         representation = self._representation(event, verification, mode)
         request_id = f"PUB-{uuid.uuid4().hex[:12].upper()}"
-        self.db.execute("INSERT INTO blockchain_publication_requests VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        self.db.execute("INSERT INTO blockchain_publication_requests VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                         (request_id, event_id, verification_id, key, "QUEUED", mode, self.config.signing_profile_id, self.config.xrpl_network,
                          dumps(representation), None, timestamp(), timestamp()))
         return dict(self.db.one("SELECT * FROM blockchain_publication_requests WHERE request_id=?", (request_id,)))
@@ -282,7 +282,7 @@ class AuditService:
         self.db.execute("UPDATE blockchain_publication_attempts SET status='SIMULATED',result_code=?,submitted_at=?,validated_at=?,detail=? WHERE attempt_id=?",
                         ("SIMULATION_NO_XRPL_PUBLICATION", now, now, dumps({"simulation": True}), attempt_id))
         receipt_id = f"SIM-RECEIPT-{uuid.uuid4().hex[:12].upper()}"
-        self.db.execute("INSERT INTO blockchain_receipts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        self.db.execute("INSERT INTO blockchain_receipts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (receipt_id, event["event_id"], attempt_id, "simulation", profile["account"], None, None, "SIMULATED_AUDIT",
                          now, now, "SIMULATION_NO_XRPL_PUBLICATION", None, event["canonical_event_hash"],
                          sha256(request["approved_representation"].encode()), "local simulator", "SIMULATED"))
@@ -298,6 +298,24 @@ class AuditService:
 
     def list_requests(self) -> list[dict]:
         return [dict(row) for row in self.db.many("SELECT * FROM blockchain_publication_requests ORDER BY created_at DESC")]
+
+    def publication(self, request_id: str) -> dict | None:
+        row = self.db.one("SELECT * FROM blockchain_publication_requests WHERE request_id=?", (request_id,))
+        return dict(row) if row else None
+
+    def hold_publication(self, request_id: str, actor_role: str) -> dict:
+        if actor_role == "AI gateway":
+            raise PermissionError("AI role cannot release or change a policy hold")
+        if not self.publication(request_id):
+            raise ValueError("publication request not found")
+        self.db.execute("UPDATE blockchain_publication_requests SET status='HELD',hold_reason=?,updated_at=? WHERE request_id=?",
+                        ("human hold", timestamp(), request_id))
+        return self.publication(request_id)
+
+    def signing_profile(self) -> dict:
+        row = self.db.one("SELECT signing_profile_id,display_name,account,network,status,effective_at,signer_role"
+                          " FROM signing_profiles WHERE signing_profile_id=?", (self.config.signing_profile_id,))
+        return dict(row) if row else {"signing_profile_id": self.config.signing_profile_id, "status": "NOT_CONFIGURED"}
 
     def reconcile(self) -> dict:
         run_id, findings = f"REC-{uuid.uuid4().hex[:12].upper()}", []
