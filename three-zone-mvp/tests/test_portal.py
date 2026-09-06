@@ -52,7 +52,7 @@ class PortalTests(unittest.TestCase):
         good = b"school,team,sport,level,opponent,date,start time,location,home/away,season\nLincoln High,Lincoln Freshman Basketball,basketball,freshman,Central,2026-12-01,19:00,Gym,HOME,2026\n"
         first = self.portal.upload_schedule(self.operator, "good.csv", good)
         second = self.portal.upload_schedule(self.operator, "corrected.csv", good)
-        self.assertTrue(first["accepted"]); self.assertEqual(second["version"], 2)
+        self.assertTrue(first["accepted"]); self.assertEqual(second["version"], first["version"] + 1)
         self.assertEqual(len(self.db.query("SELECT * FROM schedule_versions WHERE schedule_id=?", (first["schedule_id"],))), 2)
 
     def test_audit_persists_before_simulated_xrpl_receipt(self):
