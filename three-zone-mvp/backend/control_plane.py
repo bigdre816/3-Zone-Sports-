@@ -84,6 +84,12 @@ TIERS = [
 SITE_ROUTES = [
     {"method": "GET", "path": "/", "tier": "public",
      "purpose": "Single-page app shell (catalog, player, operator, owner)"},
+    {"method": "GET", "path": "/app.js", "tier": "public",
+     "purpose": "Frontend application logic"},
+    {"method": "GET", "path": "/styles.css", "tier": "public",
+     "purpose": "Screen and print styles"},
+    {"method": "GET", "path": "/favicon.ico", "tier": "public",
+     "purpose": "Browser icon response"},
     {"method": "GET", "path": "/api/health", "tier": "public",
      "purpose": "Liveness probe"},
     {"method": "GET", "path": "/api/config", "tier": "public",
@@ -124,6 +130,8 @@ SITE_ROUTES = [
      "purpose": "Aggregate event and socket metrics"},
     {"method": "GET", "path": "/api/owner/inventory", "tier": "owner",
      "purpose": "Owner back portal: print/export every single thing"},
+    {"method": "WS", "path": "/ws/events/{id}", "tier": "member",
+     "purpose": "Event-scoped live state, score, feed, lease, and rights updates"},
 ]
 
 

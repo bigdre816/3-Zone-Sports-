@@ -30,11 +30,8 @@ def _has_rows(db: Database, table: str) -> bool:
 
 def seed_if_empty(db: Database) -> bool:
     """Populate demo data if the database has no events yet. Returns True if seeded."""
-    if _has_rows(db, "events"):
-        return False
-
-    now = time.time()
-
+    # Always upsert demo identities so existing pilot databases gain newly
+    # introduced roles without requiring destructive data deletion.
     db.executemany(
         "INSERT OR REPLACE INTO users(user_id,display_name,role,account_state,subscription,"
         "zones,packages,destinations) VALUES (?,?,?,?,?,?,?,?)",
@@ -50,6 +47,11 @@ def seed_if_empty(db: Database) -> bool:
                   ["*"], ["*"], ["*"]),
         ],
     )
+
+    if _has_rows(db, "events"):
+        return False
+
+    now = time.time()
 
     events: list[tuple] = []
     rights: list[tuple] = []

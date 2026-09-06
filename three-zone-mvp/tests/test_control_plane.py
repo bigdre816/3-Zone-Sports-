@@ -166,6 +166,15 @@ class RoleMatrixTests(unittest.TestCase):
         self.assertEqual(self.worker["role"], "operator")
         self.assertEqual(self.owner["role"], "owner")
 
+    def test_existing_database_receives_new_demo_roles(self):
+        self.cp.db.execute(
+            "DELETE FROM users WHERE user_id IN (?, ?)",
+            ("demo-worker", "demo-owner"),
+        )
+        self.assertFalse(seed_if_empty(self.cp.db))
+        self.assertEqual(self.cp.get_user("demo-worker")["role"], "operator")
+        self.assertEqual(self.cp.get_user("demo-owner")["role"], "owner")
+
     def test_member_cannot_operate(self):
         with self.assertRaises(ForbiddenError) as ctx:
             self.cp.require_operator(self.member)
