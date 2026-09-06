@@ -92,7 +92,7 @@ def seed_if_empty(db: Database) -> bool:
     # A cleared (green) event and a replay in the Midwest zone.
     add("evt_mw_hockey", "Northside Hockey", "midwest", "green",
         "single_camera", 1.0, "hockey", primary_fresh=True)
-    add("evt_mw_wrestling", "Central Wrestling (Replay)", "midwest", "replay",
+    add("evt_mw_wrestling", "Central Wrestling (Archive)", "midwest", "archive",
         "single_camera", -3.0, "wrestling", replay_available=1,
         scoreboard={"home": 42, "away": 30, "period": "Final", "clock": "--"})
 

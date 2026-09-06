@@ -88,6 +88,65 @@ CREATE TABLE IF NOT EXISTS socket_metrics (
 
 CREATE INDEX IF NOT EXISTS idx_rights_event ON rights(event_id, version);
 CREATE INDEX IF NOT EXISTS idx_outbox_undelivered ON socket_outbox(delivered, id);
+
+-- Members-portal V1 domains. These tables supplement the original control
+-- plane tables; original events and rights remain the PDP source of truth.
+CREATE TABLE IF NOT EXISTS member_sessions (
+    session_id TEXT PRIMARY KEY, member_id TEXT NOT NULL, verification_id TEXT,
+    entitlement_version INTEGER NOT NULL, device_binding TEXT NOT NULL,
+    status TEXT NOT NULL, issued_at REAL NOT NULL, expires_at REAL NOT NULL,
+    revoked_at REAL
+);
+CREATE TABLE IF NOT EXISTS member_verifications (
+    verification_id TEXT PRIMARY KEY, member_id TEXT NOT NULL, status TEXT NOT NULL,
+    verification_type TEXT NOT NULL, verified_at REAL, expires_at REAL,
+    evidence_hash TEXT, verifier TEXT NOT NULL, receipt_id TEXT, simulated INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS schools (
+    school_id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, territory TEXT NOT NULL DEFAULT 'midwest'
+);
+CREATE TABLE IF NOT EXISTS teams (
+    team_id TEXT PRIMARY KEY, school_id TEXT NOT NULL, name TEXT NOT NULL, sport TEXT NOT NULL,
+    level TEXT NOT NULL, FOREIGN KEY(school_id) REFERENCES schools(school_id)
+);
+CREATE TABLE IF NOT EXISTS schedules (
+    schedule_id TEXT PRIMARY KEY, school_id TEXT NOT NULL, team_id TEXT NOT NULL, season TEXT NOT NULL,
+    current_version INTEGER NOT NULL, status TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS schedule_versions (
+    schedule_id TEXT NOT NULL, version INTEGER NOT NULL, source_type TEXT NOT NULL, source_name TEXT NOT NULL,
+    source_file_hash TEXT NOT NULL, uploaded_by TEXT NOT NULL, uploaded_at REAL NOT NULL,
+    effective_at REAL NOT NULL, supersedes_version INTEGER, status TEXT NOT NULL,
+    PRIMARY KEY(schedule_id, version)
+);
+CREATE TABLE IF NOT EXISTS schedule_events (
+    schedule_id TEXT NOT NULL, version INTEGER NOT NULL, schedule_event_id TEXT NOT NULL,
+    opponent TEXT NOT NULL, start_at REAL NOT NULL, location TEXT NOT NULL, home_away TEXT NOT NULL,
+    source_row INTEGER, PRIMARY KEY(schedule_id, version, schedule_event_id)
+);
+CREATE TABLE IF NOT EXISTS archive_objects (
+    archive_id TEXT PRIMARY KEY, event_id TEXT NOT NULL, school_id TEXT NOT NULL, team_id TEXT NOT NULL,
+    season TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, thumbnail TEXT, status TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS lease_records (
+    lease_id TEXT PRIMARY KEY, event_id TEXT NOT NULL, member_id TEXT NOT NULL, session_id TEXT NOT NULL,
+    rights_version INTEGER NOT NULL, permitted_use TEXT NOT NULL, status TEXT NOT NULL,
+    issued_at REAL NOT NULL, hard_expiry REAL NOT NULL, close_reason TEXT
+);
+CREATE TABLE IF NOT EXISTS audit_events (
+    event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL, entity TEXT NOT NULL, source_service TEXT NOT NULL,
+    subject_id TEXT, actor_type TEXT NOT NULL, actor_id TEXT, occurred_at REAL NOT NULL, recorded_at REAL NOT NULL,
+    payload_version TEXT NOT NULL, payload TEXT NOT NULL, payload_hash TEXT NOT NULL,
+    previous_event_hash TEXT, correlation_id TEXT, verification_ref TEXT, rights_version TEXT, legal_effect TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS xrpl_publications (
+    publication_id TEXT PRIMARY KEY, audit_event_id TEXT NOT NULL, payload_hash TEXT NOT NULL, manifest_hash TEXT NOT NULL,
+    xrpl_account TEXT, xrpl_transaction_hash TEXT, ledger_index TEXT, submitted_at REAL, validated_at REAL,
+    status TEXT NOT NULL, error_code TEXT, retry_count INTEGER NOT NULL DEFAULT 0, simulated INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_member_sessions_member ON member_sessions(member_id, status);
+CREATE INDEX IF NOT EXISTS idx_schedule_events_schedule ON schedule_events(schedule_id, version, start_at);
+CREATE INDEX IF NOT EXISTS idx_audit_events_subject ON audit_events(subject_id, occurred_at);
 """
 
 

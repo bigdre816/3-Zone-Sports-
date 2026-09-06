@@ -44,6 +44,11 @@ class Config:
     ws_max_message_bytes: int = 16 * 1024
     ws_max_messages_per_10s: int = 40
     ws_max_conns_per_ip: int = 20
+    xrpl_rpc_url: str = ""
+    xrpl_network: str = ""
+    xrpl_audit_account: str = ""
+    xrpl_signing_secret: str = ""
+    xrpl_key_id: str = ""
 
     @classmethod
     def from_env(cls, http_port: int | None = None, ws_port: int | None = None,
@@ -69,6 +74,11 @@ class Config:
             lease_ttl=int(os.environ.get("TZ_LEASE_TTL", "90")),
             ingest_ttl=int(os.environ.get("TZ_INGEST_TTL", str(6 * 3600))),
             heartbeat_timeout=int(os.environ.get("TZ_HEARTBEAT_TIMEOUT", "12")),
+            xrpl_rpc_url=os.environ.get("XRPL_RPC_URL", ""),
+            xrpl_network=os.environ.get("XRPL_NETWORK", ""),
+            xrpl_audit_account=os.environ.get("XRPL_AUDIT_ACCOUNT", ""),
+            xrpl_signing_secret=os.environ.get("XRPL_SIGNING_SECRET", ""),
+            xrpl_key_id=os.environ.get("XRPL_KEY_ID", ""),
         )
         cfg.validate()
         return cfg
@@ -94,6 +104,9 @@ class Config:
             problems.append("TZ_TOKEN_SECRET and TZ_MEDIA_SERVICE_KEY must be different")
         if not self.allowed_origins:
             problems.append("TZ_ALLOWED_ORIGINS must be set")
+        if not all((self.xrpl_rpc_url, self.xrpl_network, self.xrpl_audit_account,
+                    self.xrpl_signing_secret, self.xrpl_key_id)):
+            problems.append("XRPL configuration must be complete")
         if problems:
             raise RuntimeError(
                 "Refusing to start in production with an unsafe configuration: "
@@ -110,4 +123,5 @@ class Config:
             "heartbeat_timeout": self.heartbeat_timeout,
             "demo_accounts": ["demo-viewer", "demo-worker", "demo-owner"],
             "zones": ["midwest", "west", "east"],
+            "simulation": self.env in ("demo", "development", "local"),
         }
