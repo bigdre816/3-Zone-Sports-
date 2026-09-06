@@ -554,6 +554,9 @@ class ControlPlane:
         elif status == "replay":
             resolved = "replay"
             start, end = rights["replay_start"], rights["replay_end"]
+        elif status == "archive":
+            resolved = "archive"
+            start, end = rights["replay_start"], rights["replay_end"]
         else:
             return deny("not_playable", f"event is {status}, not playable")
         if mode and mode != resolved:

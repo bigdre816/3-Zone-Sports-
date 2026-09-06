@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import demo_media
 from .control_plane import ControlError, ControlPlane
+from .portal import PortalService
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 _STATIC_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
@@ -29,6 +30,22 @@ def _routes():
         ("GET", re.compile(r"^/api/health$"), "h_health", "none"),
         ("GET", re.compile(r"^/api/config$"), "h_config", "none"),
         ("POST", re.compile(r"^/api/auth/demo-login$"), "h_login", "none"),
+        ("POST", re.compile(r"^/api/auth/start$"), "h_auth_start", "none"),
+        ("POST", re.compile(r"^/api/auth/verify$"), "h_auth_verify", "none"),
+        ("POST", re.compile(r"^/api/auth/logout$"), "h_auth_logout", "none"),
+        ("GET", re.compile(r"^/api/member/me$"), "h_member_me", "none"),
+        ("GET", re.compile(r"^/api/member/live$"), "h_member_live", "none"),
+        ("GET", re.compile(r"^/api/member/schedules$"), "h_member_schedules", "none"),
+        ("GET", re.compile(r"^/api/member/archives$"), "h_member_archives", "none"),
+        ("GET", re.compile(r"^/api/member/search$"), "h_member_search", "none"),
+        ("POST", re.compile(rf"^/api/member/events/{_EVENT_RE}/playback$"), "h_member_playback", "none"),
+        ("POST", re.compile(r"^/api/member/archive/(?P<archive_id>[A-Za-z0-9_-]+)/playback$"), "h_archive_playback", "none"),
+        ("POST", re.compile(r"^/api/admin/schedules/upload$"), "h_schedule_upload", "operator"),
+        ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)$"), "h_audit_detail", "operator"),
+        ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)/xrpl$"), "h_audit_detail", "operator"),
+        ("POST", re.compile(r"^/internal/treasure/verify$"), "h_treasure_verify", "operator"),
+        ("POST", re.compile(r"^/internal/treasure/revalidate$"), "h_treasure_verify", "operator"),
+        ("POST", re.compile(r"^/internal/audit/events$"), "h_audit_publish", "operator"),
         ("GET", re.compile(r"^/api/me$"), "h_me", "session"),
         ("GET", re.compile(r"^/api/events$"), "h_events_list", "session"),
         ("POST", re.compile(r"^/api/events$"), "h_events_create", "operator"),
@@ -55,6 +72,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     # bound by the factory
     cp: ControlPlane = None  # type: ignore
+    portal: PortalService = None  # type: ignore
     media_dir: str = "data/media"
     routes = _routes()
 
@@ -151,6 +169,9 @@ class _Handler(BaseHTTPRequestHandler):
             return None
         morsel = jar.get(name)
         return morsel.value if morsel else None
+
+    def _member_session(self):
+        return self.portal.session(self._cookie("tz_member_session") or "")
 
     # -- dispatch ----------------------------------------------------------
     def do_OPTIONS(self):
@@ -249,6 +270,71 @@ class _Handler(BaseHTTPRequestHandler):
         result = self.cp.demo_login((b or {}).get("account", ""))
         self._send_json(200, result)
 
+    def h_auth_start(self, p, b, u):
+        self._send_json(200, self.portal.start_auth((b or {}).get("identifier", "demo-viewer")))
+
+    def h_auth_verify(self, p, b, u):
+        result = self.portal.complete_auth((b or {}).get("member_id", "demo-viewer"))
+        sid = result.pop("session_id")
+        cookie = f"tz_member_session={sid}; Path=/; Max-Age={self.cp.config.session_ttl}; HttpOnly; SameSite=Strict"
+        self._send_json(200, result, extra_headers={"Set-Cookie": cookie})
+
+    def h_auth_logout(self, p, b, u):
+        sid = self._cookie("tz_member_session")
+        if sid: self.portal.logout(sid)
+        self._send_json(200, {"ok": True}, extra_headers={"Set-Cookie": "tz_member_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"})
+
+    def h_member_me(self, p, b, u):
+        session, user = self._member_session()
+        self._send_json(200, {"member": {"member_id": user["user_id"], "display_name": user["display_name"]},
+                              "verification_id": session["verification_id"], "entitlement_version": session["entitlement_version"]})
+
+    def h_member_live(self, p, b, u):
+        _, user = self._member_session()
+        self._send_json(200, {"events": self.portal.live(user)})
+
+    def h_member_schedules(self, p, b, u):
+        _, user = self._member_session()
+        self._send_json(200, {"schedules": self.portal.schedules(user)})
+
+    def h_member_archives(self, p, b, u):
+        _, user = self._member_session()
+        self._send_json(200, {"archives": self.portal.archives(user)})
+
+    def h_member_search(self, p, b, u):
+        _, user = self._member_session()
+        query = self.path.split("?", 1)[1] if "?" in self.path else ""
+        term = query.split("q=", 1)[1].split("&", 1)[0] if "q=" in query else ""
+        self._send_json(200, {"results": self.portal.search(user, term.replace("+", " "))})
+
+    def h_member_playback(self, p, b, u):
+        session, _ = self._member_session()
+        result = self.portal.playback(session["session_id"], p["event_id"])
+        token = result.pop("lease_token")
+        eid = p["event_id"]
+        cookie = f"tz_lease_{eid}={token}; Path=/demo/media/{eid}.mp4; Max-Age={self.cp.config.lease_ttl}; HttpOnly; SameSite=Strict"
+        self._send_json(200, result, extra_headers={"Set-Cookie": cookie})
+
+    def h_archive_playback(self, p, b, u):
+        session, _ = self._member_session()
+        archive = self.cp.db.query_one("SELECT * FROM archive_objects WHERE archive_id=?", (p["archive_id"],))
+        if not archive: raise ControlError("archive not found", "archive_not_found")
+        result = self.portal.playback(session["session_id"], archive["event_id"], "archive")
+        self._send_json(200, result)
+
+    def h_schedule_upload(self, p, b, u):
+        content = (b or {}).get("csv", "").encode()
+        self._send_json(200, self.portal.upload_schedule(u, (b or {}).get("filename", "upload.csv"), content))
+
+    def h_treasure_verify(self, p, b, u):
+        self._send_json(200, self.portal.verify_treasure((b or {}).get("subject_ref", "demo-viewer")))
+
+    def h_audit_publish(self, p, b, u):
+        self._send_json(200, {"publication_ids": self.portal.publish_pending(), "simulated": True})
+
+    def h_audit_detail(self, p, b, u):
+        self._send_json(200, self.portal.audit_detail(u, p["audit_id"]))
+
     def h_me(self, p, b, u):
         self._send_json(200, {"user": u})
 
@@ -344,7 +430,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def make_http_server(config, cp: ControlPlane, media_dir: str) -> ThreadingHTTPServer:
-    handler = type("BoundHandler", (_Handler,), {"cp": cp, "media_dir": media_dir})
+    handler = type("BoundHandler", (_Handler,), {"cp": cp, "portal": PortalService(cp), "media_dir": media_dir})
     httpd = ThreadingHTTPServer((config.http_host, config.http_port), handler)
     httpd.daemon_threads = True
     return httpd
