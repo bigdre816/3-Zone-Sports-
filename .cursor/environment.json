@@ -1,0 +1,17 @@
+{
+  "name": "The-system Investment Tracker",
+  "install": "python3 --version",
+  "terminals": [
+    {
+      "name": "web",
+      "command": "python3 .cursor/serve.py",
+      "description": "Static dev server for the Investment Tracker app, served at http://localhost:8000/"
+    }
+  ],
+  "ports": [
+    {
+      "name": "web",
+      "port": 8000
+    }
+  ]
+}
