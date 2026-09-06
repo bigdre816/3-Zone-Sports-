@@ -36,6 +36,23 @@ POLICIES: dict[str, dict[str, Any]] = {
     "human.contribution.recorded": {"requirement": "PERMITTED", "mode": "HASH_ONLY", "profile": "INVENTION_VERIFICATION"},
     "ai.assistance.recorded": {"requirement": "PROHIBITED", "mode": "HASH_ONLY", "profile": "INVENTION_VERIFICATION"},
 }
+for _event_type, _profile in {
+    "disclosure.preflight.created": "EVIDENCE_VERIFICATION", "disclosure.hold.created": "EVIDENCE_VERIFICATION",
+    "disclosure.approved": "EVIDENCE_VERIFICATION", "counsel.review.recorded": "INVENTION_VERIFICATION",
+    "ip.posture.changed": "INVENTION_VERIFICATION", "filing.receipt.recorded": "EVIDENCE_VERIFICATION",
+    "filing.deadline.created": "EVIDENCE_VERIFICATION", "filing.decision.recorded": "INVENTION_VERIFICATION",
+    "rights.authority.verified": "RIGHTS_VERIFICATION", "lease.issued": "RUNTIME_VERIFICATION",
+    "lease.denied": "RUNTIME_VERIFICATION", "lease.expired": "RUNTIME_VERIFICATION",
+    "ingest.source.qualified": "RUNTIME_VERIFICATION", "media.object.created": "RUNTIME_VERIFICATION",
+    "media.metadata.verified": "RUNTIME_VERIFICATION", "revocation.propagated": "RIGHTS_VERIFICATION",
+    "session.closed": "RUNTIME_VERIFICATION", "discovery.query.authorized": "RUNTIME_VERIFICATION",
+    "discovery.query.denied": "RUNTIME_VERIFICATION", "partner.handoff.authorized": "CITY_ENTITY_VERIFICATION",
+    "partner.handoff.denied": "CITY_ENTITY_VERIFICATION", "legal_hold.applied": "EVIDENCE_VERIFICATION",
+    "legal_hold.released": "EVIDENCE_VERIFICATION", "operation.drill.completed": "CITY_ENTITY_VERIFICATION",
+    "operation.drill.failed": "CITY_ENTITY_VERIFICATION", "audit.reconciliation.completed": "EVIDENCE_VERIFICATION",
+    "audit.reconciliation.failed": "EVIDENCE_VERIFICATION",
+}.items():
+    POLICIES.setdefault(_event_type, {"requirement": "PERMITTED", "mode": "HASH_ONLY", "profile": _profile})
 SECRET_PATTERN = re.compile(r"(?:secret|seed|passphrase|private[_ -]?key|moten_xrpl_secret)", re.I)
 ALLOWED_ORGANIZATIONS = {
     "MOTEN_IP", "THREE_ZONE_KC", "TREASURE_NETWORK", "TREASURE_KC", "TREASURE_STL",
