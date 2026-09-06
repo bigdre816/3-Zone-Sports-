@@ -47,6 +47,9 @@ def seed_if_empty(db: Database) -> bool:
                   ["*"], ["*"], ["*"]),
         ],
     )
+    # V1 used demo-admin. The explicit three-tier model replaces it with the
+    # owner account; historical audit rows keep their original actor string.
+    db.execute("DELETE FROM users WHERE user_id=?", ("demo-admin",))
 
     if _has_rows(db, "events"):
         return False

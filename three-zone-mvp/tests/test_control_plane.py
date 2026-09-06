@@ -168,12 +168,18 @@ class RoleMatrixTests(unittest.TestCase):
 
     def test_existing_database_receives_new_demo_roles(self):
         self.cp.db.execute(
+            "INSERT INTO users(user_id,display_name,role,account_state,subscription,"
+            "zones,packages,destinations) VALUES (?,?,?,?,?,?,?,?)",
+            ("demo-admin", "Legacy Admin", "admin", "active", "active", '["*"]', '["*"]', '["*"]'),
+        )
+        self.cp.db.execute(
             "DELETE FROM users WHERE user_id IN (?, ?)",
             ("demo-worker", "demo-owner"),
         )
         self.assertFalse(seed_if_empty(self.cp.db))
         self.assertEqual(self.cp.get_user("demo-worker")["role"], "operator")
         self.assertEqual(self.cp.get_user("demo-owner")["role"], "owner")
+        self.assertIsNone(self.cp.get_user("demo-admin"))
 
     def test_member_cannot_operate(self):
         with self.assertRaises(ForbiddenError) as ctx:
