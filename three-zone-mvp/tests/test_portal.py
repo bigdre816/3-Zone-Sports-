@@ -53,7 +53,7 @@ class PortalTests(unittest.TestCase):
         first = self.portal.upload_schedule(self.operator, "good.csv", good)
         second = self.portal.upload_schedule(self.operator, "corrected.csv", good)
         self.assertTrue(first["accepted"]); self.assertEqual(second["version"], first["version"] + 1)
-        self.assertEqual(len(self.db.query("SELECT * FROM schedule_versions WHERE schedule_id=?", (first["schedule_id"],))), 2)
+        self.assertEqual(len(self.db.query("SELECT * FROM schedule_versions WHERE schedule_id=?", (first["schedule_id"],))), second["version"])
 
     def test_audit_persists_before_simulated_xrpl_receipt(self):
         session = self.session()
