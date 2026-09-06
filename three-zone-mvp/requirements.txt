@@ -1,0 +1,4 @@
+# The application requires only the websockets package. Everything else is the
+# Python 3.12+ standard library. FFmpeg (system binary) is optional and only
+# used to generate a nicer local demo video.
+websockets>=13
