@@ -44,6 +44,7 @@ def _routes():
         ("POST", re.compile(r"^/api/leases/validate$"), "h_leases_validate", "none"),
         ("GET", re.compile(r"^/api/analytics$"), "h_analytics", "session"),
         ("GET", re.compile(r"^/api/audit$"), "h_audit", "operator"),
+        ("GET", re.compile(r"^/api/audit/verification-outbox$"), "h_verification_outbox", "operator"),
         ("GET", re.compile(r"^/api/owner/inventory$"), "h_owner_inventory", "owner"),
         ("GET", re.compile(rf"^/demo/media/{_EVENT_RE}\.mp4$"), "h_media", "none"),
     ]
@@ -316,6 +317,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def h_audit(self, p, b, u):
         self._send_json(200, {"audit": self.cp.audit_view(u)})
+
+    def h_verification_outbox(self, p, b, u):
+        self._send_json(200, {"outbox": self.cp.verification_outbox(u)})
 
     def h_owner_inventory(self, p, b, u):
         self._send_json(200, self.cp.owner_inventory(u))

@@ -42,10 +42,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 def main():
-    with socketserver.ThreadingTCPServer((HOST, PORT), Handler) as httpd:
-        httpd.allow_reuse_address = True
-        print(f"Investment Tracker dev server running at http://{HOST}:{PORT}/")
-        httpd.serve_forever()
+    from moten_audit.server import serve
+    serve()
 
 
 if __name__ == "__main__":

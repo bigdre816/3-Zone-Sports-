@@ -202,6 +202,14 @@ class RoleMatrixTests(unittest.TestCase):
         with self.assertRaises(ForbiddenError):
             self.cp.create_event(self.member, {"title": "Nope", "zone": "west"})
 
+    def test_audit_is_locally_preserved_before_verification_outbox(self):
+        self.cp.audit_log("demo-owner", "rights.revoked", "evt_mw_basketball", {"reason": "test"})
+        item = self.cp.verification_outbox(self.owner)[-1]["event"]
+        self.assertEqual(item["organization_id"], "THREE_ZONE_KC")
+        self.assertEqual(item["event_type"], "rights.revoked")
+        self.assertEqual(item["source_system"], "three-zone-mvp")
+        self.assertTrue(item["canonical_event_hash"])
+
 
 class OwnerPortalTests(unittest.TestCase):
     """The owner back portal prints/exports every single thing."""

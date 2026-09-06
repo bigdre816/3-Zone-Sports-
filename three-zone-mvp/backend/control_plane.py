@@ -8,6 +8,7 @@ the same decision is repeated by :meth:`validate_lease` on every media request.
 
 from __future__ import annotations
 
+import hashlib
 import time
 import uuid
 
@@ -126,6 +127,8 @@ SITE_ROUTES = [
      "purpose": "Media service signals live -> replay (service key)"},
     {"method": "GET", "path": "/api/audit", "tier": "worker",
      "purpose": "Read the audit log"},
+    {"method": "GET", "path": "/api/audit/verification-outbox", "tier": "worker",
+     "purpose": "Read canonical source events for the Treasure verification adapter"},
     {"method": "GET", "path": "/api/analytics", "tier": "member",
      "purpose": "Aggregate event and socket metrics"},
     {"method": "GET", "path": "/api/owner/inventory", "tier": "owner",
@@ -229,9 +232,59 @@ class ControlPlane:
 
     # -- audit ------------------------------------------------------------
     def audit_log(self, actor: str, action: str, event_id: str | None = None, detail: dict | None = None) -> None:
-        self.db.execute(
+        audit_id = self.db.execute(
             "INSERT INTO audit(ts, actor, action, event_id, detail) VALUES (?,?,?,?,?)",
             (now(), actor, action, event_id, dumps(detail or {})),
+        )
+        # This is a source-side outbox only. It never calls XRPL or a signing
+        # service; a separately trusted adapter submits it to Treasure Network.
+        source_type = {
+            "rights.revoked": "rights.revoked",
+            "rights.restored": "rights.version.created",
+            "event.created": "media.object.created",
+            "feed.failover": "operation.drill.completed",
+        }.get(action, action)
+        payload = detail or {}
+        source_event = {
+            "schema": "moten.audit.event.v1",
+            "event_id": f"TZ-AUD-{audit_id}",
+            "event_type": source_type,
+            "schema_version": "v1",
+            "occurred_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "actor_type": "authorized_system",
+            "actor_id": actor,
+            "actor_role": "Three-Zone operator",
+            "authority_source": "THREE_ZONE_KC",
+            "organization_id": "THREE_ZONE_KC",
+            "department": "THREE_ZONE_OPERATIONS",
+            "project_family": "Three-Zone",
+            "object_type": "event",
+            "object_id": event_id or f"audit-{audit_id}",
+            "object_version": "v1",
+            "action": action,
+            "decision": None,
+            "reason_code": None,
+            "previous_event_id": None,
+            "previous_event_hash": None,
+            "correlation_id": f"three-zone-audit-{audit_id}",
+            "causation_id": None,
+            "source_system": "three-zone-mvp",
+            "environment": self.config.env,
+            "payload": payload,
+            "classification": "INTERNAL_AUDIT",
+            "on_chain_policy": "PERMITTED",
+            "legal_effect": "audit_evidence_only",
+            "created_by": actor,
+            "human_approval_id": None,
+            "signature_profile_id": None,
+        }
+        source_event["payload_hash"] = hashlib.sha256(dumps(payload).encode()).hexdigest()
+        raw = dumps(source_event)
+        source_event["canonical_event_hash"] = hashlib.sha256(raw.encode()).hexdigest()
+        self.db.execute(
+            "INSERT INTO audit_verification_outbox(audit_id,event_json,created_at) VALUES (?,?,?)",
+            (audit_id, dumps(source_event), now()),
         )
 
     def _outbox(self, event_id: str, type_: str, payload: dict) -> None:
@@ -646,6 +699,16 @@ class ControlPlane:
              "event_id": r["event_id"], "detail": loads(r["detail"], {})}
             for r in rows
         ]
+
+    def verification_outbox(self, operator: dict, limit: int = 100) -> list[dict]:
+        """Trusted adapter feed; never an XRPL-direct source endpoint."""
+        self.require_operator(operator)
+        rows = self.db.query(
+            "SELECT id,audit_id,event_json,created_at,delivered_at FROM audit_verification_outbox"
+            " ORDER BY id ASC LIMIT ?", (limit,)
+        )
+        return [{"outbox_id": r["id"], "audit_id": r["audit_id"], "event": loads(r["event_json"], {}),
+                 "created_at": r["created_at"], "delivered_at": r["delivered_at"]} for r in rows]
 
     # -- owner back portal -----------------------------------------------
     def _rights_full(self, row) -> dict:

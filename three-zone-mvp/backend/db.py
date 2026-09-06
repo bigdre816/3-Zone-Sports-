@@ -70,6 +70,16 @@ CREATE TABLE IF NOT EXISTS audit (
     detail    TEXT NOT NULL DEFAULT '{}'
 );
 
+-- Source-side delivery outbox. Three-Zone records locally first; a trusted
+-- adapter may later submit this canonical source event to Treasure Network.
+CREATE TABLE IF NOT EXISTS audit_verification_outbox (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    audit_id    INTEGER NOT NULL,
+    event_json  TEXT NOT NULL,
+    created_at  REAL NOT NULL,
+    delivered_at REAL
+);
+
 CREATE TABLE IF NOT EXISTS socket_outbox (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id   TEXT NOT NULL,
@@ -88,6 +98,7 @@ CREATE TABLE IF NOT EXISTS socket_metrics (
 
 CREATE INDEX IF NOT EXISTS idx_rights_event ON rights(event_id, version);
 CREATE INDEX IF NOT EXISTS idx_outbox_undelivered ON socket_outbox(delivered, id);
+CREATE INDEX IF NOT EXISTS idx_audit_verify_pending ON audit_verification_outbox(delivered_at, id);
 """
 
 
