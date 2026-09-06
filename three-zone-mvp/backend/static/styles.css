@@ -118,3 +118,45 @@ summary { cursor: pointer; font-weight: 600; }
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; }
 }
+
+/* -- owner back portal ------------------------------------------------ */
+.owner-summary { margin-top: 12px; font-size: 13px; }
+
+.print-root {
+  grid-column: 1 / -1;
+  margin: 18px 22px 40px;
+  padding: 22px 26px;
+  background: #ffffff;
+  color: #111418;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+.print-root .report-head h1 { margin: 0 0 6px; font-size: 22px; }
+.print-root .muted { color: #4a5460; }
+.print-root .report-section { margin-top: 22px; page-break-inside: auto; }
+.print-root .report-section > h2 {
+  font-size: 16px; margin: 0 0 10px; padding-bottom: 6px; border-bottom: 2px solid #111418;
+}
+.print-root h3 { font-size: 14px; margin: 14px 0 4px; }
+.print-root .tier-block, .print-root .event-block { margin-bottom: 14px; }
+.print-root ul { margin: 6px 0 0 18px; }
+.print-root .code { background: #f3f5f8; color: #111418; border-color: #d0d7de; }
+
+.report-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+.report-table th, .report-table td {
+  border: 1px solid #cdd5de; padding: 5px 7px; text-align: left; vertical-align: top;
+}
+.report-table th { background: #eef2f6; }
+.report-table tr:nth-child(even) td { background: #f7f9fb; }
+
+/* Print: show only the full inventory report as a clean document. */
+@media print {
+  .topbar, #app, #toast { display: none !important; }
+  body { background: #ffffff; }
+  .print-root, .print-root.hidden {
+    display: block !important;
+    margin: 0; border: 0; border-radius: 0; padding: 0;
+  }
+  .report-table th { background: #eef2f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .report-section { page-break-inside: avoid; }
+}

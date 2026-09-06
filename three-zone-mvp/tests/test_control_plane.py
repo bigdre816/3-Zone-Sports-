@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend import tokens
 from backend.config import Config
 from backend.control_plane import (
-    ConflictError, ControlPlane, ForbiddenError,
+    ConflictError, ControlPlane, ForbiddenError, SITE_ROUTES, TIERS,
 )
 from backend.db import Database
 from backend.seed import seed_if_empty
@@ -32,7 +32,7 @@ class LeaseTests(unittest.TestCase):
     def setUp(self):
         self.cp = build_cp()
         self.viewer = self.cp.get_user("demo-viewer")
-        self.admin = self.cp.get_user("demo-admin")
+        self.admin = self.cp.get_user("demo-owner")
 
     def test_live_lease_issuance_and_validation(self):
         res = self.cp.request_playback("evt_mw_basketball", self.viewer)
@@ -75,7 +75,7 @@ class LeaseTests(unittest.TestCase):
 class LifecycleTests(unittest.TestCase):
     def setUp(self):
         self.cp = build_cp()
-        self.admin = self.cp.get_user("demo-admin")
+        self.admin = self.cp.get_user("demo-owner")
 
     def test_illegal_transition_rejected(self):
         # west football is 'scheduled'; jumping to live is illegal.
@@ -110,7 +110,7 @@ class LifecycleTests(unittest.TestCase):
 class IngestTests(unittest.TestCase):
     def setUp(self):
         self.cp = build_cp()
-        self.admin = self.cp.get_user("demo-admin")
+        self.admin = self.cp.get_user("demo-owner")
 
     def test_ingest_token_is_event_and_source_scoped(self):
         issued = self.cp.issue_ingest_token("evt_mw_volleyball", self.admin, "primary")
@@ -150,6 +150,89 @@ class TokenTamperTests(unittest.TestCase):
         check = self.cp.validate_lease("evt_mw_basketball", tampered)
         self.assertFalse(check["valid"])
         self.assertEqual(check["reason"], "invalid_lease")
+
+
+class RoleMatrixTests(unittest.TestCase):
+    """Member (viewer) < worker (operator) < owner tier separation."""
+
+    def setUp(self):
+        self.cp = build_cp()
+        self.member = self.cp.get_user("demo-viewer")
+        self.worker = self.cp.get_user("demo-worker")
+        self.owner = self.cp.get_user("demo-owner")
+
+    def test_seeded_roles(self):
+        self.assertEqual(self.member["role"], "viewer")
+        self.assertEqual(self.worker["role"], "operator")
+        self.assertEqual(self.owner["role"], "owner")
+
+    def test_member_cannot_operate(self):
+        with self.assertRaises(ForbiddenError) as ctx:
+            self.cp.require_operator(self.member)
+        self.assertEqual(ctx.exception.code, "operator_required")
+
+    def test_worker_can_operate_but_not_own(self):
+        self.cp.require_operator(self.worker)  # no raise
+        with self.assertRaises(ForbiddenError) as ctx:
+            self.cp.require_owner(self.worker)
+        self.assertEqual(ctx.exception.code, "owner_required")
+
+    def test_owner_can_operate_and_own(self):
+        self.cp.require_operator(self.owner)  # no raise
+        self.cp.require_owner(self.owner)  # no raise
+
+    def test_worker_can_create_event_member_cannot(self):
+        created = self.cp.create_event(self.worker, {"title": "Worker Event", "zone": "west"})
+        self.assertEqual(created["status"], "scheduled")
+        with self.assertRaises(ForbiddenError):
+            self.cp.create_event(self.member, {"title": "Nope", "zone": "west"})
+
+
+class OwnerPortalTests(unittest.TestCase):
+    """The owner back portal prints/exports every single thing."""
+
+    def setUp(self):
+        self.cp = build_cp()
+        self.member = self.cp.get_user("demo-viewer")
+        self.worker = self.cp.get_user("demo-worker")
+        self.owner = self.cp.get_user("demo-owner")
+
+    def test_inventory_requires_owner(self):
+        with self.assertRaises(ForbiddenError):
+            self.cp.owner_inventory(self.member)
+        with self.assertRaises(ForbiddenError):
+            self.cp.owner_inventory(self.worker)
+
+    def test_inventory_contains_everything(self):
+        inv = self.cp.owner_inventory(self.owner)
+        # Self-describing site model is present.
+        self.assertEqual(len(inv["tiers"]), 3)
+        self.assertEqual({t["tier"] for t in inv["tiers"]}, {"member", "worker", "owner"})
+        self.assertEqual(inv["routes"], SITE_ROUTES)
+        # Every user, event, and audit entry is dumped.
+        self.assertEqual(inv["totals"]["users"], len(inv["users"]))
+        self.assertEqual(inv["totals"]["events"], len(inv["events"]))
+        self.assertEqual(inv["totals"]["audit_entries"], len(inv["audit"]))
+        self.assertGreaterEqual(inv["totals"]["users"], 3)
+        # No secrets leak through the environment block.
+        env_blob = str(inv["environment"])
+        self.assertNotIn("token_secret", env_blob)
+        self.assertNotIn("CHANGE-ME", env_blob)
+
+    def test_inventory_includes_full_rights_history(self):
+        # Revoke then restore so evt has 2 rights versions; both must appear.
+        self.cp.revoke_rights("evt_mw_basketball", self.owner, "dispute")
+        self.cp.restore_rights("evt_mw_basketball", self.owner)
+        inv = self.cp.owner_inventory(self.owner)
+        ev = next(e for e in inv["events"] if e["event_id"] == "evt_mw_basketball")
+        versions = ev["rights_versions"]
+        self.assertEqual([r["version"] for r in versions], [1, 2])
+        self.assertTrue(versions[0]["revoked"])
+        self.assertTrue(versions[1]["active"])
+
+    def test_route_map_matches_owner_endpoint(self):
+        paths = {r["path"] for r in SITE_ROUTES}
+        self.assertIn("/api/owner/inventory", paths)
 
 
 if __name__ == "__main__":

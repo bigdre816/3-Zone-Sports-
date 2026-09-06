@@ -39,9 +39,14 @@ def seed_if_empty(db: Database) -> bool:
         "INSERT OR REPLACE INTO users(user_id,display_name,role,account_state,subscription,"
         "zones,packages,destinations) VALUES (?,?,?,?,?,?,?,?)",
         [
-            _user("demo-viewer", "Demo Viewer", "viewer",
+            # Member site: a subscriber who can only watch what they are entitled to.
+            _user("demo-viewer", "Demo Member (viewer)", "viewer",
                   ["midwest"], ["standard"], ["web"]),
-            _user("demo-admin", "Demo Admin", "admin",
+            # Back worker side: production staff who run events but cannot see the owner portal.
+            _user("demo-worker", "Demo Worker (operator)", "operator",
+                  ["*"], ["*"], ["*"]),
+            # Owner side: full control plus the print-everything back portal.
+            _user("demo-owner", "Demo Owner", "owner",
                   ["*"], ["*"], ["*"]),
         ],
     )

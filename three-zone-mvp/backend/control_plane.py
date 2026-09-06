@@ -30,6 +30,102 @@ _ALLOWED_TRANSITIONS = {
 
 VALID_SOURCES = {"primary", "backup"}
 
+# ---------------------------------------------------------------------------
+# Self-describing site model. The owner back portal prints this so the report
+# documents every tier, capability, and route that makes up the website.
+# ---------------------------------------------------------------------------
+TIERS = [
+    {
+        "tier": "member",
+        "label": "Member site (viewer)",
+        "role": "viewer",
+        "demo_account": "demo-viewer",
+        "description": "Subscriber-facing catalog and player. Sees only entitled "
+                       "zones/packages and receives short-lived playback leases.",
+        "capabilities": [
+            "Browse the catalog of events they are entitled to",
+            "Request a playback lease for a live or replay event",
+            "Watch managed media while the lease and rights stay valid",
+            "Receive live state, score, and revocation updates over the socket",
+        ],
+    },
+    {
+        "tier": "worker",
+        "label": "Back worker side (operator)",
+        "role": "operator",
+        "demo_account": "demo-worker",
+        "description": "Production staff who run events: lifecycle, rights, ingest, "
+                       "scoreboard, and the audit log. No access to the owner portal.",
+        "capabilities": [
+            "Create events and advance the lifecycle (scheduled -> ... -> archive)",
+            "Issue event-scoped ingest tokens for primary/backup encoders",
+            "Revoke and restore rights during an incident",
+            "Update the live scoreboard",
+            "Read the operator audit log",
+        ],
+    },
+    {
+        "tier": "owner",
+        "label": "Owner side (back portal)",
+        "role": "owner",
+        "demo_account": "demo-owner",
+        "description": "Everything the worker can do, plus the owner back portal that "
+                       "prints and exports every single thing in the site.",
+        "capabilities": [
+            "Everything on the back worker side",
+            "Open the owner back portal",
+            "Print the full site inventory (users, events, all rights versions, audit)",
+            "Download a complete JSON export of the whole system state",
+        ],
+    },
+]
+
+# Every HTTP route the website exposes, with the tier that may reach it.
+SITE_ROUTES = [
+    {"method": "GET", "path": "/", "tier": "public",
+     "purpose": "Single-page app shell (catalog, player, operator, owner)"},
+    {"method": "GET", "path": "/api/health", "tier": "public",
+     "purpose": "Liveness probe"},
+    {"method": "GET", "path": "/api/config", "tier": "public",
+     "purpose": "Public runtime config (ports, TTLs, demo accounts)"},
+    {"method": "POST", "path": "/api/auth/demo-login", "tier": "public",
+     "purpose": "Sign in as a demo member/worker/owner account"},
+    {"method": "GET", "path": "/api/me", "tier": "member",
+     "purpose": "Current signed-in identity and entitlements"},
+    {"method": "GET", "path": "/api/events", "tier": "member",
+     "purpose": "List events the caller is entitled to see"},
+    {"method": "GET", "path": "/api/events/{id}", "tier": "member",
+     "purpose": "Event detail plus the caller's access decision"},
+    {"method": "POST", "path": "/api/events/{id}/playback-session", "tier": "member",
+     "purpose": "Request a short-lived playback lease"},
+    {"method": "GET", "path": "/demo/media/{id}.mp4", "tier": "member",
+     "purpose": "Lease-gated managed media (revalidated per request)"},
+    {"method": "POST", "path": "/api/leases/validate", "tier": "service",
+     "purpose": "Re-run authorization for a lease token (media proxy)"},
+    {"method": "POST", "path": "/api/events", "tier": "worker",
+     "purpose": "Create a new event"},
+    {"method": "POST", "path": "/api/events/{id}/transition", "tier": "worker",
+     "purpose": "Advance the lifecycle state"},
+    {"method": "POST", "path": "/api/events/{id}/score", "tier": "worker",
+     "purpose": "Update the scoreboard"},
+    {"method": "POST", "path": "/api/events/{id}/rights/revoke", "tier": "worker",
+     "purpose": "Revoke active rights"},
+    {"method": "POST", "path": "/api/events/{id}/rights/restore", "tier": "worker",
+     "purpose": "Restore rights as a new version"},
+    {"method": "POST", "path": "/api/events/{id}/ingest-token", "tier": "worker",
+     "purpose": "Issue an event-scoped ingest token"},
+    {"method": "POST", "path": "/api/events/{id}/ingest/heartbeat", "tier": "ingest",
+     "purpose": "Encoder heartbeat (ingest-token scoped)"},
+    {"method": "POST", "path": "/api/events/{id}/media/end", "tier": "service",
+     "purpose": "Media service signals live -> replay (service key)"},
+    {"method": "GET", "path": "/api/audit", "tier": "worker",
+     "purpose": "Read the audit log"},
+    {"method": "GET", "path": "/api/analytics", "tier": "member",
+     "purpose": "Aggregate event and socket metrics"},
+    {"method": "GET", "path": "/api/owner/inventory", "tier": "owner",
+     "purpose": "Owner back portal: print/export every single thing"},
+]
+
 
 # ---------------------------------------------------------------------------
 # Errors -> HTTP status codes
@@ -142,7 +238,7 @@ class ControlPlane:
         return self._user_dict(row) if row else None
 
     def demo_login(self, account: str) -> dict:
-        if account not in ("demo-viewer", "demo-admin"):
+        if account not in ("demo-viewer", "demo-worker", "demo-owner"):
             raise ValidationError("unknown demo account", "unknown_account")
         user = self.get_user(account)
         if not user:
@@ -167,8 +263,15 @@ class ControlPlane:
 
     @staticmethod
     def require_operator(user: dict) -> None:
-        if user["role"] not in ("operator", "admin"):
+        # Worker (operator) and owner can both run production; members cannot.
+        if user["role"] not in ("operator", "owner", "admin"):
             raise ForbiddenError("operator role required", "operator_required")
+
+    @staticmethod
+    def require_owner(user: dict) -> None:
+        # Owner-only surface: the back portal that prints every single thing.
+        if user["role"] not in ("owner", "admin"):
+            raise ForbiddenError("owner role required", "owner_required")
 
     # -- rights -----------------------------------------------------------
     def current_rights(self, event_id: str):
@@ -535,3 +638,70 @@ class ControlPlane:
              "event_id": r["event_id"], "detail": loads(r["detail"], {})}
             for r in rows
         ]
+
+    # -- owner back portal -----------------------------------------------
+    def _rights_full(self, row) -> dict:
+        """Full rights record including every version (active + revoked)."""
+        return {
+            "id": row["id"],
+            "version": row["version"],
+            "territory": row["territory"],
+            "destination": row["destination"],
+            "package": row["package"],
+            "authority": row["authority"],
+            "source_reference": row["source_reference"],
+            "active": bool(row["active"]),
+            "revoked": bool(row["revoked"]),
+            "revocation_reason": row["revocation_reason"],
+            "live_window": [row["live_start"], row["live_end"]],
+            "replay_window": [row["replay_start"], row["replay_end"]],
+            "archive_retention_days": row["archive_retention_days"],
+            "created_at": row["created_at"],
+        }
+
+    def owner_inventory(self, owner: dict) -> dict:
+        """The owner back portal payload: literally every part of the website.
+
+        Returns the self-describing site map (tiers, capabilities, routes) plus a
+        complete dump of every user, event, rights version (including revoked
+        history), the full audit log, and current analytics/socket metrics.
+        """
+        self.require_owner(owner)
+
+        users = [self._user_dict(r) for r in
+                 self.db.query("SELECT * FROM users ORDER BY user_id ASC")]
+
+        event_rows = self.db.query("SELECT * FROM events ORDER BY scheduled_start ASC")
+        events = []
+        for r in event_rows:
+            full = self._event_dict(r)
+            rights_rows = self.db.query(
+                "SELECT * FROM rights WHERE event_id=? ORDER BY version ASC", (r["event_id"],)
+            )
+            full["rights_versions"] = [self._rights_full(rr) for rr in rights_rows]
+            events.append(full)
+
+        audit_rows = self.db.query("SELECT * FROM audit ORDER BY id ASC")
+        audit = [
+            {"id": a["id"], "ts": a["ts"], "actor": a["actor"], "action": a["action"],
+             "event_id": a["event_id"], "detail": loads(a["detail"], {})}
+            for a in audit_rows
+        ]
+
+        rights_total = self.db.query_one("SELECT COUNT(*) AS c FROM rights")
+        return {
+            "generated_at": now(),
+            "environment": self.config.public_config(),
+            "tiers": TIERS,
+            "routes": SITE_ROUTES,
+            "totals": {
+                "users": len(users),
+                "events": len(events),
+                "rights_versions": rights_total["c"] if rights_total else 0,
+                "audit_entries": len(audit),
+            },
+            "users": users,
+            "events": events,
+            "audit": audit,
+            "analytics": self.analytics(),
+        }

@@ -56,7 +56,7 @@ def main() -> int:
         f"  WS    ws://{config.ws_host}:{config.ws_port}/ws/events/<event_id>\n"
         f"  env   {config.env}   db {config.database_path}\n"
         f"  origins {', '.join(config.allowed_origins)}\n"
-        "  demo accounts: demo-viewer, demo-admin\n"
+        "  demo accounts: demo-viewer (member), demo-worker (operator), demo-owner (owner)\n"
     )
     print(banner, flush=True)
     try:

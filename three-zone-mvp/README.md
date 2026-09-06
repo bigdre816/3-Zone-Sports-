@@ -27,10 +27,19 @@ python run.py
 
 Open <http://127.0.0.1:8000>.
 
-| Account | Capability |
-| --- | --- |
-| `demo-viewer` | Midwest entitlement, live and replay playback |
-| `demo-admin` | All zones, lifecycle controls, rights revoke/restore, ingest credential issue, audit access |
+The site has three tiers, each with its own portal:
+
+| Tier | Account | Capability |
+| --- | --- | --- |
+| Member site | `demo-viewer` | Midwest entitlement, live and replay playback |
+| Back worker side | `demo-worker` | All zones, lifecycle controls, rights revoke/restore, ingest credential issue, audit access |
+| Owner side | `demo-owner` | Everything the worker can do, plus the owner back portal that prints/exports every single thing in the site |
+
+The **owner back portal** (`GET /api/owner/inventory`, surfaced in the Owner
+panel) prints a complete, page-ready report and downloads a full JSON export:
+the tier/capability map, every route, all users, every event with its full
+rights version history (including revoked versions), analytics, and the complete
+audit log.
 
 The initial inventory contains three Midwest live examples (distinct production
 modes, one on an active backup feed), a cleared (green) event, a replay, and
@@ -62,10 +71,13 @@ docker run --rm -p 8000:8000 -p 8765:8765 \
 3. The browser requests a playback lease, receives an event-scoped HTTP-only
    cookie, opens the event socket (token in the WebSocket subprotocol, not the
    URL), and loads the local managed-media adapter.
-4. Sign in as `demo-admin` in another tab to move `Lakeside Volleyball` through
+4. Sign in as `demo-worker` in another tab to move `Lakeside Volleyball` through
    the operator controls, issue an ingest token, send a heartbeat, and revoke
    rights on a live event. Socket subscribers receive `rights.revoked`, and the
    media endpoint rejects the existing lease on its next request.
+5. Sign in as `demo-owner` to open the Owner back portal, then **Print
+   everything** (page-ready report) or **Download JSON export** for a complete
+   dump of every part of the site.
 
 ## What is implemented
 
@@ -115,6 +127,7 @@ docker run --rm -p 8000:8000 -p 8765:8765 \
 | `POST` | `/api/leases/validate` | Media-service validation with a separate service key |
 | `GET` | `/api/analytics` | Basic inventory and socket metrics |
 | `GET` | `/api/audit` | Operator-only append-only audit view |
+| `GET` | `/api/owner/inventory` | Owner-only back portal: prints/exports every part of the site |
 | `GET` | `/demo/media/{event_id}.mp4` | Lease-gated local demo media |
 
 The event socket is `ws://127.0.0.1:8765/ws/events/{event_id}` in the default

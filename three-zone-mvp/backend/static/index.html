@@ -18,8 +18,9 @@
     <div class="identity">
       <label for="account">Identity</label>
       <select id="account">
-        <option value="demo-viewer">demo-viewer</option>
-        <option value="demo-admin">demo-admin</option>
+        <option value="demo-viewer">demo-viewer (member)</option>
+        <option value="demo-worker">demo-worker (back office)</option>
+        <option value="demo-owner">demo-owner (owner)</option>
       </select>
       <button id="login-btn" type="button">Sign in</button>
       <button id="logout-btn" type="button" class="ghost hidden">Sign out</button>
@@ -118,8 +119,24 @@
         <div id="audit-out" class="audit"></div>
       </details>
     </section>
+
+    <section id="owner" class="panel hidden">
+      <div class="panel-head"><h2>Owner back portal</h2><span class="badge st-live">owner</span></div>
+      <p class="muted">
+        Print or export <strong>every single thing</strong> in the site &mdash; the tier
+        and capability map, every route, all users, every event with its full rights
+        version history (including revoked versions), and the complete audit log.
+      </p>
+      <div class="btn-row">
+        <button id="owner-load-btn" type="button">Load full inventory</button>
+        <button id="owner-print-btn" type="button">Print everything</button>
+        <button id="owner-export-btn" type="button">Download JSON export</button>
+      </div>
+      <div id="owner-summary" class="owner-summary muted"></div>
+    </section>
   </main>
 
+  <div id="print-root" class="print-root hidden"></div>
   <div id="toast" class="toast hidden"></div>
   <script src="/app.js"></script>
 </body>

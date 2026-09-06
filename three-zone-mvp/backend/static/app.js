@@ -9,7 +9,13 @@ const state = {
   selected: null,
   ws: null,
   wsEventId: null,
+  inventory: null,
 };
+
+const OPERATOR_ROLES = ["operator", "owner", "admin"];
+const OWNER_ROLES = ["owner", "admin"];
+const canOperate = (u) => u && OPERATOR_ROLES.includes(u.role);
+const canOwn = (u) => u && OWNER_ROLES.includes(u.role);
 
 const LIFECYCLE_NEXT = {
   scheduled: ["gray"], gray: ["yellow"], yellow: ["green"],
@@ -76,9 +82,12 @@ function logout() {
   $("#login-btn").classList.remove("hidden");
   $("#who").textContent = "";
   $("#operator").classList.add("hidden");
+  $("#owner").classList.add("hidden");
+  $("#print-root").classList.add("hidden");
   $("#events").innerHTML = "";
   $("#player").classList.add("hidden");
   $("#player-empty").classList.remove("hidden");
+  state.inventory = null;
 }
 
 async function restoreSession() {
@@ -96,8 +105,9 @@ function afterAuth() {
   $("#login-btn").classList.add("hidden");
   $("#logout-btn").classList.remove("hidden");
   $("#who").textContent = `${state.user.display_name} · ${state.user.role}`;
-  const isOp = state.user.role === "operator" || state.user.role === "admin";
-  $("#operator").classList.toggle("hidden", !isOp);
+  $("#operator").classList.toggle("hidden", !canOperate(state.user));
+  $("#owner").classList.toggle("hidden", !canOwn(state.user));
+  if (!canOwn(state.user)) $("#print-root").classList.add("hidden");
   loadEvents();
 }
 
@@ -236,7 +246,7 @@ async function openEvent(eventId) {
   state.selected = eventId;
   const ev = state.events.find((e) => e.event_id === eventId);
   $("#player-title").textContent = ev ? ev.title : eventId;
-  if (state.user && (state.user.role === "admin" || state.user.role === "operator")) {
+  if (canOperate(state.user)) {
     renderOperatorControls(eventId);
   }
   try {
@@ -368,6 +378,179 @@ async function refreshAudit() {
   } catch (e) { toast("Audit failed: " + e.message, "bad"); }
 }
 
+// -- owner back portal -------------------------------------------------
+function fmtTs(ts) {
+  if (!ts) return "-";
+  try { return new Date(ts * 1000).toLocaleString(); } catch (_) { return String(ts); }
+}
+
+async function loadInventory() {
+  const res = await api("GET", "/api/owner/inventory");
+  state.inventory = res;
+  renderInventoryReport(res);
+  const t = res.totals || {};
+  $("#owner-summary").textContent =
+    `Loaded: ${t.users} users · ${t.events} events · ${t.rights_versions} rights versions · ${t.audit_entries} audit entries.`;
+  return res;
+}
+
+function reportSection(title) {
+  const wrap = el("section", "report-section");
+  wrap.appendChild(el("h2", null, title));
+  return wrap;
+}
+
+function tableFrom(headers, rows) {
+  const table = el("table", "report-table");
+  const thead = el("thead");
+  const htr = el("tr");
+  headers.forEach((h) => htr.appendChild(el("th", null, h)));
+  thead.appendChild(htr);
+  table.appendChild(thead);
+  const tbody = el("tbody");
+  rows.forEach((cells) => {
+    const tr = el("tr");
+    cells.forEach((c) => tr.appendChild(el("td", null, c === null || c === undefined ? "" : String(c))));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  return table;
+}
+
+function renderInventoryReport(data) {
+  const root = $("#print-root");
+  root.innerHTML = "";
+
+  const head = el("div", "report-head");
+  head.appendChild(el("h1", null, "Three-Zone Control Plane — Full Site Inventory"));
+  head.appendChild(el("div", "muted",
+    `Environment: ${data.environment.env} · Generated: ${fmtTs(data.generated_at)}`));
+  const t = data.totals || {};
+  head.appendChild(el("div", "muted",
+    `${t.users} users · ${t.events} events · ${t.rights_versions} rights versions · ${t.audit_entries} audit entries`));
+  root.appendChild(head);
+
+  // Tiers / capability map
+  const tiers = reportSection("Access tiers & capabilities");
+  (data.tiers || []).forEach((tier) => {
+    const block = el("div", "tier-block");
+    block.appendChild(el("h3", null, `${tier.label}  (role: ${tier.role}, account: ${tier.demo_account})`));
+    block.appendChild(el("div", "muted", tier.description));
+    const ul = el("ul");
+    (tier.capabilities || []).forEach((c) => ul.appendChild(el("li", null, c)));
+    block.appendChild(ul);
+    tiers.appendChild(block);
+  });
+  root.appendChild(tiers);
+
+  // Route map
+  const routes = reportSection("Every route on this website");
+  routes.appendChild(tableFrom(
+    ["Method", "Path", "Access tier", "Purpose"],
+    (data.routes || []).map((r) => [r.method, r.path, r.tier, r.purpose])
+  ));
+  root.appendChild(routes);
+
+  // Users
+  const users = reportSection("Users");
+  users.appendChild(tableFrom(
+    ["User", "Name", "Role", "Account", "Subscription", "Zones", "Packages", "Destinations"],
+    (data.users || []).map((u) => [
+      u.user_id, u.display_name, u.role, u.account_state, u.subscription,
+      (u.zones || []).join(", "), (u.packages || []).join(", "), (u.destinations || []).join(", "),
+    ])
+  ));
+  root.appendChild(users);
+
+  // Events + full rights history
+  const events = reportSection("Events & rights history");
+  (data.events || []).forEach((ev) => {
+    const block = el("div", "event-block");
+    block.appendChild(el("h3", null, `${ev.title}  [${ev.zone} · ${ev.status}]`));
+    block.appendChild(el("div", "muted",
+      `${ev.event_id} · category ${ev.category} · mode ${ev.production_mode} · ` +
+      `source ${ev.active_source} (${ev.feed_healthy ? "healthy" : "degraded"}) · ` +
+      `start ${fmtTs(ev.scheduled_start)} · replay ${ev.replay_available ? "available" : "no"}`));
+    const rv = ev.rights_versions || [];
+    if (rv.length) {
+      block.appendChild(tableFrom(
+        ["v", "Territory", "Dest", "Package", "Active", "Revoked", "Reason", "Live window", "Replay window", "Authority", "Retention(d)"],
+        rv.map((r) => [
+          r.version, r.territory, r.destination, r.package,
+          r.active ? "yes" : "no", r.revoked ? "yes" : "no", r.revocation_reason || "",
+          `${fmtTs(r.live_window[0])} → ${fmtTs(r.live_window[1])}`,
+          `${fmtTs(r.replay_window[0])} → ${fmtTs(r.replay_window[1])}`,
+          r.authority, r.archive_retention_days,
+        ])
+      ));
+    } else {
+      block.appendChild(el("div", "muted", "no rights versions"));
+    }
+    events.appendChild(block);
+  });
+  root.appendChild(events);
+
+  // Analytics
+  const analytics = reportSection("Analytics snapshot");
+  const pre = el("pre", "code");
+  pre.textContent = JSON.stringify(data.analytics, null, 2);
+  analytics.appendChild(pre);
+  root.appendChild(analytics);
+
+  // Audit log (full)
+  const audit = reportSection(`Audit log (${(data.audit || []).length} entries)`);
+  audit.appendChild(tableFrom(
+    ["#", "When", "Actor", "Action", "Event", "Detail"],
+    (data.audit || []).map((a) => [
+      a.id, fmtTs(a.ts), a.actor, a.action, a.event_id || "-", JSON.stringify(a.detail),
+    ])
+  ));
+  root.appendChild(audit);
+
+  root.classList.remove("hidden");
+}
+
+async function ownerLoad() {
+  try {
+    await loadInventory();
+    toast("Full inventory loaded", "ok");
+  } catch (e) {
+    toast("Inventory failed: " + (e.code || e.message), "bad");
+  }
+}
+
+async function ownerPrint() {
+  try {
+    if (!state.inventory) await loadInventory();
+    document.body.classList.add("printing");
+    const cleanup = () => { document.body.classList.remove("printing"); window.removeEventListener("afterprint", cleanup); };
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+  } catch (e) {
+    document.body.classList.remove("printing");
+    toast("Print failed: " + (e.code || e.message), "bad");
+  }
+}
+
+async function ownerExport() {
+  try {
+    const data = state.inventory || await loadInventory();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    a.href = url;
+    a.download = `three-zone-inventory-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast("Export downloaded", "ok");
+  } catch (e) {
+    toast("Export failed: " + (e.code || e.message), "bad");
+  }
+}
+
 // -- init --------------------------------------------------------------
 async function init() {
   try {
@@ -385,6 +568,9 @@ async function init() {
   $("#ingest-btn").addEventListener("click", issueIngest);
   $("#analytics-btn").addEventListener("click", refreshAnalytics);
   $("#audit-btn").addEventListener("click", refreshAudit);
+  $("#owner-load-btn").addEventListener("click", ownerLoad);
+  $("#owner-print-btn").addEventListener("click", ownerPrint);
+  $("#owner-export-btn").addEventListener("click", ownerExport);
   await restoreSession();
 }
 

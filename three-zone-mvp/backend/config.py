@@ -108,6 +108,6 @@ class Config:
             "session_ttl": self.session_ttl,
             "lease_ttl": self.lease_ttl,
             "heartbeat_timeout": self.heartbeat_timeout,
-            "demo_accounts": ["demo-viewer", "demo-admin"],
+            "demo_accounts": ["demo-viewer", "demo-worker", "demo-owner"],
             "zones": ["midwest", "west", "east"],
         }

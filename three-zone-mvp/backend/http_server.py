@@ -44,6 +44,7 @@ def _routes():
         ("POST", re.compile(r"^/api/leases/validate$"), "h_leases_validate", "none"),
         ("GET", re.compile(r"^/api/analytics$"), "h_analytics", "session"),
         ("GET", re.compile(r"^/api/audit$"), "h_audit", "operator"),
+        ("GET", re.compile(r"^/api/owner/inventory$"), "h_owner_inventory", "owner"),
         ("GET", re.compile(rf"^/demo/media/{_EVENT_RE}\.mp4$"), "h_media", "none"),
     ]
 
@@ -204,10 +205,12 @@ class _Handler(BaseHTTPRequestHandler):
                     return  # error already sent
             try:
                 user = None
-                if auth in ("session", "operator"):
+                if auth in ("session", "operator", "owner"):
                     user = self._session_user()
                     if auth == "operator":
                         self.cp.require_operator(user)
+                    elif auth == "owner":
+                        self.cp.require_owner(user)
                 getattr(self, func)(params, body, user)
             except ControlError as exc:
                 self._send_json(exc.status, {"error": str(exc), "code": exc.code})
@@ -313,6 +316,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def h_audit(self, p, b, u):
         self._send_json(200, {"audit": self.cp.audit_view(u)})
+
+    def h_owner_inventory(self, p, b, u):
+        self._send_json(200, self.cp.owner_inventory(u))
 
     def h_media(self, p, b, u):
         event_id = p["event_id"]
