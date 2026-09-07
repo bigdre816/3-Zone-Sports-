@@ -292,33 +292,57 @@ class PipelineMixin:
         )
         if not lease or lease["status"] != "active" or lease["hard_expiry"] < _now():
             raise ForbiddenError("current lease is required", "invalid_lease")
-        existing = self.db.query_one(
-            "SELECT * FROM view_sessions WHERE event_id=? AND user_id=? AND state='open'",
-            (event_id, user["user_id"]),
-        )
-        if existing:
-            return self._view_session_public(existing)
         rights = self.current_rights(event_id)
         session_id = "VS-" + uuid.uuid4().hex
         stamp = _now()
-        self.db.execute(
-            "INSERT INTO view_sessions(session_id,event_id,user_id,pseudonym,lease_id,rights_id,"
-            "rights_version,started_at,ended_at,last_seq,last_heartbeat_at,qualified_seconds,"
-            "state,close_reason,digest,canonical_json,property_id)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (session_id, event_id, user["user_id"], self._pseudonym(user["user_id"]),
-             lease_id, rights["id"] if rights else None, decision["rights_version"],
-             stamp, None, 0, stamp, 0, "open", None, None, None, row["property_id"]),
-        )
-        self._canonical_audit(
-            "VIEW_SESSION_STARTED", session_id, "member", "viewer",
-            {"event_id": event_id, "lease_id": lease_id,
-             "rights_version": decision["rights_version"]},
-            rights_version=decision["rights_version"],
-        )
-        return self._view_session_public(
-            self.db.query_one("SELECT * FROM view_sessions WHERE session_id=?", (session_id,))
-        )
+        user_id = user["user_id"]
+        pseudonym = self._pseudonym(user_id)
+        rights_id = rights["id"] if rights else None
+        rights_version = decision["rights_version"]
+        property_id = row["property_id"]
+
+        def _open_or_reuse(conn):
+            # Held under Database.write_transaction so concurrent POSTs cannot both
+            # pass the existence check and insert (ThreadingHTTPServer race).
+            existing = conn.execute(
+                "SELECT * FROM view_sessions WHERE event_id=? AND user_id=? AND state='open'",
+                (event_id, user_id),
+            ).fetchone()
+            if existing:
+                return dict(existing), False
+            try:
+                conn.execute(
+                    "INSERT INTO view_sessions(session_id,event_id,user_id,pseudonym,lease_id,rights_id,"
+                    "rights_version,started_at,ended_at,last_seq,last_heartbeat_at,qualified_seconds,"
+                    "state,close_reason,digest,canonical_json,property_id)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (session_id, event_id, user_id, pseudonym,
+                     lease_id, rights_id, rights_version,
+                     stamp, None, 0, stamp, 0, "open", None, None, None, property_id),
+                )
+            except sqlite3.IntegrityError:
+                # Unique partial index lost the race against another writer/process.
+                raced = conn.execute(
+                    "SELECT * FROM view_sessions WHERE event_id=? AND user_id=? AND state='open'",
+                    (event_id, user_id),
+                ).fetchone()
+                if raced:
+                    return dict(raced), False
+                raise
+            created = conn.execute(
+                "SELECT * FROM view_sessions WHERE session_id=?", (session_id,)
+            ).fetchone()
+            return dict(created), True
+
+        opened, created = self.db.write_transaction(_open_or_reuse)
+        if created:
+            self._canonical_audit(
+                "VIEW_SESSION_STARTED", opened["session_id"], "member", "viewer",
+                {"event_id": event_id, "lease_id": lease_id,
+                 "rights_version": rights_version},
+                rights_version=rights_version,
+            )
+        return self._view_session_public(opened)
 
     def view_heartbeat(self, session_id: str, user: dict, body: dict) -> dict:
         from .control_plane import ForbiddenError, NotFoundError, ValidationError

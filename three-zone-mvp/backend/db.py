@@ -11,6 +11,7 @@ import json
 import os
 import sqlite3
 import threading
+import time
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -291,7 +292,33 @@ class Database:
             for name, decl in event_alters.items():
                 if name not in event_cols:
                     self._conn.execute(f"ALTER TABLE events ADD COLUMN {name} {decl}")
+            self._dedupe_open_view_sessions()
+            # Created after dedupe so existing pilot DBs with raced duplicates can migrate.
+            self._conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_view_sessions_one_open "
+                "ON view_sessions(event_id, user_id) WHERE state='open'"
+            )
             self._conn.commit()
+
+    def _dedupe_open_view_sessions(self) -> None:
+        """Close duplicate open sessions so the unique partial index can be created."""
+        dupes = self._conn.execute(
+            "SELECT event_id, user_id FROM view_sessions WHERE state='open' "
+            "GROUP BY event_id, user_id HAVING COUNT(*) > 1"
+        ).fetchall()
+        for event_id, user_id in dupes:
+            rows = self._conn.execute(
+                "SELECT session_id FROM view_sessions "
+                "WHERE event_id=? AND user_id=? AND state='open' ORDER BY started_at ASC, session_id ASC",
+                (event_id, user_id),
+            ).fetchall()
+            # Keep the earliest open session; close the rest as duplicates.
+            for row in rows[1:]:
+                self._conn.execute(
+                    "UPDATE view_sessions SET state='closed', close_reason='duplicate_open', "
+                    "ended_at=? WHERE session_id=? AND state='open'",
+                    (time.time(), row[0]),
+                )
 
     # --- primitives -------------------------------------------------------
     def query(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
@@ -312,6 +339,22 @@ class Database:
         with self._lock:
             self._conn.executemany(sql, seq)
             self._conn.commit()
+
+    def write_transaction(self, fn):
+        """Run ``fn(conn)`` under the process lock and commit once.
+
+        Use this for check-then-write paths that must not release the lock between
+        statements (ThreadingHTTPServer shares one Database across request threads).
+        The unique partial index on open view sessions remains the cross-process backstop.
+        """
+        with self._lock:
+            try:
+                result = fn(self._conn)
+                self._conn.commit()
+                return result
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def close(self) -> None:
         with self._lock:

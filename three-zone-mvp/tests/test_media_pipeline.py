@@ -256,6 +256,81 @@ class ViewSessionTests(unittest.TestCase):
         self.assertEqual(row["close_reason"], "stale")
         self.assertIsNotNone(row["digest"])
 
+    def test_13b_concurrent_start_reuses_one_open_session(self):
+        """Two concurrent starts must not mint two open sessions for one viewer."""
+        import threading
+        cp = build_cp()
+        viewer = cp.get_user("demo-viewer")
+        lease = cp.request_playback("evt_mw_basketball", viewer)
+        results = []
+        errors = []
+        barrier = threading.Barrier(8)
+
+        def worker():
+            try:
+                barrier.wait(timeout=5)
+                results.append(cp.start_view_session("evt_mw_basketball", viewer, lease["lease_id"]))
+            except Exception as exc:  # pragma: no cover - surfaced via assert
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(results), 8)
+        session_ids = {r["session_id"] for r in results}
+        self.assertEqual(len(session_ids), 1)
+        open_rows = cp.db.query(
+            "SELECT * FROM view_sessions WHERE event_id=? AND user_id=? AND state='open'",
+            ("evt_mw_basketball", viewer["user_id"]),
+        )
+        self.assertEqual(len(open_rows), 1)
+        # Unique partial index must reject a second open row even outside the helper.
+        with self.assertRaises(Exception):
+            cp.db.execute(
+                "INSERT INTO view_sessions(session_id,event_id,user_id,pseudonym,lease_id,rights_id,"
+                "rights_version,started_at,ended_at,last_seq,last_heartbeat_at,qualified_seconds,"
+                "state,close_reason,digest,canonical_json,property_id)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("VS-dup", "evt_mw_basketball", viewer["user_id"], "x", lease["lease_id"],
+                 None, 1, time.time(), None, 0, time.time(), 0, "open", None, None, None, "school_lincoln"),
+            )
+
+    def test_13c_dedupe_migrates_legacy_duplicate_open_sessions(self):
+        cp = build_cp()
+        viewer = cp.get_user("demo-viewer")
+        lease = cp.request_playback("evt_mw_basketball", viewer)
+        # Drop the unique index, insert a legacy duplicate, then re-init schema.
+        cp.db.execute("DROP INDEX IF EXISTS idx_view_sessions_one_open")
+        stamp = time.time()
+        for sid in ("VS-legacy-a", "VS-legacy-b"):
+            cp.db.execute(
+                "INSERT INTO view_sessions(session_id,event_id,user_id,pseudonym,lease_id,rights_id,"
+                "rights_version,started_at,ended_at,last_seq,last_heartbeat_at,qualified_seconds,"
+                "state,close_reason,digest,canonical_json,property_id)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (sid, "evt_mw_basketball", viewer["user_id"], "x", lease["lease_id"],
+                 None, 1, stamp, None, 0, stamp, 0, "open", None, None, None, "school_lincoln"),
+            )
+        open_before = cp.db.query(
+            "SELECT session_id FROM view_sessions WHERE event_id=? AND user_id=? AND state='open' "
+            "ORDER BY session_id",
+            ("evt_mw_basketball", viewer["user_id"]),
+        )
+        self.assertGreaterEqual(len(open_before), 2)
+        cp.db.init_schema()
+        open_after = cp.db.query(
+            "SELECT session_id FROM view_sessions WHERE event_id=? AND user_id=? AND state='open'",
+            ("evt_mw_basketball", viewer["user_id"]),
+        )
+        self.assertEqual(len(open_after), 1)
+        closed = cp.db.query(
+            "SELECT close_reason FROM view_sessions WHERE session_id='VS-legacy-b'"
+        )
+        self.assertEqual(closed[0]["close_reason"], "duplicate_open")
+
 
 class ReplayPendingTests(unittest.TestCase):
     def test_14_end_sets_replay_pending_until_ready(self):
