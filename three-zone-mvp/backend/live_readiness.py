@@ -103,7 +103,17 @@ def readiness(cfg: Config) -> dict:
 
 
 def main() -> int:
-    cfg = Config.from_env()
+    try:
+        cfg = Config.from_env()
+    except RuntimeError as exc:
+        report = {
+            "ready_to_publish_live": False,
+            "checks": {"env": os.environ.get("TZ_ENV", "development")},
+            "blockers": [str(exc)],
+            "warnings": [],
+        }
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 1
     report = readiness(cfg)
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report["ready_to_publish_live"] else 1

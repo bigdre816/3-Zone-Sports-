@@ -11,8 +11,9 @@ entitlement decision, audit trail, socket notifications, and replay lifecycle.
 The local demo uses a generated MP4 as the media adapter (`TZ_MEDIA_PROVIDER=demo`).
 Cloudflare Stream is the first real hosted rail (signed HLS behind the same PDP).
 See [RUN_TONIGHT.md](RUN_TONIGHT.md) for provision, OBS/Larix, webhooks, viewer
-heartbeats, settlement manifests, and troubleshooting. Mux is a later empty seam
-on the same provider interface.
+heartbeats, settlement manifests, troubleshooting, and
+`python scripts/live_readiness.py` / `GET /api/ops/live-readiness` before flipping
+`TZ_MEDIA_PROVIDER=cloudflare`. Mux is a later empty seam on the same provider interface.
 
 ## Run it
 
