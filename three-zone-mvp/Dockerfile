@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend ./backend
 COPY scripts ./scripts
 COPY run.py ./run.py
+COPY THREE_ZONE_MASTERY.md ./THREE_ZONE_MASTERY.md
 
 # The image runs in production mode, which refuses the demo secrets. Provide
 # real TZ_TOKEN_SECRET and TZ_MEDIA_SERVICE_KEY (and TZ_ALLOWED_ORIGINS) at run.

@@ -252,6 +252,51 @@ class OwnerPortalTests(unittest.TestCase):
         self.assertIn("/api/member/live", paths)
         self.assertIn("/api/auth/login", paths)
         self.assertIn("/api/auth/register", paths)
+        self.assertIn("/api/owner/mastery", paths)
+        self.assertIn("/three-zone-mastery", paths)
+
+
+class MasteryDocumentTests(unittest.TestCase):
+    def test_mastery_article_covers_every_engine_and_the_blockchain(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(root, "THREE_ZONE_MASTERY.md")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertGreater(len(text.split()), 3500)
+        for needle in (
+            "player is never the authority",
+            "XRP Ledger",
+            "xrpl_publications",
+            "audit_events",
+            "previous_event_hash",
+            "Treasure",
+            "pbkdf2",
+            "tz_member_session",
+            "tz_lease_",
+            "socket_outbox",
+            "evaluate_access",
+            "validate_lease",
+            "TZ-01",
+            "TR-06",
+            "ingest_scope",
+            "rights_version_changed",
+            "GET /api/owner/inventory",
+            "WS",
+            "member_verifications",
+            "DEMO-",
+        ):
+            self.assertIn(needle, text)
+
+    def test_mastery_renders_to_html(self):
+        from backend.mastery import article_html, full_page_html, load_markdown
+        md = load_markdown()
+        html = article_html()
+        self.assertIn("Three Zone Mastery", md)
+        self.assertIn("<h1>", html)
+        self.assertIn("XRP Ledger", html)
+        page = full_page_html()
+        self.assertIn("Print this guide", page)
+        self.assertIn("<table>", html)
 
 
 if __name__ == "__main__":

@@ -98,6 +98,8 @@ SITE_ROUTES = [
      "purpose": "Control-plane catalog, player, operator, and owner logic"},
     {"method": "GET", "path": "/ops.css", "tier": "public",
      "purpose": "Control-plane screen and print styles"},
+    {"method": "GET", "path": "/three-zone-mastery", "tier": "public",
+     "purpose": "Printable Three Zone Mastery article (plain English, every engine)"},
     {"method": "GET", "path": "/favicon.ico", "tier": "public",
      "purpose": "Browser icon response"},
     {"method": "GET", "path": "/api/health", "tier": "public",
@@ -140,8 +142,16 @@ SITE_ROUTES = [
      "purpose": "Event detail plus the caller's access decision"},
     {"method": "POST", "path": "/api/events/{id}/playback-session", "tier": "member",
      "purpose": "Request a short-lived playback lease"},
+    {"method": "POST", "path": "/api/events/{id}/view-sessions", "tier": "member",
+     "purpose": "Start a viewer measurement session after a valid lease"},
+    {"method": "POST", "path": "/api/view-sessions/{id}/heartbeat", "tier": "member",
+     "purpose": "Authenticated viewer heartbeat (15s); not operator-only"},
+    {"method": "POST", "path": "/api/view-sessions/{id}/end", "tier": "member",
+     "purpose": "Close a viewer measurement session"},
     {"method": "GET", "path": "/demo/media/{id}.mp4", "tier": "member",
      "purpose": "Lease-gated managed media (revalidated per request)"},
+    {"method": "GET", "path": "/vendor/hls.min.js", "tier": "public",
+     "purpose": "Pinned hls.js 1.5.x for HLS playback (script-src 'self')"},
     {"method": "POST", "path": "/api/leases/validate", "tier": "service",
      "purpose": "Re-run authorization for a lease token (media proxy)"},
     {"method": "POST", "path": "/api/events", "tier": "worker",
@@ -158,14 +168,38 @@ SITE_ROUTES = [
      "purpose": "Issue an event-scoped ingest token"},
     {"method": "POST", "path": "/api/events/{id}/ingest/heartbeat", "tier": "ingest",
      "purpose": "Encoder heartbeat (ingest-token scoped)"},
+    {"method": "POST", "path": "/api/events/{id}/media/provision", "tier": "worker",
+     "purpose": "Bind one hosted live input and return the stream key once"},
+    {"method": "POST", "path": "/api/events/{id}/media/rotate-key", "tier": "worker",
+     "purpose": "Rotate the hosted ingest key (returned once)"},
+    {"method": "POST", "path": "/api/events/{id}/media/sync", "tier": "worker",
+     "purpose": "Pull provider status, replay readiness, and analytics snapshot"},
+    {"method": "GET", "path": "/api/events/{id}/media/status", "tier": "worker",
+     "purpose": "Hosted input status without keys"},
+    {"method": "GET", "path": "/api/events/{id}/settlement-manifest", "tier": "worker",
+     "purpose": "Canonical session digests, Merkle root, and XRPL enqueue"},
     {"method": "POST", "path": "/api/events/{id}/media/end", "tier": "service",
-     "purpose": "Media service signals live -> replay (service key)"},
+     "purpose": "Operator or media service ends live into replay (service key or Bearer)"},
+    {"method": "POST", "path": "/api/media/webhooks/cloudflare", "tier": "public",
+     "purpose": "Cloudflare Stream webhook (shared secret, idempotent)"},
+    {"method": "GET", "path": "/api/properties/{id}/settlements", "tier": "worker",
+     "purpose": "Property-scoped settlement list (operator/owner/auditor)"},
+    {"method": "GET", "path": "/api/properties/{id}/settlements/{sid}", "tier": "worker",
+     "purpose": "One settlement manifest without identity payloads"},
+    {"method": "GET", "path": "/api/properties/{id}/settlements/{sid}/sessions", "tier": "worker",
+     "purpose": "Pseudonymous sessions in a settlement"},
+    {"method": "GET", "path": "/api/properties/{id}/settlements/{sid}/sessions/{session_id}/proof", "tier": "worker",
+     "purpose": "Merkle inclusion proof for one session"},
+    {"method": "POST", "path": "/api/properties/{id}/settlements/{sid}/verify", "tier": "worker",
+     "purpose": "MATCH|MISMATCH|INCOMPLETE|PENDING_PUBLICATION (never silent repair)"},
     {"method": "GET", "path": "/api/audit", "tier": "worker",
      "purpose": "Read the audit log"},
     {"method": "GET", "path": "/api/analytics", "tier": "member",
      "purpose": "Aggregate event and socket metrics"},
     {"method": "GET", "path": "/api/owner/inventory", "tier": "owner",
      "purpose": "Owner back portal: print/export every single thing"},
+    {"method": "GET", "path": "/api/owner/mastery", "tier": "owner",
+     "purpose": "Owner back portal: printable Three Zone Mastery article"},
     {"method": "WS", "path": "/ws/events/{id}", "tier": "member",
      "purpose": "Event-scoped live state, score, feed, lease, and rights updates"},
 ]
@@ -206,10 +240,17 @@ def now() -> float:
     return time.time()
 
 
-class ControlPlane:
-    def __init__(self, db: Database, config):
+from .pipeline import PipelineMixin  # noqa: E402  — after error classes so the mixin can import them
+
+
+class ControlPlane(PipelineMixin):
+    def __init__(self, db: Database, config, provider=None, xrpl=None):
+        from .media_providers import get_provider
+        from .xrpl_adapter import XrplAdapter
         self.db = db
         self.config = config
+        self.provider = get_provider(config, override=provider)
+        self.xrpl = xrpl if xrpl is not None else XrplAdapter(config)
 
     # -- serialisation helpers -------------------------------------------
     @staticmethod
@@ -223,6 +264,7 @@ class ControlPlane:
             "zones": loads(row["zones"], []),
             "packages": loads(row["packages"], []),
             "destinations": loads(row["destinations"], []),
+            "properties": loads(row["properties"], []) if "properties" in row.keys() else [],
         }
 
     def _event_dict(self, row) -> dict:
@@ -243,6 +285,11 @@ class ControlPlane:
             "backup_last_seen": row["backup_last_seen"],
             "scoreboard": loads(row["scoreboard"], {}),
             "replay_available": bool(row["replay_available"]),
+            "replay_pending": bool(row["replay_pending"]) if "replay_pending" in row.keys() else False,
+            "media_provider": row["media_provider"] if "media_provider" in row.keys() else "demo",
+            "provider_state": row["provider_state"] if "provider_state" in row.keys() else "",
+            "provider_input_id": row["provider_input_id"] if "provider_input_id" in row.keys() else None,
+            "property_id": row["property_id"] if "property_id" in row.keys() else None,
             "rights": self._rights_public(rights) if rights else None,
         }
 
@@ -403,12 +450,15 @@ class ControlPlane:
         start = float(data.get("scheduled_start") or now())
         self.db.execute(
             "INSERT INTO events(event_id,title,zone,category,status,scheduled_start,"
-            "production_mode,active_source,scoreboard,replay_available,created_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "production_mode,active_source,scoreboard,replay_available,created_at,"
+            "media_provider,property_id)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 event_id, title, zone, (data.get("category") or "general"),
                 "scheduled", start, (data.get("production_mode") or "single_camera"),
                 "primary", "{}", 0, now(),
+                getattr(self.config, "media_provider", "demo"),
+                (data.get("property_id") or None),
             ),
         )
         live_start = start
@@ -533,6 +583,9 @@ class ControlPlane:
             self.db.execute("UPDATE events SET replay_available=1 WHERE event_id=?", (event_id,))
         self.audit_log(operator["user_id"], "event.transition", event_id,
                        {"from": current, "to": target})
+        if target == "live":
+            self._canonical_audit("EVENT_STARTED", event_id, "operator", operator["user_id"],
+                                  {"from": current})
         self._outbox(event_id, "event.state", {"status": target})
         return self._event_dict(self.get_event_row(event_id))
 
@@ -547,16 +600,41 @@ class ControlPlane:
         self._outbox(event_id, "score.update", {"scoreboard": scoreboard})
         return self._event_dict(self.get_event_row(event_id))
 
-    def media_end(self, event_id: str, service_key: str) -> dict:
-        if not tokens.hmac_equal(service_key, self.config.media_service_key):
-            raise ForbiddenError("invalid media service key", "bad_service_key")
+    def media_end(self, event_id: str, service_key: str | None = None, operator: dict | None = None) -> dict:
+        if operator is not None:
+            self.require_operator(operator)
+            actor = operator["user_id"]
+        else:
+            if not tokens.hmac_equal(service_key or "", self.config.media_service_key):
+                raise ForbiddenError("invalid media service key", "bad_service_key")
+            actor = "media-service"
         row = self.get_event_row(event_id)
         if row["status"] != "live":
             raise ConflictError("only a live event can end into replay", "not_live")
-        self.db.execute("UPDATE events SET status='replay', replay_available=1 WHERE event_id=?",
-                        (event_id,))
-        self.audit_log("media-service", "event.media_end", event_id, {"from": "live", "to": "replay"})
-        self._outbox(event_id, "event.state", {"status": "replay", "reason": "media_end"})
+        replay_available = 1
+        replay_pending = 0
+        if row["provider_input_id"]:
+            # Bound hosted input: disable contribution and wait for a ready VOD id.
+            self.provider.disable(self._event_map(row))
+            replay_available = 0
+            replay_pending = 1
+        self.db.execute(
+            "UPDATE events SET status='replay', replay_available=?, replay_pending=?, "
+            "provider_state=? WHERE event_id=?",
+            (replay_available, replay_pending,
+             "disabled" if row["provider_input_id"] else row["provider_state"], event_id),
+        )
+        self._close_open_sessions_for_event(event_id, "close_event")
+        self.audit_log(actor, "event.media_end", event_id, {"from": "live", "to": "replay"})
+        self._canonical_audit("STREAM_ENDED", event_id, "operator" if operator else "service", actor,
+                              {"replay_pending": bool(replay_pending)})
+        self._outbox(event_id, "event.state", {
+            "status": "replay", "reason": "media_end", "replay_pending": bool(replay_pending),
+        })
+        try:
+            self.snapshot_analytics(event_id)
+        except Exception:
+            pass
         return self._event_dict(self.get_event_row(event_id))
 
     # -- rights revoke / restore -----------------------------------------
@@ -572,6 +650,12 @@ class ControlPlane:
         )
         self.audit_log(operator["user_id"], "rights.revoked", event_id,
                        {"version": rights["version"], "reason": reason})
+        self._canonical_audit("RIGHTS_REVOKED", event_id, "operator", operator["user_id"],
+                              {"version": rights["version"]})
+        # Heartbeats fail after this because evaluate_access sees no active rights.
+        # Signed HLS URLs may live until token expiry / buffer drain; a later Worker
+        # is the kill switch, not this URL.
+        self._close_open_sessions_for_event(event_id, "rights_revoked")
         self._outbox(event_id, "rights.revoked", {"version": rights["version"], "reason": reason})
         return self._event_dict(self.get_event_row(event_id))
 
@@ -654,6 +738,7 @@ class ControlPlane:
             self.audit_log(user["user_id"], "playback.denied", event_id, {"reason": decision["code"]})
             raise ForbiddenError(decision["message"], decision["code"])
         lease_id = uuid.uuid4().hex
+        expires_at = now() + self.config.lease_ttl
         lease = tokens.sign(
             self.config.token_secret, "lease",
             {
@@ -663,8 +748,17 @@ class ControlPlane:
             },
             self.config.lease_ttl,
         )
+        event = self._event_map(row)
+        media_url, media_type = self.provider.playback_url(event, expires_at)
+        self._persist_lease(lease_id, event_id, user["user_id"],
+                            decision["rights_version"], decision["mode"], self.config.lease_ttl)
         self.audit_log(user["user_id"], "playback.granted", event_id,
                        {"mode": decision["mode"], "rights_version": decision["rights_version"]})
+        self._canonical_audit(
+            "PLAYBACK_LEASE_ISSUED", lease_id, "system", "rights-service",
+            {"event_id": event_id, "mode": decision["mode"], "media_type": media_type},
+            rights_version=decision["rights_version"],
+        )
         return {
             "allow": True,
             "mode": decision["mode"],
@@ -672,7 +766,9 @@ class ControlPlane:
             "lease_token": lease,
             "lease_id": lease_id,
             "lease_ttl": self.config.lease_ttl,
-            "media_url": f"/demo/media/{event_id}.mp4",
+            "lease_expires_at": expires_at,
+            "media_url": media_url,
+            "media_type": media_type,
         }
 
     def validate_lease(self, event_id: str, lease_token: str) -> dict:
