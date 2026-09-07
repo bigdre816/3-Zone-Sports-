@@ -203,7 +203,9 @@ class _Handler(BaseHTTPRequestHandler):
 
         if method == "GET" and path in ("/", "/index.html"):
             return self._serve_static("index.html")
-        if method == "GET" and path in ("/app.js", "/styles.css"):
+        if method == "GET" and path in ("/ops", "/ops.html"):
+            return self._serve_static("ops.html")
+        if method == "GET" and path in ("/app.js", "/portal.js", "/styles.css", "/ops.css"):
             return self._serve_static(path.lstrip("/"))
         if method == "GET" and path == "/favicon.ico":
             self.send_response(HTTPStatus.NO_CONTENT)

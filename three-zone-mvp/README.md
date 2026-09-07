@@ -25,7 +25,9 @@ python -m pip install -r requirements.txt
 python run.py
 ```
 
-Open <http://127.0.0.1:8000>.
+Open <http://127.0.0.1:8000> for the Sports Access members portal.
+
+Open <http://127.0.0.1:8000/ops> for the original operator/owner control-plane console.
 
 The site has three tiers, each with its own portal:
 
