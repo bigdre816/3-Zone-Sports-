@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investment Tracker</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1e3a8a 0%, #7c3aed 100%);
+            min-height: 100vh;
+            padding: 10px 10px 80px 10px;
+        }
+        h1 { color: white; text-align: center; padding: 20px 0; font-size: 24px; }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        .row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .name { font-size: 18px; font-weight: bold; color: #1f2937; }
+        .symbol { font-size: 12px; color: #6b7280; }
+        .price { font-size: 20px; font-weight: bold; color: #7c3aed; }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            background: #f3f4f6;
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .item { text-align: center; }
+        .label { font-size: 10px; color: #6b7280; text-transform: uppercase; }
+        .value { font-size: 15px; font-weight: bold; color: #1f2937; margin-top: 2px; }
+        .profit { color: #10b981; }
+        .loss { color: #ef4444; }
+        .alerts { display: flex; gap: 5px; flex-wrap: wrap; margin: 10px 0; }
+        .badge {
+            padding: 5px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            animation: blink 2s infinite;
+        }
+        .badge-profit { background: #10b981; color: white; }
+        .badge-buy { background: #ef4444; color: white; }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .btn {
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .btn-edit { background: #ddd6fe; color: #7c3aed; }
+        .btn-del { background: #fee; color: #ef4444; }
+        .btn-save {
+            background: linear-gradient(135deg, #1e3a8a 0%, #7c3aed 100%);
+            color: white;
+            width: 100%;
+            padding: 12px;
+        }
+        .fab {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #1e3a8a 0%, #7c3aed 100%);
+            color: white;
+            border: none;
+            font-size: 28px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            cursor: pointer;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 1000;
+        }
+        .modal.show { display: flex; }
+        .box {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            width: 100%;
+            max-width: 400px;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+        .head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .title { font-size: 20px; font-weight: bold; }
+        .close {
+            font-size: 30px;
+            color: #6b7280;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+        .field { margin-bottom: 15px; }
+        .field label {
+            display: block;
+            font-size: 13px;
+            font-weight: bold;
+            color: #374151;
+            margin-bottom: 5px;
+        }
+        .field input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        .field input:focus { outline: none; border-color: #7c3aed; }
+        .help { font-size: 12px; color: #6b7280; margin-top: 3px; }
+        .notif {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            z-index: 2000;
+            display: none;
+        }
+        .notif.show { display: block; animation: slideIn 0.3s; }
+        @keyframes slideIn {
+            from { transform: translateY(-100px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .notif-title { font-weight: bold; font-size: 16px; margin-bottom: 5px; }
+        .notif-msg { font-size: 14px; color: #6b7280; }
+    </style>
+</head>
+<body>
+    <h1>💰 Investment Tracker</h1>
+    <div id="list"></div>
+    <button class="fab" onclick="add()">+</button>
+
+```
+<div id="modal" class="modal">
+    <div class="box">
+        <div class="head">
+            <div class="title" id="mtitle">Add Asset</div>
+            <button class="close" onclick="close1()">&times;</button>
+        </div>
+        <div class="field">
+            <label>Name</label>
+            <input type="text" id="name" placeholder="Bitcoin">
+        </div>
+        <div class="field">
+            <label>Symbol</label>
+            <input type="text" id="symbol" placeholder="BTC">
+        </div>
+        <div class="field">
+            <label>Current Price ($)</label>
+            <input type="number" id="curr" placeholder="100000" step="0.00000001">
+        </div>
+        <div class="field">
+            <label>Your Buy Price ($)</label>
+            <input type="number" id="buy" placeholder="95000" step="0.00000001">
+        </div>
+        <div class="field">
+            <label>Quantity</label>
+            <input type="number" id="qty" placeholder="1" step="0.00000001">
+        </div>
+        <button class="btn-save" onclick="save()">Save</button>
+    </div>
+</div>
+
+<div id="notif" class="notif">
+    <div class="notif-title"></div>
+    <div class="notif-msg"></div>
+</div>
+
+<script>
+    // CLEAR OLD DATA
+    localStorage.removeItem('assets');
+    localStorage.removeItem('investmentAssets');
+    localStorage.removeItem('alerts');
+    
+    let data = [
+        { n: 'World Liberty Financial', s: 'WLFI', c: 0.1583, b: 0, q: 0 },
+        { n: 'XRP', s: 'XRP', c: 3.00, b: 0, q: 0 },
+        { n: 'Bitcoin', s: 'BTC', c: 100000, b: 0, q: 0 },
+        { n: 'Ethereum', s: 'ETH', c: 3300, b: 0, q: 0 },
+        { n: 'Chainlink', s: 'LINK', c: 21, b: 0, q: 0 },
+        { n: 'Hedera', s: 'HBAR', c: 0.28, b: 0, q: 0 },
+        { n: 'Akash', s: 'AKT', c: 3.50, b: 0, q: 0 }
+    ];
+    
+    let idx = null;
+    let alerted = {};
+    
+    function notify(t, m) {
+        const n = document.getElementById('notif');
+        n.querySelector('.notif-title').textContent = t;
+        n.querySelector('.notif-msg').textContent = m;
+        n.classList.add('show');
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        setTimeout(() => n.classList.remove('show'), 4000);
+    }
+    
+    function getAlerts(a) {
+        if (!a.b || !a.c || a.b <= 0) return [];
+        const p = ((a.c - a.b) / a.b) * 100;
+        const out = [];
+        
+        [5, 10, 15, 20].forEach(t => {
+            if (p >= t) {
+                out.push({ t: `📈 ${t}% PROFIT`, c: 'badge-profit' });
+                const k = a.s + '-p' + t;
+                if (!alerted[k]) {
+                    alerted[k] = 1;
+                    notify(`🎉 ${a.s} +${t}%!`, `Take profits! Now $${a.c.toFixed(4)}`);
+                }
+            }
+        });
+        
+        [5, 10, 15].forEach(t => {
+            if (p <= -t) {
+                out.push({ t: `💰 ${t}% DIP`, c: 'badge-buy' });
+                const k = a.s + '-b' + t;
+                if (!alerted[k]) {
+                    alerted[k] = 1;
+                    notify(`💰 ${a.s} -${t}%`, `Buy opportunity! Now $${a.c.toFixed(4)}`);
+                }
+            }
+        });
+        
+        if (Math.abs(p) < 3) {
+            Object.keys(alerted).forEach(k => {
+                if (k.startsWith(a.s)) delete alerted[k];
+            });
+        }
+        
+        return out;
+    }
+    
+    function show() {
+        let h = '';
+        data.forEach((a, i) => {
+            const inv = a.b * a.q;
+            const now = a.c * a.q;
+            const pl = now - inv;
+            const pp = inv > 0 ? ((now - inv) / inv) * 100 : 0;
+            const alerts = getAlerts(a);
+            
+            h += `<div class="card">
+                <div class="row">
+                    <div>
+                        <div class="name">${a.n}</div>
+                        <div class="symbol">${a.s}</div>
+                    </div>
+                    <div class="price">$${a.c < 1 ? a.c.toFixed(4) : a.c.toFixed(2)}</div>
+                </div>`;
+            
+            if (alerts.length > 0) {
+                h += '<div class="alerts">';
+                alerts.forEach(x => h += `<div class="badge ${x.c}">${x.t}</div>`);
+                h += '</div>';
+            }
+            
+            h += `<div class="grid">
+                <div class="item"><div class="label">Holdings</div><div class="value">${a.q.toFixed(4)}</div></div>
+                <div class="item"><div class="label">Value</div><div class="value">$${now.toFixed(2)}</div></div>
+                <div class="item"><div class="label">Change</div><div class="value ${pp >= 0 ? 'profit' : 'loss'}">${pp >= 0 ? '+' : ''}${pp.toFixed(2)}%</div></div>
+                <div class="item"><div class="label">P/L</div><div class="value ${pl >= 0 ? 'profit' : 'loss'}">${pl >= 0 ? '+' : ''}$${pl.toFixed(2)}</div></div>
+            </div>
+            <div class="btns">
+                <button class="btn btn-edit" onclick="edit(${i})">✏️ Edit</button>
+                <button class="btn btn-del" onclick="del(${i})">🗑️ Delete</button>
+            </div>
+            </div>`;
+        });
+        
+        document.getElementById('list').innerHTML = h;
+    }
+    
+    function add() {
+        idx = null;
+        document.getElementById('mtitle').textContent = 'Add Asset';
+        document.getElementById('name').value = '';
+        document.getElementById('symbol').value = '';
+        document.getElementById('curr').value = '';
+        document.getElementById('buy').value = '';
+        document.getElementById('qty').value = '';
+        document.getElementById('modal').classList.add('show');
+    }
+    
+    function edit(i) {
+        idx = i;
+        const a = data[i];
+        document.getElementById('mtitle').textContent = 'Edit Asset';
+        document.getElementById('name').value = a.n;
+        document.getElementById('symbol').value = a.s;
+        document.getElementById('curr').value = a.c;
+        document.getElementById('buy').value = a.b;
+        document.getElementById('qty').value = a.q;
+        document.getElementById('modal').classList.add('show');
+    }
+    
+    function close1() {
+        document.getElementById('modal').classList.remove('show');
+    }
+    
+    function save() {
+        const n = document.getElementById('name').value.trim();
+        const s = document.getElementById('symbol').value.trim().toUpperCase();
+        const c = parseFloat(document.getElementById('curr').value) || 0;
+        const b = parseFloat(document.getElementById('buy').value) || 0;
+        const q = parseFloat(document.getElementById('qty').value) || 0;
+        
+        if (!n || !s) {
+            alert('Enter name and symbol');
+            return;
+        }
+        
+        if (idx !== null) {
+            data[idx] = { n, s, c, b, q };
+        } else {
+            data.push({ n, s, c, b, q });
+        }
+        
+        show();
+        close1();
+    }
+    
+    function del(i) {
+        if (confirm(`Delete ${data[i].n}?`)) {
+            data.splice(i, 1);
+            show();
+        }
+    }
+    
+    show();
+    setInterval(show, 30000);
+</script>
+```
+
+</body>
+</html>
