@@ -9,12 +9,15 @@
 <body>
   <header>
     <a class="brand" href="/">Three-Zone</a>
-    <nav id="section-nav" class="hidden">
-      <a href="#live">Live</a>
-      <a href="#schedules">Schedules</a>
-      <a href="#archives">Archives</a>
+    <nav id="section-nav" class="hidden" aria-label="Member">
+      <a href="#feed" data-view="feed">Feed</a>
+      <a href="#live" data-view="live">Live</a>
+      <a href="#schedules" data-view="watch">Watch</a>
+      <a href="#inbox" data-view="inbox">Inbox</a>
+      <a href="#profile" data-view="profile">Profile</a>
     </nav>
     <div class="header-actions">
+      <button id="create-btn" class="hidden" type="button">Create</button>
       <a id="ops-link" class="quiet hidden" href="/ops">Control plane</a>
       <button id="signout" class="quiet hidden" type="button">Sign out</button>
     </div>
@@ -22,8 +25,9 @@
 
   <main>
     <section id="auth" class="auth">
-      <h1>Member site</h1>
-      <p class="sub">Sign in to watch live games, check schedules, and open archives you are entitled to.</p>
+      <h1>Watch it. Save it. Clip it. Share it.</h1>
+      <p class="sub">The sports-only member network. Sign in to post, clip full games, and follow athletes.</p>
+      <div id="public-feed" class="feed-col"></div>
       <div class="auth-grid">
         <form id="login-form">
           <h2>Sign in</h2>
@@ -43,22 +47,83 @@
     </section>
 
     <section id="portal" class="hidden">
-      <p class="eyebrow">Signed in as <span id="member-name">Member</span></p>
+      <p class="eyebrow">Signed in as <span id="member-name">Member</span> · <span id="member-handle"></span></p>
       <input id="search" placeholder="Search schools, teams, or games" />
-      <section id="live">
+
+      <section id="view-feed" class="view">
+        <div class="section-title">
+          <h2>Feed</h2>
+          <span>Chronological. Not machine learning.</span>
+        </div>
+        <div class="chip-row" role="tablist" aria-label="Feed mode">
+          <button type="button" class="chip active" data-mode="for_you">For You</button>
+          <button type="button" class="chip" data-mode="following">Following</button>
+          <button type="button" class="chip" data-mode="local">Local</button>
+        </div>
+        <div class="chip-row" role="group" aria-label="Sport filter">
+          <button type="button" class="chip active" data-sport="">All</button>
+          <button type="button" class="chip" data-sport="basketball">Basketball</button>
+          <button type="button" class="chip" data-sport="football">Football</button>
+          <button type="button" class="chip" data-sport="soccer">Soccer</button>
+          <button type="button" class="chip" data-sport="baseball">Baseball</button>
+          <button type="button" class="chip" data-sport="volleyball">Volleyball</button>
+          <button type="button" class="chip" data-sport="other">Other</button>
+        </div>
+        <div id="feed-list" class="feed-col"></div>
+      </section>
+
+      <section id="view-live" class="view hidden">
         <div class="section-title"><h2>Live</h2><span>Games you can watch now or that are cleared to go live.</span></div>
         <div id="live-list" class="cards"></div>
       </section>
-      <div class="columns">
-        <section id="schedules">
-          <div class="section-title"><h2>Schedules</h2><span>Upcoming fixtures for entitled teams.</span></div>
-          <div id="schedule-list" class="schedule"></div>
-        </section>
-        <section id="archives">
-          <div class="section-title"><h2>Archives</h2><span>School, team, season, game.</span></div>
-          <div id="archive-list" class="cards archive"></div>
-        </section>
-      </div>
+
+      <section id="view-watch" class="view hidden">
+        <div class="columns">
+          <section id="schedules">
+            <div class="section-title"><h2>Schedules</h2><span>Upcoming fixtures for entitled teams.</span></div>
+            <div id="schedule-list" class="schedule"></div>
+          </section>
+          <section id="archives">
+            <div class="section-title"><h2>Archives</h2><span>School, team, season, game.</span></div>
+            <div id="archive-list" class="cards archive"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="view-inbox" class="view hidden">
+        <div class="section-title"><h2>Inbox</h2><span>Shared posts, clips, and games. Not a chat.</span></div>
+        <div id="inbox-list" class="feed-col"></div>
+      </section>
+
+      <section id="view-profile" class="view hidden">
+        <div class="profile-head">
+          <div>
+            <h2 id="profile-name">Profile</h2>
+            <p class="sub" id="profile-meta"></p>
+          </div>
+          <form id="profile-form" class="form-grid compact">
+            <label>Display name <input name="display_name" /></label>
+            <label>Handle <input name="handle" /></label>
+            <label>Bio <input name="bio" maxlength="280" /></label>
+            <label>Type
+              <select name="profile_type">
+                <option>fan</option><option>athlete</option><option>parent</option><option>coach</option>
+                <option>school</option><option>team</option><option>videographer</option>
+                <option value="sports_organization">sports organization</option>
+              </select>
+            </label>
+            <button type="submit">Save profile</button>
+          </form>
+        </div>
+        <div class="chip-row">
+          <button type="button" class="chip active" data-tab="posts">Posts</button>
+          <button type="button" class="chip" data-tab="clips">Clips</button>
+          <button type="button" class="chip" data-tab="games">Games</button>
+          <button type="button" class="chip" data-tab="saved">Saved</button>
+        </div>
+        <div id="profile-list" class="feed-col"></div>
+      </section>
+
       <section id="player-wrap" class="hidden">
         <h2 id="player-title"></h2>
         <p id="player-state"></p>
@@ -66,6 +131,97 @@
       </section>
     </section>
   </main>
+
+  <dialog id="create-dialog" aria-labelledby="create-title">
+    <form method="dialog" class="dialog-bar">
+      <strong id="create-title">Create</strong>
+      <button type="submit" class="quiet" value="close">Close</button>
+    </form>
+    <div class="create-choices">
+      <button type="button" data-kind="photo">Photo</button>
+      <button type="button" data-kind="clip">Clip</button>
+      <button type="button" data-kind="game">Full Game</button>
+    </div>
+    <form id="composer" class="hidden">
+      <p id="composer-kind" class="eyebrow"></p>
+      <label>File <input id="composer-file" type="file" accept="image/*,video/*" /></label>
+      <video id="composer-preview" class="hidden" controls playsinline muted></video>
+      <label>Caption <textarea name="caption" rows="3"></textarea></label>
+      <label>Sport
+        <select name="sport">
+          <option>basketball</option><option>football</option><option>soccer</option>
+          <option>baseball</option><option>volleyball</option><option>other</option>
+        </select>
+      </label>
+      <label>Visibility
+        <select name="visibility">
+          <option value="public">public</option>
+          <option value="connections">connections</option>
+          <option value="team">team</option>
+          <option value="private">private</option>
+        </select>
+      </label>
+      <div id="game-fields" class="hidden">
+        <label>Home team <input name="home_team_name" /></label>
+        <label>Away team <input name="away_team_name" /></label>
+        <label>Venue <input name="venue" /></label>
+        <label>Season <input name="season" value="2026" /></label>
+        <label>Level
+          <select name="level">
+            <option value="youth">youth</option>
+            <option value="middle_school">middle school</option>
+            <option value="high_school">high school</option>
+            <option value="aau_club">AAU/club</option>
+            <option value="college">college</option>
+            <option>other</option>
+          </select>
+        </label>
+        <label>Attach existing event ID <input name="event_id" placeholder="evt_…" /></label>
+        <label class="check"><input name="rights_attestation" type="checkbox" required /> I attest I have the right to upload this media. Public full games stay pending verification.</label>
+      </div>
+      <p id="upload-status" class="sub" aria-live="polite"></p>
+      <button type="submit">Publish</button>
+    </form>
+  </dialog>
+
+  <dialog id="studio-dialog" aria-labelledby="studio-title">
+    <form method="dialog" class="dialog-bar">
+      <strong id="studio-title">Three-Zone Studio</strong>
+      <button type="submit" class="quiet" value="close">Close</button>
+    </form>
+    <p class="sub">Trim a moment. The source game is not changed. Maximum 90 seconds.</p>
+    <video id="studio-video" controls playsinline></video>
+    <form id="studio-form">
+      <input type="hidden" name="game_id" />
+      <label>Start (seconds) <input name="start_seconds" type="number" min="0" step="0.1" required /></label>
+      <label>End (seconds) <input name="end_seconds" type="number" min="0.1" step="0.1" required /></label>
+      <label>Caption <textarea name="caption" rows="2"></textarea></label>
+      <label>Visibility
+        <select name="visibility">
+          <option value="private">save privately</option>
+          <option value="public">public</option>
+          <option value="connections">connections</option>
+        </select>
+      </label>
+      <p id="studio-status" class="sub" aria-live="polite"></p>
+      <button type="submit">Render and publish</button>
+    </form>
+  </dialog>
+
+  <dialog id="send-dialog" aria-labelledby="send-title">
+    <form method="dialog" class="dialog-bar">
+      <strong id="send-title">Send</strong>
+      <button type="submit" class="quiet" value="close">Close</button>
+    </form>
+    <form id="send-form">
+      <input type="hidden" name="subject_type" />
+      <input type="hidden" name="subject_id" />
+      <label>Recipient handle <input name="recipient_handle" required /></label>
+      <label>Message <input name="message" maxlength="280" /></label>
+      <button type="submit">Send</button>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast hidden"></div>
   <script src="/portal.js"></script>
 </body>

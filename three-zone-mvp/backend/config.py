@@ -55,6 +55,16 @@ class Config:
     xrpl_signing_secret: str = ""
     xrpl_key_id: str = ""
     seed_passwords: dict = field(default_factory=dict)
+    media_provider: str = "fake"
+    cloudflare_account_id: str = ""
+    cloudflare_api_token: str = ""
+    cloudflare_webhook_secret: str = ""
+    max_post_video_seconds: int = 90
+    max_game_clip_seconds: int = 90
+    max_game_bytes: int = 8 * 1024 * 1024 * 1024
+    max_photo_bytes: int = 8 * 1024 * 1024
+    public_app_url: str = ""
+    fake_webhook_secret: str = "fake-webhook-secret"
 
     @classmethod
     def from_env(cls, http_port: int | None = None, ws_port: int | None = None,
@@ -90,6 +100,16 @@ class Config:
                 "demo-worker": os.environ.get("TZ_SEED_PASSWORD_WORKER", DEMO_SEED_PASSWORDS["demo-worker"]),
                 "demo-owner": os.environ.get("TZ_SEED_PASSWORD_OWNER", DEMO_SEED_PASSWORDS["demo-owner"]),
             },
+            media_provider=os.environ.get("TZ_MEDIA_PROVIDER", "fake").strip().lower(),
+            cloudflare_account_id=os.environ.get("TZ_CLOUDFLARE_ACCOUNT_ID", ""),
+            cloudflare_api_token=os.environ.get("TZ_CLOUDFLARE_API_TOKEN", ""),
+            cloudflare_webhook_secret=os.environ.get("TZ_CLOUDFLARE_WEBHOOK_SECRET", ""),
+            max_post_video_seconds=int(os.environ.get("TZ_MAX_POST_VIDEO_SECONDS", "90")),
+            max_game_clip_seconds=int(os.environ.get("TZ_MAX_GAME_CLIP_SECONDS", "90")),
+            max_game_bytes=int(os.environ.get("TZ_MAX_GAME_BYTES", str(8 * 1024 * 1024 * 1024))),
+            max_photo_bytes=int(os.environ.get("TZ_MAX_PHOTO_BYTES", str(8 * 1024 * 1024))),
+            public_app_url=os.environ.get("TZ_PUBLIC_APP_URL", ""),
+            fake_webhook_secret=os.environ.get("TZ_FAKE_WEBHOOK_SECRET", "fake-webhook-secret"),
         )
         cfg.validate()
         return cfg
@@ -138,4 +158,9 @@ class Config:
             "zones": ["midwest", "west", "east"],
             "simulation": self.env in ("demo", "development", "local"),
             "register_enabled": True,
+            "media_provider": self.media_provider,
+            "max_post_video_seconds": self.max_post_video_seconds,
+            "max_game_clip_seconds": self.max_game_clip_seconds,
+            "sports": ["basketball", "football", "soccer", "baseball", "volleyball", "other"],
+            "feed_ranking": "published_at DESC, post_id DESC (chronological; not machine learning)",
         }

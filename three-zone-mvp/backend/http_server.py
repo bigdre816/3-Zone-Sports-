@@ -14,9 +14,13 @@ import re
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 from . import demo_media
 from .control_plane import ControlError, ControlPlane
+from .identity import bearer_from_header, resolve_identity, resolve_identity_optional
+from .media_provider import build_provider
+from .network import NetworkService
 from .portal import PortalService
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -35,13 +39,13 @@ def _routes():
         ("POST", re.compile(r"^/api/auth/start$"), "h_auth_start", "none"),
         ("POST", re.compile(r"^/api/auth/verify$"), "h_auth_verify", "none"),
         ("POST", re.compile(r"^/api/auth/logout$"), "h_auth_logout", "none"),
-        ("GET", re.compile(r"^/api/member/me$"), "h_member_me", "none"),
-        ("GET", re.compile(r"^/api/member/live$"), "h_member_live", "none"),
-        ("GET", re.compile(r"^/api/member/schedules$"), "h_member_schedules", "none"),
-        ("GET", re.compile(r"^/api/member/archives$"), "h_member_archives", "none"),
-        ("GET", re.compile(r"^/api/member/search$"), "h_member_search", "none"),
-        ("POST", re.compile(rf"^/api/member/events/{_EVENT_RE}/playback$"), "h_member_playback", "none"),
-        ("POST", re.compile(r"^/api/member/archive/(?P<archive_id>[A-Za-z0-9_-]+)/playback$"), "h_archive_playback", "none"),
+        ("GET", re.compile(r"^/api/member/me$"), "h_member_me", "member"),
+        ("GET", re.compile(r"^/api/member/live$"), "h_member_live", "member"),
+        ("GET", re.compile(r"^/api/member/schedules$"), "h_member_schedules", "member"),
+        ("GET", re.compile(r"^/api/member/archives$"), "h_member_archives", "member"),
+        ("GET", re.compile(r"^/api/member/search$"), "h_member_search", "member"),
+        ("POST", re.compile(rf"^/api/member/events/{_EVENT_RE}/playback$"), "h_member_playback", "member"),
+        ("POST", re.compile(r"^/api/member/archive/(?P<archive_id>[A-Za-z0-9_-]+)/playback$"), "h_archive_playback", "member"),
         ("POST", re.compile(r"^/api/admin/schedules/upload$"), "h_schedule_upload", "operator"),
         ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)$"), "h_audit_detail", "operator"),
         ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)/xrpl$"), "h_audit_detail", "operator"),
@@ -65,6 +69,50 @@ def _routes():
         ("GET", re.compile(r"^/api/audit$"), "h_audit", "operator"),
         ("GET", re.compile(r"^/api/owner/inventory$"), "h_owner_inventory", "owner"),
         ("GET", re.compile(rf"^/demo/media/{_EVENT_RE}\.mp4$"), "h_media", "none"),
+        ("GET", re.compile(r"^/api/network/me/profile$"), "h_net_me", "member"),
+        ("POST", re.compile(r"^/api/network/me/profile$"), "h_net_me_update", "member"),
+        ("GET", re.compile(r"^/api/network/profiles/(?P<handle>[a-z][a-z0-9_]{2,31})$"), "h_net_profile", "optional"),
+        ("POST", re.compile(r"^/api/network/profiles/(?P<handle>[a-z][a-z0-9_]{2,31})/follow$"), "h_net_follow", "member"),
+        ("POST", re.compile(r"^/api/network/profiles/(?P<handle>[a-z][a-z0-9_]{2,31})/unfollow$"), "h_net_unfollow", "member"),
+        ("GET", re.compile(r"^/api/network/profiles/(?P<handle>[a-z][a-z0-9_]{2,31})/(?P<tab>posts|clips|games|saved)$"), "h_net_profile_tab", "optional"),
+        ("POST", re.compile(r"^/api/network/uploads$"), "h_net_upload", "member"),
+        ("GET", re.compile(r"^/api/network/uploads/(?P<job_id>upl_[a-z0-9]+)$"), "h_net_upload_status", "member"),
+        ("POST", re.compile(r"^/api/network/uploads/(?P<job_id>upl_[a-z0-9]+)/cancel$"), "h_net_upload_cancel", "member"),
+        ("POST", re.compile(r"^/api/network/uploads/(?P<job_id>upl_[a-z0-9]+)/retry$"), "h_net_upload_retry", "member"),
+        ("POST", re.compile(r"^/api/network/webhooks/media$"), "h_net_webhook", "none"),
+        ("POST", re.compile(r"^/api/network/provider/fake/upload/(?P<token>[A-Za-z0-9_-]+)$"), "h_net_fake_upload", "none"),
+        ("POST", re.compile(r"^/api/network/posts$"), "h_net_post_create", "member"),
+        ("GET", re.compile(r"^/api/network/posts/(?P<post_id>pst_[a-z0-9]+)$"), "h_net_post_get", "optional"),
+        ("POST", re.compile(r"^/api/network/posts/(?P<post_id>pst_[a-z0-9]+)$"), "h_net_post_update", "member"),
+        ("POST", re.compile(r"^/api/network/posts/(?P<post_id>pst_[a-z0-9]+)/delete$"), "h_net_post_delete", "member"),
+        ("GET", re.compile(r"^/api/network/feed$"), "h_net_feed", "optional"),
+        ("POST", re.compile(r"^/api/network/games$"), "h_net_game_create", "member"),
+        ("GET", re.compile(r"^/api/network/games/(?P<game_id>gme_[a-z0-9]+)$"), "h_net_game_get", "optional"),
+        ("POST", re.compile(r"^/api/network/games/(?P<game_id>gme_[a-z0-9]+)/attach$"), "h_net_game_attach", "member"),
+        ("POST", re.compile(r"^/api/network/games/(?P<game_id>gme_[a-z0-9]+)/playback$"), "h_net_game_playback", "member"),
+        ("POST", re.compile(r"^/api/network/clips$"), "h_net_clip_create", "member"),
+        ("GET", re.compile(r"^/api/network/clips/(?P<clip_id>clp_[a-z0-9]+)$"), "h_net_clip_get", "optional"),
+        ("POST", re.compile(r"^/api/network/clips/(?P<clip_id>clp_[a-z0-9]+)/render$"), "h_net_clip_render", "member"),
+        ("POST", re.compile(r"^/api/network/clips/(?P<clip_id>clp_[a-z0-9]+)/publish$"), "h_net_clip_publish", "member"),
+        ("POST", re.compile(r"^/api/network/react$"), "h_net_react", "member"),
+        ("POST", re.compile(r"^/api/network/unreact$"), "h_net_unreact", "member"),
+        ("GET", re.compile(r"^/api/network/comments$"), "h_net_comments", "optional"),
+        ("POST", re.compile(r"^/api/network/comments$"), "h_net_comment_create", "member"),
+        ("POST", re.compile(r"^/api/network/comments/(?P<comment_id>cmt_[a-z0-9]+)/delete$"), "h_net_comment_delete", "member"),
+        ("POST", re.compile(r"^/api/network/saves$"), "h_net_save", "member"),
+        ("POST", re.compile(r"^/api/network/saves/delete$"), "h_net_unsave", "member"),
+        ("POST", re.compile(r"^/api/network/shares$"), "h_net_share", "member"),
+        ("GET", re.compile(r"^/api/network/inbox$"), "h_net_inbox", "member"),
+        ("POST", re.compile(r"^/api/network/inbox/(?P<share_id>shr_[a-z0-9]+)/read$"), "h_net_inbox_read", "member"),
+        ("POST", re.compile(r"^/api/network/reports$"), "h_net_report", "member"),
+        ("GET", re.compile(r"^/api/network/review$"), "h_net_review", "operator"),
+        ("POST", re.compile(r"^/api/network/review/games/(?P<game_id>gme_[a-z0-9]+)$"), "h_net_review_game", "operator"),
+        ("POST", re.compile(r"^/api/network/review/cases/(?P<case_id>mod_[a-z0-9]+)$"), "h_net_review_case", "operator"),
+        ("POST", re.compile(r"^/api/network/profiles/(?P<profile_id>prf_[a-z0-9]+)/verify$"), "h_net_verify", "operator"),
+        ("GET", re.compile(r"^/api/network/evidence/(?P<subject_type>game|clip|post)/(?P<subject_id>[A-Za-z0-9_-]+)$"), "h_net_evidence", "owner"),
+        ("GET", re.compile(r"^/api/network/evidence/(?P<subject_type>game|clip|post)/(?P<subject_id>[A-Za-z0-9_-]+)\.csv$"), "h_net_evidence_csv", "owner"),
+        ("GET", re.compile(r"^/api/network/evidence/(?P<subject_type>game|clip|post)/(?P<subject_id>[A-Za-z0-9_-]+)\.html$"), "h_net_evidence_html", "owner"),
+        ("GET", re.compile(r"^/api/network/media/(?P<asset_id>med_[a-z0-9]+)$"), "h_net_media", "optional"),
     ]
 
 
@@ -75,6 +123,7 @@ class _Handler(BaseHTTPRequestHandler):
     # bound by the factory
     cp: ControlPlane = None  # type: ignore
     portal: PortalService = None  # type: ignore
+    network: NetworkService = None  # type: ignore
     media_dir: str = "data/media"
     routes = _routes()
 
@@ -153,12 +202,22 @@ class _Handler(BaseHTTPRequestHandler):
             return None
         return data
 
+    def _qs(self) -> dict:
+        return {key: values[0] for key, values in parse_qs(urlparse(self.path).query).items()}
+
     def _session_user(self):
-        auth = self.headers.get("Authorization", "")
-        if not auth.startswith("Bearer "):
-            raise ControlError("missing bearer session token", "missing_session")
-        token = auth[len("Bearer "):].strip()
-        return self.cp.verify_session(token)
+        return resolve_identity(
+            self.cp, self.portal,
+            bearer_from_header(self.headers.get("Authorization")),
+            self._cookie("tz_member_session"),
+        )
+
+    def _optional_user(self):
+        return resolve_identity_optional(
+            self.cp, self.portal,
+            bearer_from_header(self.headers.get("Authorization")),
+            self._cookie("tz_member_session"),
+        )
 
     def _cookie(self, name: str) -> str | None:
         raw = self.headers.get("Cookie")
@@ -230,7 +289,9 @@ class _Handler(BaseHTTPRequestHandler):
                     return  # error already sent
             try:
                 user = None
-                if auth in ("session", "operator", "owner"):
+                if auth == "optional":
+                    user = self._optional_user()
+                elif auth in ("member", "session", "operator", "owner"):
                     user = self._session_user()
                     if auth == "operator":
                         self.cp.require_operator(user)
@@ -308,42 +369,35 @@ class _Handler(BaseHTTPRequestHandler):
         self._send_json(200, {"ok": True}, extra_headers={"Set-Cookie": "tz_member_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"})
 
     def h_member_me(self, p, b, u):
-        session, user = self._member_session()
+        profile = self.network.get_own_profile(u)
         self._send_json(200, {"member": {
-            "member_id": user["user_id"], "display_name": user["display_name"], "role": user["role"],
-        }, "verification_id": session["verification_id"], "entitlement_version": session["entitlement_version"]})
+            "member_id": u["user_id"], "display_name": u["display_name"], "role": u["role"],
+        }, "profile": profile})
 
     def h_member_live(self, p, b, u):
-        _, user = self._member_session()
-        self._send_json(200, {"events": self.portal.live(user)})
+        self._send_json(200, {"events": self.portal.live(u)})
 
     def h_member_schedules(self, p, b, u):
-        _, user = self._member_session()
-        self._send_json(200, {"schedules": self.portal.schedules(user)})
+        self._send_json(200, {"schedules": self.portal.schedules(u)})
 
     def h_member_archives(self, p, b, u):
-        _, user = self._member_session()
-        self._send_json(200, {"archives": self.portal.archives(user)})
+        self._send_json(200, {"archives": self.portal.archives(u)})
 
     def h_member_search(self, p, b, u):
-        _, user = self._member_session()
-        query = self.path.split("?", 1)[1] if "?" in self.path else ""
-        term = query.split("q=", 1)[1].split("&", 1)[0] if "q=" in query else ""
-        self._send_json(200, {"results": self.portal.search(user, term.replace("+", " "))})
+        term = self._qs().get("q", "")
+        self._send_json(200, {"results": self.portal.search(u, term.replace("+", " "))})
 
     def h_member_playback(self, p, b, u):
-        session, _ = self._member_session()
-        result = self.portal.playback(session["session_id"], p["event_id"])
+        result = self.portal.playback_for_user(u, p["event_id"])
         token = result.pop("lease_token")
         eid = p["event_id"]
         cookie = f"tz_lease_{eid}={token}; Path=/demo/media/{eid}.mp4; Max-Age={self.cp.config.lease_ttl}; HttpOnly; SameSite=Strict"
         self._send_json(200, result, extra_headers={"Set-Cookie": cookie})
 
     def h_archive_playback(self, p, b, u):
-        session, _ = self._member_session()
         archive = self.cp.db.query_one("SELECT * FROM archive_objects WHERE archive_id=?", (p["archive_id"],))
         if not archive: raise ControlError("archive not found", "archive_not_found")
-        result = self.portal.playback(session["session_id"], archive["event_id"], "archive")
+        result = self.portal.playback_for_user(u, archive["event_id"], "archive")
         self._send_json(200, result)
 
     def h_schedule_upload(self, p, b, u):
@@ -452,9 +506,210 @@ class _Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self._safe_write(body)
 
+    def _send_bytes(self, status: int, content_type: str, body: bytes):
+        self.send_response(status)
+        self._base_headers(no_store=True)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self._safe_write(body)
+
+    def h_net_me(self, p, b, u):
+        self._send_json(200, {"profile": self.network.get_own_profile(u)})
+
+    def h_net_me_update(self, p, b, u):
+        self._send_json(200, {"profile": self.network.update_own_profile(u, b or {})})
+
+    def h_net_profile(self, p, b, u):
+        self._send_json(200, {"profile": self.network.get_profile_by_handle(p["handle"], u)})
+
+    def h_net_follow(self, p, b, u):
+        self._send_json(200, self.network.follow(u, p["handle"]))
+
+    def h_net_unfollow(self, p, b, u):
+        self._send_json(200, self.network.unfollow(u, p["handle"]))
+
+    def h_net_profile_tab(self, p, b, u):
+        self._send_json(200, self.network.profile_collection(u, p["handle"], p["tab"]))
+
+    def h_net_upload(self, p, b, u):
+        self._send_json(201, self.network.create_upload(u, b or {}))
+
+    def h_net_upload_status(self, p, b, u):
+        self._send_json(200, self.network.upload_status(u, p["job_id"]))
+
+    def h_net_upload_cancel(self, p, b, u):
+        self._send_json(200, self.network.cancel_upload(u, p["job_id"]))
+
+    def h_net_upload_retry(self, p, b, u):
+        self._send_json(200, self.network.retry_upload(u, p["job_id"]))
+
+    def h_net_webhook(self, p, b, u):
+        headers = {k: self.headers.get(k) for k in (
+            "X-Network-Webhook-Secret", "Webhook-Signature",
+        )}
+        self._send_json(200, self.network.apply_webhook(headers, b or {}))
+
+    def h_net_fake_upload(self, p, b, u):
+        self._send_json(200, self.network.complete_fake_upload(p["token"], b or {}))
+
+    def h_net_post_create(self, p, b, u):
+        self._send_json(201, {"post": self.network.create_post(u, b or {})})
+
+    def h_net_post_get(self, p, b, u):
+        self._send_json(200, {"post": self.network.post_view(u, p["post_id"])})
+
+    def h_net_post_update(self, p, b, u):
+        self._send_json(200, {"post": self.network.update_post(u, p["post_id"], b or {})})
+
+    def h_net_post_delete(self, p, b, u):
+        self._send_json(200, self.network.delete_post(u, p["post_id"]))
+
+    def h_net_feed(self, p, b, u):
+        q = self._qs()
+        self._send_json(200, self.network.feed(
+            u, q.get("mode", "for_you"), q.get("sport") or None, q.get("cursor"),
+            int(q.get("limit") or 20),
+        ))
+
+    def h_net_game_create(self, p, b, u):
+        self._send_json(201, {"game": self.network.submit_game(u, b or {})})
+
+    def h_net_game_get(self, p, b, u):
+        self._send_json(200, {"game": self.network.game_view(u, p["game_id"])})
+
+    def h_net_game_attach(self, p, b, u):
+        self._send_json(200, {"game": self.network.attach_game_event(u, p["game_id"], (b or {}).get("event_id", ""))})
+
+    def h_net_game_playback(self, p, b, u):
+        result = self.network.game_playback(u, p["game_id"])
+        token = result.pop("lease_token", None)
+        extra = {}
+        if token and result.get("event_id"):
+            eid = result["event_id"]
+            extra["Set-Cookie"] = (
+                f"tz_lease_{eid}={token}; Path=/demo/media/{eid}.mp4; "
+                f"Max-Age={self.cp.config.lease_ttl}; HttpOnly; SameSite=Strict"
+            )
+        self._send_json(200, result, extra_headers=extra or None)
+
+    def h_net_clip_create(self, p, b, u):
+        data = b or {}
+        if data.get("source_game_id"):
+            clip = self.network.create_clip_definition(u, data)
+        else:
+            clip = self.network.create_member_clip(u, data)
+        self._send_json(201, {"clip": clip})
+
+    def h_net_clip_get(self, p, b, u):
+        self._send_json(200, {"clip": self.network.clip_view(u, p["clip_id"])})
+
+    def h_net_clip_render(self, p, b, u):
+        self._send_json(200, {"clip": self.network.render_clip(u, p["clip_id"])})
+
+    def h_net_clip_publish(self, p, b, u):
+        self._send_json(200, {"post": self.network.publish_clip(u, p["clip_id"], b or {})})
+
+    def h_net_react(self, p, b, u):
+        b = b or {}
+        self._send_json(200, self.network.react(u, b.get("subject_type"), b.get("subject_id"), b.get("kind", "like")))
+
+    def h_net_unreact(self, p, b, u):
+        b = b or {}
+        self._send_json(200, self.network.unreact(u, b.get("subject_type"), b.get("subject_id"), b.get("kind", "like")))
+
+    def h_net_comments(self, p, b, u):
+        q = self._qs()
+        self._send_json(200, self.network.list_comments(u, q.get("subject_type"), q.get("subject_id")))
+
+    def h_net_comment_create(self, p, b, u):
+        b = b or {}
+        self._send_json(201, {"comment": self.network.add_comment(
+            u, b.get("subject_type"), b.get("subject_id"), b.get("body", ""),
+        )})
+
+    def h_net_comment_delete(self, p, b, u):
+        self._send_json(200, self.network.delete_comment(u, p["comment_id"]))
+
+    def h_net_save(self, p, b, u):
+        b = b or {}
+        self._send_json(200, self.network.save_item(u, b.get("subject_type"), b.get("subject_id")))
+
+    def h_net_unsave(self, p, b, u):
+        b = b or {}
+        self._send_json(200, self.network.unsave_item(u, b.get("subject_type"), b.get("subject_id")))
+
+    def h_net_share(self, p, b, u):
+        self._send_json(201, self.network.send_media(u, b or {}))
+
+    def h_net_inbox(self, p, b, u):
+        self._send_json(200, self.network.inbox(u))
+
+    def h_net_inbox_read(self, p, b, u):
+        self._send_json(200, self.network.mark_share_read(u, p["share_id"]))
+
+    def h_net_report(self, p, b, u):
+        self._send_json(201, self.network.report(u, b or {}))
+
+    def h_net_review(self, p, b, u):
+        self._send_json(200, self.network.review_queue(u))
+
+    def h_net_review_game(self, p, b, u):
+        b = b or {}
+        self._send_json(200, {"game": self.network.decide_game(u, p["game_id"], b.get("action", ""), b.get("reason", ""))})
+
+    def h_net_review_case(self, p, b, u):
+        b = b or {}
+        self._send_json(200, self.network.decide_moderation(u, p["case_id"], b.get("action", ""), b.get("reason", "")))
+
+    def h_net_verify(self, p, b, u):
+        b = b or {}
+        self._send_json(200, {"profile": self.network.set_verification(
+            u, p["profile_id"], b.get("badge", ""), b.get("state", "verified"),
+        )})
+
+    def h_net_evidence(self, p, b, u):
+        self._send_json(200, self.network.evidence_bundle(u, p["subject_type"], p["subject_id"]))
+
+    def h_net_evidence_csv(self, p, b, u):
+        text = self.network.evidence_csv(u, p["subject_type"], p["subject_id"])
+        self._send_bytes(200, "text/csv; charset=utf-8", text.encode("utf-8"))
+
+    def h_net_evidence_html(self, p, b, u):
+        text = self.network.evidence_html(u, p["subject_type"], p["subject_id"])
+        self._send_bytes(200, "text/html; charset=utf-8", text.encode("utf-8"))
+
+    def h_net_media(self, p, b, u):
+        asset, seconds = self.network.asset_for_playback(u, p["asset_id"])
+        if asset["kind"] == "photo":
+            svg = (
+                "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 640 360'>"
+                "<rect width='640' height='360' fill='#171e27'/>"
+                "<text x='320' y='180' fill='#6ea8ff' text-anchor='middle' "
+                "font-size='28' font-family='sans-serif'>Sports photo</text></svg>"
+            )
+            self._send_bytes(200, "image/svg+xml; charset=utf-8", svg.encode("utf-8"))
+            return
+        path = demo_media.ensure_media(self.media_dir, asset["media_asset_id"], seconds=seconds)
+        status, headers, body = demo_media.read_range(path, self.headers.get("Range"))
+        self.send_response(status)
+        self._base_headers(no_store=True)
+        for key, value in headers.items():
+            if key == "Cache-Control":
+                continue
+            self.send_header(key, value)
+        self.end_headers()
+        if self.command != "HEAD":
+            self._safe_write(body)
+
 
 def make_http_server(config, cp: ControlPlane, media_dir: str) -> ThreadingHTTPServer:
-    handler = type("BoundHandler", (_Handler,), {"cp": cp, "portal": PortalService(cp), "media_dir": media_dir})
+    portal = PortalService(cp)
+    network = NetworkService(cp, portal, build_provider(config))
+    handler = type("BoundHandler", (_Handler,), {
+        "cp": cp, "portal": portal, "network": network, "media_dir": media_dir,
+    })
     httpd = ThreadingHTTPServer((config.http_host, config.http_port), handler)
     httpd.daemon_threads = True
     return httpd

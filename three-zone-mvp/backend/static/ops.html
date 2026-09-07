@@ -35,6 +35,7 @@
           <button type="button" class="nav-item" data-pane="controls">Event controls</button>
           <button type="button" class="nav-item" data-pane="schedule">Schedule import</button>
           <button type="button" class="nav-item" data-pane="audit">Analytics and audit</button>
+          <button type="button" class="nav-item" data-pane="network">Network review</button>
         </details>
         <details id="nav-owner" class="nav-group hidden">
           <summary>Owner</summary>
@@ -150,6 +151,45 @@ Lincoln High,Lincoln Freshman Basketball,basketball,freshman,West,2026-11-12,19:
           </div>
           <pre id="analytics-out" class="code"></pre>
           <div id="audit-out" class="audit"></div>
+        </section>
+
+        <section data-pane="network" class="panel hidden">
+          <div class="panel-head"><h2>Network review</h2></div>
+          <p class="muted">Pending games, failed uploads, member reports, and moderation cases. Workers review; they cannot impersonate the owner.</p>
+          <div class="btn-row">
+            <button id="network-refresh-btn" type="button">Refresh queue</button>
+          </div>
+          <div id="network-queue" class="audit"></div>
+          <form id="network-game-form" class="form-grid">
+            <label>Game ID <input name="game_id" placeholder="gme_…" required /></label>
+            <label>Action
+              <select name="action">
+                <option>verify</option><option>reject</option><option>restrict</option><option>restore</option>
+              </select>
+            </label>
+            <label>Reason <input name="reason" required /></label>
+            <button type="submit">Apply game decision</button>
+          </form>
+          <form id="network-case-form" class="form-grid">
+            <label>Case ID <input name="case_id" placeholder="mod_…" required /></label>
+            <label>Action
+              <select name="action">
+                <option>restrict</option><option>remove</option><option>quarantine</option>
+                <option>restore</option><option>warn</option>
+              </select>
+            </label>
+            <label>Reason <input name="reason" required /></label>
+            <button type="submit">Apply moderation decision</button>
+          </form>
+          <form id="network-evidence-form" class="form-grid hidden">
+            <label>Evidence type
+              <select name="subject_type"><option>game</option><option>clip</option><option>post</option></select>
+            </label>
+            <label>Subject ID <input name="subject_id" required /></label>
+            <button type="submit">Load evidence bundle</button>
+            <a id="evidence-html" class="quiet hidden" target="_blank" rel="noopener">Print-friendly HTML</a>
+          </form>
+          <pre id="network-out" class="code hidden"></pre>
         </section>
 
         <section id="owner" data-pane="owner" class="panel hidden">

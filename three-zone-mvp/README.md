@@ -39,6 +39,33 @@ Sign in with username and password. Seeded local accounts (override with `TZ_SEE
 
 Members can also **Create account** on `/`. That always creates a viewer. Staff accounts are not self-serve. From `/ops` use **Member site**; signed-in staff on `/` see **Control plane**.
 
+The member site is also the sports network: **Watch it. Save it. Clip it. Share it.**
+
+Signed-in members can publish photos and short clips, upload a full game as an
+immutable source asset, trim a moment in Studio (90 seconds max), and share the
+derived clip on For You / Following / Local feeds. Full games stay private and
+pending verification until a worker reviews them. Game-derived clips keep a
+**Three-Zone Game Clip** provenance label and a **Watch Full Game** link when
+the viewer is authorized.
+
+Direct upload never sends large video through the application server. The API
+returns a one-time provider URL (resumable/tus for full games). Local demo and
+CI use `TZ_MEDIA_PROVIDER=fake`. A real Cloudflare Stream smoke test is opt-in
+via `TZ_CLOUDFLARE_ACCOUNT_ID` and `TZ_CLOUDFLARE_API_TOKEN`.
+
+Feed ranking is chronological (`published_at DESC, post_id DESC`). It is not
+machine learning.
+
+### Fake-provider local loop
+
+1. Sign in as a member on `/`.
+2. Create → Full Game, fill metadata, check the rights attestation, submit.
+3. The browser completes the fake provider upload (metadata only). Wait until
+   the UI says **Game ready**.
+4. Open the game from Profile → Games, set start/end in Studio (for example 0
+   and 20), render and publish.
+5. The feed shows **Three-Zone Game Clip** and **Watch Full Game**.
+
 The site has three tiers:
 
 | Tier | Account | Capability |
@@ -133,6 +160,12 @@ docker run --rm -p 8000:8000 -p 8765:8765 \
 | `GET` | `/api/analytics` | Basic inventory and socket metrics |
 | `GET` | `/api/audit` | Operator-only append-only audit view |
 | `GET` | `/api/owner/inventory` | Owner-only back portal: prints/exports every part of the site |
+| `GET` | `/api/network/feed` | For You / Following / Local sports feed |
+| `POST` | `/api/network/uploads` | One-time direct-upload contract (no provider token) |
+| `POST` | `/api/network/games` | Submit a full-game source asset |
+| `POST` | `/api/network/clips` | Persist a Studio clip definition |
+| `GET` | `/api/network/review` | Worker review queue |
+| `GET` | `/api/network/evidence/{type}/{id}` | Owner evidence bundle |
 | `GET` | `/demo/media/{event_id}.mp4` | Lease-gated local demo media |
 
 The event socket is `ws://127.0.0.1:8765/ws/events/{event_id}` in the default
