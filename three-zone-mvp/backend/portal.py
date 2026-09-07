@@ -180,9 +180,9 @@ class PortalService:
         return results[:30]
 
     # Playback ---------------------------------------------------------------------
-    def playback(self, session_id, event_id, use="live"):
-        session, user = self.session(session_id)
-        self.audit("playback.requested", event_id, "member", user["user_id"], verification_ref=session["verification_id"])
+    def playback_for_user(self, user, event_id, use="live", session_id=None):
+        """Issue a lease for a unified identity (Bearer or member cookie)."""
+        self.audit("playback.requested", event_id, "member", user["user_id"])
         event = self.cp.get_event_row(event_id)
         if use == "archive" and event["status"] != "archive":
             raise ForbiddenError("This game is not currently available with your access.", "archive_not_authorized")
@@ -192,12 +192,17 @@ class PortalService:
             self.audit("lease.denied", event_id, "member", user["user_id"])
             raise ForbiddenError("This game is not currently available with your access.", "playback_denied")
         self.db.execute("INSERT INTO lease_records VALUES (?,?,?,?,?,?,?,?,?,?)",
-                        (lease["lease_id"], event_id, user["user_id"], session_id, lease["rights_version"],
-                         lease["mode"], "active", time.time(), time.time() + lease["lease_ttl"], None))
+                        (lease["lease_id"], event_id, user["user_id"], session_id or "unified",
+                         lease["rights_version"], lease["mode"], "active", time.time(),
+                         time.time() + lease["lease_ttl"], None))
         self.audit("lease.issued", lease["lease_id"], "system", "rights-service",
-                   {"event_id": event_id, "simulated_media": True}, verification_ref=session["verification_id"],
+                   {"event_id": event_id, "simulated_media": True},
                    rights_version=lease["rights_version"])
         return lease
+
+    def playback(self, session_id, event_id, use="live"):
+        session, user = self.session(session_id)
+        return self.playback_for_user(user, event_id, use, session_id=session["session_id"])
 
     # schedules --------------------------------------------------------------------
     def upload_schedule(self, operator, filename, content):

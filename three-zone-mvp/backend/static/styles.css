@@ -72,9 +72,36 @@ video { width: 100%; max-height: 420px; background: #000; }
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
   background: #dce8ff; color: #102033; padding: 10px 16px; border-radius: 6px; font-weight: 650;
 }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
+.chip {
+  background: transparent; color: var(--text); border: 1px solid var(--line);
+  padding: 6px 12px; font-weight: 600;
+}
+.chip.active { background: var(--accent); color: #081018; }
+.feed-col { display: flex; flex-direction: column; gap: 14px; max-width: 560px; }
+.post-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.post-card img, .post-card video, #studio-video, #composer-preview {
+  width: 100%; max-height: 360px; background: #000; border-radius: 8px;
+}
+.post-card .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.prov { color: var(--accent); font-size: 12px; font-weight: 650; margin: 0; }
+.empty { color: var(--muted); }
+.profile-head { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-grid { display: grid; gap: 10px; }
+.form-grid.compact { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.check { flex-direction: row; align-items: center; gap: 8px; }
+dialog {
+  background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  border-radius: 10px; width: min(520px, 94vw); padding: 16px;
+}
+.dialog-bar { display: flex; justify-content: space-between; align-items: center; background: none; border: 0; padding: 0 0 12px; }
+.create-choices { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
 @media (max-width: 800px) {
-  .auth-grid, .columns, .cards { grid-template-columns: 1fr; }
-  nav { display: none; }
+  .auth-grid, .columns, .cards, .profile-head, .create-choices { grid-template-columns: 1fr; }
+  nav { display: flex; overflow-x: auto; }
   #search { float: none; width: 100%; }
   .schedule-row { grid-template-columns: 1fr 1fr; }
 }

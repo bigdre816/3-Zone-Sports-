@@ -51,6 +51,8 @@ TIERS = [
             "Request a playback lease for a live or replay event",
             "Watch managed media while the lease and rights stay valid",
             "Receive live state, score, and revocation updates over the socket",
+            "Publish sports photos, clips, and full games on the member network",
+            "Create derived clips in Studio without mutating the source game",
         ],
     },
     {
@@ -66,6 +68,7 @@ TIERS = [
             "Revoke and restore rights during an incident",
             "Update the live scoreboard",
             "Read the operator audit log",
+            "Review pending games, uploads, and sports-only moderation cases",
         ],
     },
     {
@@ -80,6 +83,7 @@ TIERS = [
             "Open the owner back portal",
             "Print the full site inventory (users, events, all rights versions, audit)",
             "Download a complete JSON export of the whole system state",
+            "Export a source-to-clip evidence bundle without provider secrets",
         ],
     },
 ]
@@ -168,6 +172,48 @@ SITE_ROUTES = [
      "purpose": "Owner back portal: print/export every single thing"},
     {"method": "WS", "path": "/ws/events/{id}", "tier": "member",
      "purpose": "Event-scoped live state, score, feed, lease, and rights updates"},
+    {"method": "GET", "path": "/api/network/feed", "tier": "public",
+     "purpose": "For You / Following / Local sports feed"},
+    {"method": "GET", "path": "/api/network/me/profile", "tier": "member",
+     "purpose": "Current member public profile"},
+    {"method": "POST", "path": "/api/network/me/profile", "tier": "member",
+     "purpose": "Update own profile (verified badges forbidden)"},
+    {"method": "GET", "path": "/api/network/profiles/{handle}", "tier": "public",
+     "purpose": "Public profile by handle"},
+    {"method": "POST", "path": "/api/network/profiles/{handle}/follow", "tier": "member",
+     "purpose": "Follow a profile"},
+    {"method": "POST", "path": "/api/network/uploads", "tier": "member",
+     "purpose": "Authorize a one-time direct upload (no provider token)"},
+    {"method": "POST", "path": "/api/network/webhooks/media", "tier": "service",
+     "purpose": "Idempotent media-provider webhook"},
+    {"method": "POST", "path": "/api/network/posts", "tier": "member",
+     "purpose": "Publish a sports photo or clip post"},
+    {"method": "POST", "path": "/api/network/games", "tier": "member",
+     "purpose": "Submit a full-game source asset"},
+    {"method": "POST", "path": "/api/network/clips", "tier": "member",
+     "purpose": "Create a Studio clip definition"},
+    {"method": "POST", "path": "/api/network/clips/{id}/render", "tier": "member",
+     "purpose": "Render a derived clip through the media adapter"},
+    {"method": "POST", "path": "/api/network/clips/{id}/publish", "tier": "member",
+     "purpose": "Publish, save, or prepare a derived clip"},
+    {"method": "POST", "path": "/api/network/react", "tier": "member",
+     "purpose": "Like a post, clip, or game"},
+    {"method": "POST", "path": "/api/network/comments", "tier": "member",
+     "purpose": "Add a one-level comment"},
+    {"method": "POST", "path": "/api/network/saves", "tier": "member",
+     "purpose": "Save a post privately"},
+    {"method": "POST", "path": "/api/network/shares", "tier": "member",
+     "purpose": "Send a media reference to another member"},
+    {"method": "GET", "path": "/api/network/inbox", "tier": "member",
+     "purpose": "Object-share inbox"},
+    {"method": "POST", "path": "/api/network/reports", "tier": "member",
+     "purpose": "Report content for review"},
+    {"method": "GET", "path": "/api/network/review", "tier": "worker",
+     "purpose": "Pending games, uploads, and moderation cases"},
+    {"method": "GET", "path": "/api/network/evidence/{type}/{id}", "tier": "owner",
+     "purpose": "Owner evidence bundle (JSON)"},
+    {"method": "GET", "path": "/api/network/media/{id}", "tier": "member",
+     "purpose": "Rights-gated UGC playback"},
 ]
 
 
@@ -746,6 +792,26 @@ class ControlPlane:
             "created_at": row["created_at"],
         }
 
+    def network_inventory_safe(self) -> dict:
+        """Counts only — never provider tokens or signed URLs."""
+        def count(table: str) -> int:
+            try:
+                row = self.db.query_one(f"SELECT COUNT(*) AS c FROM {table}")
+            except Exception:
+                return 0
+            return int(row["c"] if row else 0)
+
+        return {
+            "profiles": count("profiles"),
+            "posts": count("posts"),
+            "games": count("games"),
+            "clips": count("clips"),
+            "reactions": count("reactions"),
+            "comments": count("comments"),
+            "follows": count("follows"),
+            "media_assets": count("media_assets"),
+        }
+
     def owner_inventory(self, owner: dict) -> dict:
         """The owner back portal payload: literally every part of the website.
 
@@ -791,4 +857,5 @@ class ControlPlane:
             "events": events,
             "audit": audit,
             "analytics": self.analytics(),
+            "network": self.network_inventory_safe(),
         }
