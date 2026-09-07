@@ -117,26 +117,26 @@ class PortalService:
 
     # Catalog ----------------------------------------------------------------------
     def _ensure_catalog(self):
-        if self.db.query_one("SELECT school_id FROM schools LIMIT 1"):
-            return
-        self.db.executemany("INSERT INTO schools VALUES (?,?,?)", [
+        # INSERT OR IGNORE so concurrent live/schedules/archives fetches cannot
+        # UNIQUE-crash while the demo catalog is being created for the first time.
+        self.db.executemany("INSERT OR IGNORE INTO schools VALUES (?,?,?)", [
             ("school_lincoln", "Lincoln High", "midwest"), ("school_lakeside", "Lakeside Prep", "midwest"),
             ("school_north", "Northridge", "midwest")])
-        self.db.executemany("INSERT INTO teams VALUES (?,?,?,?,?)", [
+        self.db.executemany("INSERT OR IGNORE INTO teams VALUES (?,?,?,?,?)", [
             ("team_lincoln_bball", "school_lincoln", "Lincoln Freshman Basketball", "basketball", "freshman"),
             ("team_lakeside_bball", "school_lakeside", "Lakeside Prep Basketball", "basketball", "varsity"),
             ("team_north_soccer", "school_north", "Northridge Soccer", "soccer", "varsity")])
         sid = "sch-lincoln-2026"
         stamp = time.time()
-        self.db.execute("INSERT INTO schedules VALUES (?,?,?,?,?,?)",
+        self.db.execute("INSERT OR IGNORE INTO schedules VALUES (?,?,?,?,?,?)",
                         (sid, "school_lincoln", "team_lincoln_bball", "2026", 1, "active"))
-        self.db.execute("INSERT INTO schedule_versions VALUES (?,?,?,?,?,?,?,?,?,?)",
+        self.db.execute("INSERT OR IGNORE INTO schedule_versions VALUES (?,?,?,?,?,?,?,?,?,?)",
                         (sid, 1, "fixture", "demo-fixtures", _hash({"schedule": sid}), "system",
                          stamp, stamp, None, "active"))
-        self.db.executemany("INSERT INTO schedule_events VALUES (?,?,?,?,?,?,?,?)", [
+        self.db.executemany("INSERT OR IGNORE INTO schedule_events VALUES (?,?,?,?,?,?,?,?)", [
             (sid, 1, "sce-lincoln-1", "Central Valley", stamp + 86400, "Riverside Stadium", "HOME", 1),
             (sid, 1, "sce-lincoln-2", "Maple Grove", stamp + 172800, "Lakeside Gym", "AWAY", 2)])
-        self.db.execute("INSERT INTO archive_objects VALUES (?,?,?,?,?,?,?,?,?)",
+        self.db.execute("INSERT OR IGNORE INTO archive_objects VALUES (?,?,?,?,?,?,?,?,?)",
                         ("arc-central-wrestling", "evt_mw_wrestling", "school_lincoln", "team_lincoln_bball",
                          "2026", "Full Game", "Central Wrestling — Full Game", "", "ARCHIVED"))
 

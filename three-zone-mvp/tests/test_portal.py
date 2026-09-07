@@ -69,6 +69,28 @@ class PortalTests(unittest.TestCase):
         config = Config(env="demo", xrpl_signing_secret="do-not-show", allowed_origins=["http://localhost"])
         self.assertNotIn("do-not-show", str(config.public_config()))
 
+    def test_catalog_seed_survives_concurrent_first_load(self):
+        import threading
+        errors = []
+
+        def load():
+            try:
+                self.portal.live(self.member)
+                self.portal.schedules(self.member)
+                self.portal.archives(self.member)
+            except Exception as exc:  # noqa: BLE001 - collect any worker failure
+                errors.append(exc)
+
+        threads = [threading.Thread(target=load) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(errors, [])
+        self.assertGreaterEqual(len(self.portal.live(self.member)), 1)
+        self.assertGreaterEqual(len(self.portal.schedules(self.member)), 1)
+        self.assertGreaterEqual(len(self.portal.archives(self.member)), 1)
+
     def test_control_plane_app_js_is_preserved(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with open(os.path.join(root, "backend", "static", "app.js"), encoding="utf-8") as handle:

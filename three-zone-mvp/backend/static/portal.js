@@ -17,13 +17,22 @@ const card = (title, state, id) => `<article><span class="pill">${state}</span><
 async function loadPortal() {
   const me = await api("GET", "/api/member/me");
   $("#member-name").textContent = me.member.display_name.replace("Demo Member (viewer)", "Andre");
-  const [live, schedules, archives] = await Promise.all([
-    api("GET", "/api/member/live"), api("GET", "/api/member/schedules"), api("GET", "/api/member/archives")
+  const fill = async (path, render) => {
+    try { render(await api("GET", path)); }
+    catch (error) { toast(error.message); }
+  };
+  await Promise.all([
+    fill("/api/member/live", live => {
+      $("#live").innerHTML = live.events.map(e => card(e.title, e.status === "live" ? "LIVE" : "UPCOMING", e.event_id)).join("");
+      document.querySelectorAll("[data-event]").forEach(button => button.onclick = () => play(button.dataset.event));
+    }),
+    fill("/api/member/schedules", schedules => {
+      $("#schedules").innerHTML = schedules.schedules.map(s => `<div class="schedule-row"><b>${s.team}</b><span>${s.opponent}</span><span>${new Date(s.start_at * 1000).toLocaleDateString()}</span><small>${s.location}</small></div>`).join("");
+    }),
+    fill("/api/member/archives", archives => {
+      $("#archives").innerHTML = archives.archives.map(a => `<article><span class="pill">ARCHIVED</span><h3>${a.title}</h3><p>${a.school} · ${a.team}<br>${a.season} · ${a.kind}</p></article>`).join("");
+    }),
   ]);
-  $("#live").innerHTML = live.events.map(e => card(e.title, e.status === "live" ? "LIVE" : "UPCOMING", e.event_id)).join("");
-  $("#schedules").innerHTML = schedules.schedules.map(s => `<div class="schedule-row"><b>${s.team}</b><span>${s.opponent}</span><span>${new Date(s.start_at * 1000).toLocaleDateString()}</span><small>${s.location}</small></div>`).join("");
-  $("#archives").innerHTML = archives.archives.map(a => `<article><span class="pill">ARCHIVED</span><h3>${a.title}</h3><p>${a.school} · ${a.team}<br>${a.season} · ${a.kind}</p></article>`).join("");
-  document.querySelectorAll("[data-event]").forEach(button => button.onclick = () => play(button.dataset.event));
 }
 async function enter() {
   try {
