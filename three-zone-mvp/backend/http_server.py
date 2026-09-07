@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import demo_media
 from .control_plane import ControlError, ControlPlane
+from .mastery import article_html, full_page_html, load_markdown
 from .portal import PortalService
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -64,6 +65,7 @@ def _routes():
         ("GET", re.compile(r"^/api/analytics$"), "h_analytics", "session"),
         ("GET", re.compile(r"^/api/audit$"), "h_audit", "operator"),
         ("GET", re.compile(r"^/api/owner/inventory$"), "h_owner_inventory", "owner"),
+        ("GET", re.compile(r"^/api/owner/mastery$"), "h_owner_mastery", "owner"),
         ("GET", re.compile(rf"^/demo/media/{_EVENT_RE}\.mp4$"), "h_media", "none"),
     ]
 
@@ -209,6 +211,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._serve_static("ops.html")
         if method == "GET" and path in ("/app.js", "/portal.js", "/styles.css", "/ops.css"):
             return self._serve_static(path.lstrip("/"))
+        if method == "GET" and path in ("/three-zone-mastery", "/THREE_ZONE_MASTERY.md"):
+            return self._serve_mastery_page()
         if method == "GET" and path == "/favicon.ico":
             self.send_response(HTTPStatus.NO_CONTENT)
             self._base_headers(no_store=False)
@@ -429,6 +433,23 @@ class _Handler(BaseHTTPRequestHandler):
 
     def h_owner_inventory(self, p, b, u):
         self._send_json(200, self.cp.owner_inventory(u))
+
+    def h_owner_mastery(self, p, b, u):
+        self._send_json(200, {
+            "title": "Three Zone Mastery",
+            "markdown": load_markdown(),
+            "html": article_html(),
+        })
+
+    def _serve_mastery_page(self):
+        body = full_page_html().encode("utf-8")
+        self.send_response(200)
+        self._base_headers(no_store=True)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self._safe_write(body)
 
     def h_media(self, p, b, u):
         event_id = p["event_id"]

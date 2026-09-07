@@ -125,7 +125,7 @@ function afterAuth() {
 }
 
 function showPane(name) {
-  document.querySelectorAll("[data-pane]").forEach((pane) => {
+  document.querySelectorAll("#app [data-pane]").forEach((pane) => {
     pane.classList.toggle("hidden", pane.getAttribute("data-pane") !== name);
   });
   document.querySelectorAll(".nav-item").forEach((item) => {
@@ -134,6 +134,9 @@ function showPane(name) {
   if (name === "audit") {
     refreshAnalytics();
     refreshAudit();
+  }
+  if (name === "mastery") {
+    loadMastery();
   }
 }
 
@@ -577,6 +580,29 @@ async function ownerExport() {
   }
 }
 
+async function loadMastery() {
+  const article = $("#mastery-article");
+  if (article.dataset.loaded === "1") return;
+  try {
+    const res = await api("GET", "/api/owner/mastery");
+    article.innerHTML = res.html || "";
+    article.dataset.loaded = "1";
+  } catch (e) {
+    article.textContent = "Could not load Three Zone Mastery: " + (e.code || e.message);
+    toast("Mastery failed: " + (e.code || e.message), "bad");
+  }
+}
+
+function printMastery() {
+  document.body.classList.add("printing-mastery");
+  const cleanup = () => {
+    document.body.classList.remove("printing-mastery");
+    window.removeEventListener("afterprint", cleanup);
+  };
+  window.addEventListener("afterprint", cleanup);
+  window.print();
+}
+
 // -- init --------------------------------------------------------------
 async function init() {
   try {
@@ -600,6 +626,10 @@ async function init() {
   $("#owner-load-btn").addEventListener("click", ownerLoad);
   $("#owner-print-btn").addEventListener("click", ownerPrint);
   $("#owner-export-btn").addEventListener("click", ownerExport);
+  $("#mastery-print-btn").addEventListener("click", async () => {
+    await loadMastery();
+    printMastery();
+  });
   const scheduleForm = $("#schedule-form");
   if (scheduleForm) {
     scheduleForm.addEventListener("submit", (e) => {

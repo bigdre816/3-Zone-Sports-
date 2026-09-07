@@ -53,6 +53,11 @@ the tier/capability map, every route, all users, every event with its full
 rights version history (including revoked versions), analytics, and the complete
 audit log.
 
+**Three Zone Mastery** (`THREE_ZONE_MASTERY.md`, Owner → Mastery, or
+`/three-zone-mastery`) is the printable plain-English map of every engine, API,
+connection, Treasure verification path, and the XRPL blockchain publication
+chain. Print it from the owner sidebar.
+
 The initial inventory contains three Midwest live examples (distinct production
 modes, one on an active backup feed), a cleared (green) event, a replay, and
 West/East inventory so the zone and lifecycle model is visible immediately.

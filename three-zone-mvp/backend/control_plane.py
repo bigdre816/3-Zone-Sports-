@@ -98,6 +98,8 @@ SITE_ROUTES = [
      "purpose": "Control-plane catalog, player, operator, and owner logic"},
     {"method": "GET", "path": "/ops.css", "tier": "public",
      "purpose": "Control-plane screen and print styles"},
+    {"method": "GET", "path": "/three-zone-mastery", "tier": "public",
+     "purpose": "Printable Three Zone Mastery article (plain English, every engine)"},
     {"method": "GET", "path": "/favicon.ico", "tier": "public",
      "purpose": "Browser icon response"},
     {"method": "GET", "path": "/api/health", "tier": "public",
@@ -166,6 +168,8 @@ SITE_ROUTES = [
      "purpose": "Aggregate event and socket metrics"},
     {"method": "GET", "path": "/api/owner/inventory", "tier": "owner",
      "purpose": "Owner back portal: print/export every single thing"},
+    {"method": "GET", "path": "/api/owner/mastery", "tier": "owner",
+     "purpose": "Owner back portal: printable Three Zone Mastery article"},
     {"method": "WS", "path": "/ws/events/{id}", "tier": "member",
      "purpose": "Event-scoped live state, score, feed, lease, and rights updates"},
 ]
