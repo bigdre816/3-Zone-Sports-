@@ -69,6 +69,15 @@ class PortalTests(unittest.TestCase):
         config = Config(env="demo", xrpl_signing_secret="do-not-show", allowed_origins=["http://localhost"])
         self.assertNotIn("do-not-show", str(config.public_config()))
 
+    def test_control_plane_app_js_is_preserved(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "backend", "static", "app.js"), encoding="utf-8") as handle:
+            app_js = handle.read()
+        self.assertIn("async function revokeRights()", app_js)
+        self.assertIn("async function loadInventory()", app_js)
+        self.assertIn("POST", app_js)
+        self.assertGreater(len(app_js.splitlines()), 500)
+
 
 if __name__ == "__main__":
     unittest.main()
