@@ -4,7 +4,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend.config import Config
-from backend.control_plane import ControlPlane, ForbiddenError
+from backend.control_plane import ControlPlane, ForbiddenError, AuthError, ValidationError, ConflictError
 from backend.db import Database
 from backend.portal import PortalService
 from backend.seed import seed_if_empty
@@ -96,6 +96,31 @@ class PortalTests(unittest.TestCase):
         self.assertGreaterEqual(len(self.portal.live(self.member)), 1)
         self.assertGreaterEqual(len(self.portal.schedules(self.member)), 1)
         self.assertGreaterEqual(len(self.portal.archives(self.member)), 1)
+
+    def test_password_login_all_seeded_roles(self):
+        from backend.config import DEMO_SEED_PASSWORDS
+        for username, home in (("demo-viewer", "/"), ("demo-worker", "/ops"), ("demo-owner", "/ops")):
+            result = self.cp.password_login(username, DEMO_SEED_PASSWORDS[username])
+            self.assertEqual(result["home"], home)
+            self.assertEqual(result["user"]["user_id"], username)
+            self.assertTrue(result["session_token"])
+
+    def test_password_login_rejects_bad_password(self):
+        with self.assertRaises(AuthError) as ctx:
+            self.cp.password_login("demo-owner", "wrong-password")
+        self.assertEqual(ctx.exception.code, "invalid_credentials")
+
+    def test_register_viewer_can_play_and_cannot_be_staff(self):
+        created = self.cp.register_viewer("pat-member", "password123", "Pat")
+        self.assertEqual(created["user"]["role"], "viewer")
+        self.assertEqual(created["home"], "/")
+        session = self.portal.complete_auth("pat-member")
+        lease = self.portal.playback(session["session_id"], "evt_mw_basketball")
+        self.assertTrue(lease["allow"])
+        with self.assertRaises(ValidationError):
+            self.cp.register_viewer("demo-owner", "password123", "Nope")
+        with self.assertRaises(ConflictError):
+            self.cp.register_viewer("pat-member", "password123", "Pat")
 
     def test_control_plane_app_js_is_preserved(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

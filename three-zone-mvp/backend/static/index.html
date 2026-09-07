@@ -3,26 +3,70 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Three-Zone Sports Access</title>
+  <title>Three-Zone member site</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <header><a class="brand" href="/">◢ <span>Three-Zone<small>SPORTS ACCESS</small></span></a><nav>Live Games　 Schedules　 Archives　 About</nav><button id="signin" class="quiet">Sign in</button><button id="signout" class="quiet hidden">Sign out</button><button id="enter">Verify and enter →</button></header>
+  <header>
+    <a class="brand" href="/">Three-Zone</a>
+    <nav id="section-nav" class="hidden">
+      <a href="#live">Live</a>
+      <a href="#schedules">Schedules</a>
+      <a href="#archives">Archives</a>
+    </nav>
+    <div class="header-actions">
+      <a id="ops-link" class="quiet hidden" href="/ops">Control plane</a>
+      <button id="signout" class="quiet hidden" type="button">Sign out</button>
+    </div>
+  </header>
+
   <main>
-    <section id="landing" class="hero">
-      <p class="eyebrow">MEMBERS PORTAL</p><h1>Three-Zone<br>Sports Access</h1><h2>♢ Verified by Treasure Network</h2>
-      <p>Your unified access to live games, team schedules, and school archives. Secure. Verified. Always on.</p>
-      <button id="hero-enter">Verify and enter　→</button>
-      <div class="benefits"><span>◉ <b>Live games</b><small>Watch in real time</small></span><span>▣ <b>Archives</b><small>Past games & highlights</small></span><span>▥ <b>Schedules</b><small>Never miss a game</small></span></div>
+    <section id="auth" class="auth">
+      <h1>Member site</h1>
+      <p class="sub">Sign in to watch live games, check schedules, and open archives you are entitled to.</p>
+      <div class="auth-grid">
+        <form id="login-form">
+          <h2>Sign in</h2>
+          <label>Username <input name="username" autocomplete="username" required /></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
+          <button type="submit">Sign in</button>
+        </form>
+        <form id="register-form">
+          <h2>Create account</h2>
+          <label>Display name <input name="display_name" autocomplete="name" /></label>
+          <label>Username <input name="username" autocomplete="username" required /></label>
+          <label>Password <input name="password" type="password" autocomplete="new-password" required minlength="8" /></label>
+          <button type="submit">Create account</button>
+          <p class="hint">New accounts are members only. Staff accounts are issued separately.</p>
+        </form>
+      </div>
     </section>
+
     <section id="portal" class="hidden">
-      <p class="eyebrow">MEMBERS PORTAL <em id="demo-label">DEMO SIMULATION</em></p><h1>Welcome back, <span id="member-name">Member</span></h1><p class="sub">Your verified access to live games, schedules, and school archives.</p>
-      <input id="search" placeholder="Search schools, teams, or games…" />
-      <section><div class="section-title"><h2>◉ Live now</h2><span>Watch varsity and club games live.</span></div><div id="live" class="cards"></div></section>
-      <div class="columns"><section><div class="section-title"><h2>▥ Schedules</h2><span>Team games and event details.</span></div><div id="schedules" class="schedule"></div></section><section><div class="section-title"><h2>▣ Archives</h2><span>School → Team → Season → Game</span></div><div id="archives" class="cards archive"></div></section></div>
-      <section id="player-wrap" class="hidden"><h2 id="player-title"></h2><p id="player-state"></p><video id="video" controls playsinline muted></video></section>
+      <p class="eyebrow">Signed in as <span id="member-name">Member</span></p>
+      <input id="search" placeholder="Search schools, teams, or games" />
+      <section id="live">
+        <div class="section-title"><h2>Live</h2><span>Games you can watch now or that are cleared to go live.</span></div>
+        <div id="live-list" class="cards"></div>
+      </section>
+      <div class="columns">
+        <section id="schedules">
+          <div class="section-title"><h2>Schedules</h2><span>Upcoming fixtures for entitled teams.</span></div>
+          <div id="schedule-list" class="schedule"></div>
+        </section>
+        <section id="archives">
+          <div class="section-title"><h2>Archives</h2><span>School, team, season, game.</span></div>
+          <div id="archive-list" class="cards archive"></div>
+        </section>
+      </div>
+      <section id="player-wrap" class="hidden">
+        <h2 id="player-title"></h2>
+        <p id="player-state"></p>
+        <video id="video" controls playsinline muted></video>
+      </section>
     </section>
-  </main><footer>Three-Zone Sports Access <span>Verified by Treasure Network</span></footer><div id="toast" class="toast hidden"></div>
+  </main>
+  <div id="toast" class="toast hidden"></div>
   <script src="/portal.js"></script>
 </body>
 </html>

@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS users (
     subscription  TEXT NOT NULL,               -- active | inactive
     zones         TEXT NOT NULL DEFAULT '[]',  -- JSON list; ["*"] means all
     packages      TEXT NOT NULL DEFAULT '[]',  -- JSON list; ["*"] means all
-    destinations  TEXT NOT NULL DEFAULT '[]'   -- JSON list; ["*"] means all
+    destinations  TEXT NOT NULL DEFAULT '[]',  -- JSON list; ["*"] means all
+    password_hash TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -173,6 +174,9 @@ class Database:
                 "INSERT OR IGNORE INTO socket_metrics(id, connections, per_event, updated_at)"
                 " VALUES (1, 0, '{}', 0)"
             )
+            cols = {row[1] for row in self._conn.execute("PRAGMA table_info(users)").fetchall()}
+            if "password_hash" not in cols:
+                self._conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
             self._conn.commit()
 
     # --- primitives -------------------------------------------------------

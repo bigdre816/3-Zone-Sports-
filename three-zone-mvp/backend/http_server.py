@@ -30,6 +30,8 @@ def _routes():
         ("GET", re.compile(r"^/api/health$"), "h_health", "none"),
         ("GET", re.compile(r"^/api/config$"), "h_config", "none"),
         ("POST", re.compile(r"^/api/auth/demo-login$"), "h_login", "none"),
+        ("POST", re.compile(r"^/api/auth/login$"), "h_auth_login", "none"),
+        ("POST", re.compile(r"^/api/auth/register$"), "h_auth_register", "none"),
         ("POST", re.compile(r"^/api/auth/start$"), "h_auth_start", "none"),
         ("POST", re.compile(r"^/api/auth/verify$"), "h_auth_verify", "none"),
         ("POST", re.compile(r"^/api/auth/logout$"), "h_auth_logout", "none"),
@@ -272,6 +274,25 @@ class _Handler(BaseHTTPRequestHandler):
         result = self.cp.demo_login((b or {}).get("account", ""))
         self._send_json(200, result)
 
+    def _auth_cookie_response(self, result: dict):
+        member = self.portal.complete_auth(result["user"]["user_id"])
+        sid = member.pop("session_id")
+        cookie = f"tz_member_session={sid}; Path=/; Max-Age={self.cp.config.session_ttl}; HttpOnly; SameSite=Strict"
+        payload = {**result, "member": member}
+        self._send_json(200, payload, extra_headers={"Set-Cookie": cookie})
+
+    def h_auth_login(self, p, b, u):
+        body = b or {}
+        result = self.cp.password_login(body.get("username", ""), body.get("password", ""))
+        self._auth_cookie_response(result)
+
+    def h_auth_register(self, p, b, u):
+        body = b or {}
+        result = self.cp.register_viewer(
+            body.get("username", ""), body.get("password", ""), body.get("display_name", ""),
+        )
+        self._auth_cookie_response(result)
+
     def h_auth_start(self, p, b, u):
         self._send_json(200, self.portal.start_auth((b or {}).get("identifier", "demo-viewer")))
 
@@ -288,8 +309,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def h_member_me(self, p, b, u):
         session, user = self._member_session()
-        self._send_json(200, {"member": {"member_id": user["user_id"], "display_name": user["display_name"]},
-                              "verification_id": session["verification_id"], "entitlement_version": session["entitlement_version"]})
+        self._send_json(200, {"member": {
+            "member_id": user["user_id"], "display_name": user["display_name"], "role": user["role"],
+        }, "verification_id": session["verification_id"], "entitlement_version": session["entitlement_version"]})
 
     def h_member_live(self, p, b, u):
         _, user = self._member_session()

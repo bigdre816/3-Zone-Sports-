@@ -40,7 +40,7 @@ def main() -> int:
                              http_host=args.host, ws_host=args.host)
 
     db = Database(config.database_path)
-    if seed_if_empty(db):
+    if seed_if_empty(db, config.seed_passwords):
         print(f"[three-zone] seeded demo inventory into {config.database_path}")
     cp = ControlPlane(db, config)
     media_dir = _media_dir(config.database_path)
@@ -56,7 +56,8 @@ def main() -> int:
         f"  WS    ws://{config.ws_host}:{config.ws_port}/ws/events/<event_id>\n"
         f"  env   {config.env}   db {config.database_path}\n"
         f"  origins {', '.join(config.allowed_origins)}\n"
-        "  demo accounts: demo-viewer (member), demo-worker (operator), demo-owner (owner)\n"
+        "  sign in with username + password (see README)\n"
+        "  member site  /     control plane  /ops\n"
     )
     print(banner, flush=True)
     try:
