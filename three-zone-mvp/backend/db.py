@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS users (
     zones         TEXT NOT NULL DEFAULT '[]',  -- JSON list; ["*"] means all
     packages      TEXT NOT NULL DEFAULT '[]',  -- JSON list; ["*"] means all
     destinations  TEXT NOT NULL DEFAULT '[]',  -- JSON list; ["*"] means all
-    password_hash TEXT NOT NULL DEFAULT ''
+    password_hash TEXT NOT NULL DEFAULT '',
+    properties    TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -38,7 +39,16 @@ CREATE TABLE IF NOT EXISTS events (
     backup_last_seen  REAL,
     scoreboard       TEXT NOT NULL DEFAULT '{}',
     replay_available INTEGER NOT NULL DEFAULT 0,
-    created_at       REAL NOT NULL
+    created_at       REAL NOT NULL,
+    media_provider   TEXT NOT NULL DEFAULT 'demo',
+    provider_input_id TEXT,
+    provider_video_id TEXT,
+    provider_replay_video_id TEXT,
+    provider_state   TEXT NOT NULL DEFAULT '',
+    provider_last_webhook_at REAL,
+    provider_last_error TEXT,
+    replay_pending   INTEGER NOT NULL DEFAULT 0,
+    property_id      TEXT
 );
 
 CREATE TABLE IF NOT EXISTS rights (
@@ -148,6 +158,93 @@ CREATE TABLE IF NOT EXISTS xrpl_publications (
 CREATE INDEX IF NOT EXISTS idx_member_sessions_member ON member_sessions(member_id, status);
 CREATE INDEX IF NOT EXISTS idx_schedule_events_schedule ON schedule_events(schedule_id, version, start_at);
 CREATE INDEX IF NOT EXISTS idx_audit_events_subject ON audit_events(subject_id, occurred_at);
+
+CREATE TABLE IF NOT EXISTS view_sessions (
+    session_id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    pseudonym TEXT NOT NULL,
+    lease_id TEXT NOT NULL,
+    rights_id INTEGER,
+    rights_version INTEGER NOT NULL,
+    started_at REAL NOT NULL,
+    ended_at REAL,
+    last_seq INTEGER NOT NULL DEFAULT 0,
+    last_heartbeat_at REAL,
+    qualified_seconds REAL NOT NULL DEFAULT 0,
+    state TEXT NOT NULL,
+    close_reason TEXT,
+    digest TEXT,
+    canonical_json TEXT,
+    property_id TEXT
+);
+CREATE TABLE IF NOT EXISTS viewing_heartbeats (
+    session_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    playing INTEGER NOT NULL,
+    page_visible INTEGER NOT NULL,
+    position_seconds REAL,
+    credited_seconds REAL NOT NULL DEFAULT 0,
+    ts REAL NOT NULL,
+    PRIMARY KEY(session_id, seq)
+);
+CREATE TABLE IF NOT EXISTS webhook_inbox (
+    input_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    received_at REAL NOT NULL,
+    PRIMARY KEY(input_id, event_type, ts)
+);
+CREATE TABLE IF NOT EXISTS settlements (
+    settlement_id TEXT PRIMARY KEY,
+    property_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    period_start REAL,
+    period_end REAL,
+    session_count INTEGER NOT NULL,
+    qualified_seconds REAL NOT NULL,
+    manifest_json TEXT NOT NULL,
+    manifest_digest TEXT NOT NULL,
+    merkle_root TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settlement_leaves (
+    settlement_id TEXT NOT NULL,
+    leaf_index INTEGER NOT NULL,
+    session_id TEXT NOT NULL,
+    digest TEXT NOT NULL,
+    proof_json TEXT NOT NULL,
+    PRIMARY KEY(settlement_id, leaf_index)
+);
+CREATE TABLE IF NOT EXISTS xrpl_publication_queue (
+    publication_id TEXT PRIMARY KEY,
+    settlement_id TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    tx_hash TEXT,
+    ledger_index TEXT,
+    simulated INTEGER NOT NULL DEFAULT 0,
+    error_code TEXT,
+    commitment TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS provider_analytics_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    video_id TEXT,
+    window_start REAL,
+    window_end REAL,
+    provider_minutes REAL,
+    tz_qualified_seconds REAL,
+    variance_seconds REAL,
+    status TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_view_sessions_event ON view_sessions(event_id, state);
+CREATE INDEX IF NOT EXISTS idx_settlements_property ON settlements(property_id, created_at);
 """
 
 
@@ -174,9 +271,26 @@ class Database:
                 "INSERT OR IGNORE INTO socket_metrics(id, connections, per_event, updated_at)"
                 " VALUES (1, 0, '{}', 0)"
             )
-            cols = {row[1] for row in self._conn.execute("PRAGMA table_info(users)").fetchall()}
-            if "password_hash" not in cols:
+            user_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(users)").fetchall()}
+            if "password_hash" not in user_cols:
                 self._conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
+            if "properties" not in user_cols:
+                self._conn.execute("ALTER TABLE users ADD COLUMN properties TEXT NOT NULL DEFAULT '[]'")
+            event_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(events)").fetchall()}
+            event_alters = {
+                "media_provider": "TEXT NOT NULL DEFAULT 'demo'",
+                "provider_input_id": "TEXT",
+                "provider_video_id": "TEXT",
+                "provider_replay_video_id": "TEXT",
+                "provider_state": "TEXT NOT NULL DEFAULT ''",
+                "provider_last_webhook_at": "REAL",
+                "provider_last_error": "TEXT",
+                "replay_pending": "INTEGER NOT NULL DEFAULT 0",
+                "property_id": "TEXT",
+            }
+            for name, decl in event_alters.items():
+                if name not in event_cols:
+                    self._conn.execute(f"ALTER TABLE events ADD COLUMN {name} {decl}")
             self._conn.commit()
 
     # --- primitives -------------------------------------------------------

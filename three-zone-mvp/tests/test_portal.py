@@ -128,6 +128,8 @@ class PortalTests(unittest.TestCase):
             app_js = handle.read()
         self.assertIn("async function revokeRights()", app_js)
         self.assertIn("async function loadInventory()", app_js)
+        self.assertIn("async function loadMastery()", app_js)
+        self.assertIn('querySelectorAll("#app [data-pane]")', app_js)
         self.assertIn("POST", app_js)
         self.assertGreater(len(app_js.splitlines()), 500)
 

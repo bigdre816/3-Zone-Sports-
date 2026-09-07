@@ -191,7 +191,7 @@ class PortalService:
         except ForbiddenError:
             self.audit("lease.denied", event_id, "member", user["user_id"])
             raise ForbiddenError("This game is not currently available with your access.", "playback_denied")
-        self.db.execute("INSERT INTO lease_records VALUES (?,?,?,?,?,?,?,?,?,?)",
+        self.db.execute("INSERT OR REPLACE INTO lease_records VALUES (?,?,?,?,?,?,?,?,?,?)",
                         (lease["lease_id"], event_id, user["user_id"], session_id, lease["rights_version"],
                          lease["mode"], "active", time.time(), time.time() + lease["lease_ttl"], None))
         self.audit("lease.issued", lease["lease_id"], "system", "rights-service",
