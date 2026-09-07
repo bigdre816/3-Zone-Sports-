@@ -305,6 +305,8 @@ Member playback also inserts `lease_records` and writes canonical audit `lease.i
 
 File: `backend/demo_media.py`.
 
+The **hosted media rail** (Cloudflare Stream live inputs, signed HLS, viewer heartbeats, Merkle settlement) is documented in `RUN_TONIGHT.md`. Default `TZ_MEDIA_PROVIDER=demo` keeps this local MP4 path. Cloudflare is the first real hosted rail on the same `MediaProvider` interface; Mux is a later empty seam. A signed HLS URL is not an instant kill switch.
+
 This is **not** production video. It generates a small local MP4 (FFmpeg testsrc color bars if FFmpeg exists, otherwise a tiny structurally valid MP4 that may not render). Path: `{database_dir}/media/{event_id}.mp4`.
 
 `GET /demo/media/{event_id}.mp4`:
