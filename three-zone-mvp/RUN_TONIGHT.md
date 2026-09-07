@@ -4,6 +4,25 @@ This is the operator runbook for the hosted media rail. Default `TZ_MEDIA_PROVID
 
 The player is never the authority. HLS URLs are issued only after Three-Zone PDP (`request_playback` / `validate_lease`). Viewer heartbeats are sent by the **authenticated member/session**, not by an operator.
 
+## Landed on main (publication readiness)
+
+The mastery guide + Cloudflare HLS + settlement stack (PRs #13/#14) ships to `main` via the live-publication readiness branch. Before flipping `TZ_MEDIA_PROVIDER=cloudflare`:
+
+```bash
+python scripts/live_readiness.py
+# or GET /api/ops/live-readiness as an operator
+```
+
+Required for a **real** Stream Live publish (not demo):
+
+1. Valid Stream API token (`CLOUDFLARE` or `TZ_CLOUDFLARE_API_TOKEN`)
+2. `TZ_CLOUDFLARE_ACCOUNT_ID`
+3. `TZ_CLOUDFLARE_CUSTOMER_CODE` (customer subdomain for signed HLS)
+4. `TZ_CLOUDFLARE_WEBHOOK_SECRET` matching the Stream webhook header
+5. Exact `TZ_CLOUDFLARE_ALLOWED_ORIGINS` / `TZ_PUBLIC_BASE_URL` (https in production)
+
+A Cursor secret named only `CLOUDFLARE` with a bare token is not enough — account id, customer code, and webhook secret must also be set. Prefer one JSON `CLOUDFLARE` secret with all four fields.
+
 ## Cloudflare prerequisites
 
 - A Cloudflare account with Stream Live enabled

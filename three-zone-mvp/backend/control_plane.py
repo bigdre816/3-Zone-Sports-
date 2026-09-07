@@ -104,6 +104,8 @@ SITE_ROUTES = [
      "purpose": "Browser icon response"},
     {"method": "GET", "path": "/api/health", "tier": "public",
      "purpose": "Liveness probe"},
+    {"method": "GET", "path": "/api/ops/live-readiness", "tier": "worker",
+     "purpose": "Live publication readiness flags (no secrets)"},
     {"method": "GET", "path": "/api/config", "tier": "public",
      "purpose": "Public runtime config (ports, TTLs, demo accounts)"},
     {"method": "POST", "path": "/api/auth/login", "tier": "public",

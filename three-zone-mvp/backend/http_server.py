@@ -29,6 +29,7 @@ _EVENT_RE = r"(?P<event_id>evt_[a-z0-9_]+)"
 def _routes():
     return [
         ("GET", re.compile(r"^/api/health$"), "h_health", "none"),
+        ("GET", re.compile(r"^/api/ops/live-readiness$"), "h_live_readiness", "operator"),
         ("GET", re.compile(r"^/api/config$"), "h_config", "none"),
         ("POST", re.compile(r"^/api/auth/demo-login$"), "h_login", "none"),
         ("POST", re.compile(r"^/api/auth/login$"), "h_auth_login", "none"),
@@ -304,6 +305,11 @@ class _Handler(BaseHTTPRequestHandler):
     # -- API handlers ------------------------------------------------------
     def h_health(self, p, b, u):
         self._send_json(200, {"status": "ok"})
+
+    def h_live_readiness(self, p, b, u):
+        # Operator/owner only. Never returns secret values — only presence/validity flags.
+        from .live_readiness import readiness
+        self._send_json(200, readiness(self.cp.config))
 
     def h_config(self, p, b, u):
         self._send_json(200, self.cp.config.public_config())

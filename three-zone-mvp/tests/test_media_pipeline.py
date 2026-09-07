@@ -652,5 +652,39 @@ class SmokePathTests(unittest.TestCase):
         self.assertEqual(verify["result"], "MATCH")
 
 
+
+class LiveReadinessTests(unittest.TestCase):
+    def test_demo_rail_is_ready_with_warnings(self):
+        from backend.live_readiness import readiness
+        cfg = Config(
+            env="development",
+            allowed_origins=["http://127.0.0.1:8000"],
+            media_provider="demo",
+            public_base_url="http://127.0.0.1:8000",
+            xrpl_mode="demo",
+        )
+        report = readiness(cfg)
+        self.assertTrue(report["ready_to_publish_live"])
+        self.assertTrue(any("demo rail" in w for w in report["warnings"]))
+
+    def test_cloudflare_missing_fields_block(self):
+        from backend.live_readiness import readiness
+        cfg = Config(
+            env="development",
+            allowed_origins=["http://127.0.0.1:8000"],
+            media_provider="cloudflare",
+            public_base_url="http://127.0.0.1:8000",
+            xrpl_mode="demo",
+        )
+        report = readiness(cfg)
+        self.assertFalse(report["ready_to_publish_live"])
+        self.assertGreaterEqual(len(report["blockers"]), 1)
+
+    def test_live_readiness_route_is_operator_gated(self):
+        from backend.control_plane import SITE_ROUTES
+        row = next(r for r in SITE_ROUTES if r["path"] == "/api/ops/live-readiness")
+        self.assertEqual(row["tier"], "worker")
+
+
 if __name__ == "__main__":
     unittest.main()
