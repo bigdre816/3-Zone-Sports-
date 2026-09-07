@@ -1,16 +1,26 @@
 {
-  "name": "Moten Control Plane (Phase 1)",
-  "install": "pip install --break-system-packages -r apps/control-plane/requirements.txt",
+  "name": "The-system (Three-Zone + Moten)",
+  "install": "bash .cursor/scripts/cloud-agent-install.sh",
+  "start": "bash .cursor/scripts/cloud-agent-start.sh",
+  "chromeExecutablePath": "/usr/bin/google-chrome-stable",
   "terminals": [
     {
-      "name": "control-plane",
-      "command": "cd apps/control-plane && PORT=8100 python3 manage.py serve",
-      "description": "Moten IP & Invention Control Plane workbench at http://localhost:8100/ (seeds the dev store on start)."
+      "name": "app-logs",
+      "command": "touch /tmp/cloud-agent-apps.log; tail -F /tmp/cloud-agent-apps.log",
+      "description": "App server logs. Three-Zone (main): http://127.0.0.1:8000/ and /ops (health GET /api/health). Moten Phase 1: http://127.0.0.1:8100/ (health GET /healthz). Do not treat the leftover System Investment Tracker file as the product. Chrome: /usr/bin/google-chrome-stable."
     }
   ],
   "ports": [
     {
-      "name": "control-plane",
+      "name": "three-zone-http",
+      "port": 8000
+    },
+    {
+      "name": "three-zone-ws",
+      "port": 8765
+    },
+    {
+      "name": "moten-control-plane",
       "port": 8100
     }
   ]
