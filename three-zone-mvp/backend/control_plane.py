@@ -13,6 +13,10 @@ import uuid
 
 from . import tokens
 from .db import Database, dumps, loads
+from .passwords import (
+    RESERVED, hash_password, normalize_username, valid_password, valid_username,
+    verify_password,
+)
 
 # ---------------------------------------------------------------------------
 # Lifecycle
@@ -100,6 +104,10 @@ SITE_ROUTES = [
      "purpose": "Liveness probe"},
     {"method": "GET", "path": "/api/config", "tier": "public",
      "purpose": "Public runtime config (ports, TTLs, demo accounts)"},
+    {"method": "POST", "path": "/api/auth/login", "tier": "public",
+     "purpose": "Sign in with username and password"},
+    {"method": "POST", "path": "/api/auth/register", "tier": "public",
+     "purpose": "Create a member (viewer) account"},
     {"method": "POST", "path": "/api/auth/demo-login", "tier": "public",
      "purpose": "Sign in as a demo member/worker/owner account"},
     {"method": "POST", "path": "/api/auth/start", "tier": "public",
@@ -283,7 +291,47 @@ class ControlPlane:
             self.config.token_secret, "session", {"sub": account}, self.config.session_ttl
         )
         self.audit_log(account, "auth.demo_login")
-        return {"session_token": token, "user": user}
+        return {"session_token": token, "user": user, "home": self._home_for(user)}
+
+    def _issue_session(self, user: dict, action: str) -> dict:
+        token = tokens.sign(
+            self.config.token_secret, "session", {"sub": user["user_id"]}, self.config.session_ttl
+        )
+        self.audit_log(user["user_id"], action)
+        return {"session_token": token, "user": user, "home": self._home_for(user)}
+
+    @staticmethod
+    def _home_for(user: dict) -> str:
+        return "/ops" if user["role"] in ("operator", "owner", "admin") else "/"
+
+    def password_login(self, username: str, password: str) -> dict:
+        username = normalize_username(username)
+        row = self.db.query_one("SELECT * FROM users WHERE user_id=?", (username,))
+        if not row or not verify_password(password, row["password_hash"]):
+            raise AuthError("invalid username or password", "invalid_credentials")
+        user = self._user_dict(row)
+        if user["account_state"] != "active":
+            raise ForbiddenError("account suspended", "account_suspended")
+        return self._issue_session(user, "auth.login")
+
+    def register_viewer(self, username: str, password: str, display_name: str) -> dict:
+        username = normalize_username(username)
+        display_name = (display_name or "").strip() or username
+        if not valid_username(username) or username in RESERVED:
+            raise ValidationError("username is not available", "bad_username")
+        if not valid_password(password):
+            raise ValidationError("password must be 8–128 characters", "bad_password")
+        if self.get_user(username):
+            raise ConflictError("username is not available", "username_taken")
+        self.db.execute(
+            "INSERT INTO users(user_id,display_name,role,account_state,subscription,"
+            "zones,packages,destinations,password_hash) VALUES (?,?,?,?,?,?,?,?,?)",
+            (username, display_name[:80], "viewer", "active", "active",
+             dumps(["midwest"]), dumps(["standard"]), dumps(["web"]),
+             hash_password(password)),
+        )
+        user = self.get_user(username)
+        return self._issue_session(user, "auth.register")
 
     def verify_session(self, token: str) -> dict:
         try:

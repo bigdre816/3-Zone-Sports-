@@ -59,13 +59,19 @@ async function api(method, path, body) {
 }
 
 // -- auth --------------------------------------------------------------
-async function login() {
-  const account = $("#account").value;
+async function login(event) {
+  if (event) event.preventDefault();
+  const username = $("#login-username").value.trim();
+  const password = $("#login-password").value;
   try {
-    const res = await api("POST", "/api/auth/demo-login", { account });
+    const res = await api("POST", "/api/auth/login", { username, password });
     state.session = res.session_token;
     state.user = res.user;
     sessionStorage.setItem("tz_session", state.session);
+    if (res.home === "/") {
+      location.href = "/";
+      return;
+    }
     afterAuth();
     toast("Signed in as " + res.user.display_name, "ok");
   } catch (e) {
@@ -79,11 +85,10 @@ function logout() {
   state.selected = null;
   sessionStorage.removeItem("tz_session");
   closeWs();
-  $("#logout-btn").classList.add("hidden");
-  $("#login-btn").classList.remove("hidden");
+  $("#auth-panel").classList.remove("hidden");
+  $("#shell").classList.add("hidden");
   $("#who").textContent = "";
-  $("#operator").classList.add("hidden");
-  $("#owner").classList.add("hidden");
+  $("#nav-owner").classList.add("hidden");
   $("#print-root").classList.add("hidden");
   $("#events").innerHTML = "";
   $("#player").classList.add("hidden");
@@ -91,6 +96,7 @@ function logout() {
   $("#op-event-label").textContent = "(select an event)";
   $("#transition-buttons").innerHTML = "";
   state.inventory = null;
+  api("POST", "/api/auth/logout").catch(() => {});
 }
 
 async function restoreSession() {
@@ -105,13 +111,30 @@ async function restoreSession() {
 }
 
 function afterAuth() {
-  $("#login-btn").classList.add("hidden");
-  $("#logout-btn").classList.remove("hidden");
+  if (state.user && !canOperate(state.user)) {
+    location.href = "/";
+    return;
+  }
+  $("#auth-panel").classList.add("hidden");
+  $("#shell").classList.remove("hidden");
   $("#who").textContent = `${state.user.display_name} · ${state.user.role}`;
-  $("#operator").classList.toggle("hidden", !canOperate(state.user));
-  $("#owner").classList.toggle("hidden", !canOwn(state.user));
-  if (!canOwn(state.user)) $("#print-root").classList.add("hidden");
+  $("#nav-owner").classList.toggle("hidden", !canOwn(state.user));
+  $("#nav-operations").classList.toggle("hidden", !canOperate(state.user));
+  showPane("catalog");
   loadEvents();
+}
+
+function showPane(name) {
+  document.querySelectorAll("[data-pane]").forEach((pane) => {
+    pane.classList.toggle("hidden", pane.getAttribute("data-pane") !== name);
+  });
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    item.classList.toggle("active", item.getAttribute("data-pane") === name);
+  });
+  if (name === "audit") {
+    refreshAnalytics();
+    refreshAudit();
+  }
 }
 
 // -- catalog -----------------------------------------------------------
@@ -166,8 +189,8 @@ function renderCatalog() {
     if (sb.home !== undefined) {
       card.appendChild(el("div", "muted", `Score ${sb.home}-${sb.away} · ${sb.period || ""} ${sb.clock || ""}`));
     }
-    const btn = el("button", null, ev.status === "replay" ? "Watch replay" : "Open");
-    btn.addEventListener("click", () => openEvent(ev.event_id));
+  const btn = el("button", null, ev.status === "replay" ? "Watch replay" : "Open");
+    btn.addEventListener("click", () => { showPane("player"); openEvent(ev.event_id); });
     card.appendChild(btn);
     box.appendChild(card);
   });
@@ -562,8 +585,11 @@ async function init() {
     toast("Could not load config", "bad");
     return;
   }
-  $("#login-btn").addEventListener("click", login);
+  $("#login-form").addEventListener("submit", login);
   $("#logout-btn").addEventListener("click", logout);
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    item.addEventListener("click", () => showPane(item.getAttribute("data-pane")));
+  });
   $("#create-form").addEventListener("submit", (e) => { e.preventDefault(); createEvent(e.target); });
   $("#score-form").addEventListener("submit", (e) => { e.preventDefault(); updateScore(e.target); });
   $("#revoke-btn").addEventListener("click", revokeRights);
