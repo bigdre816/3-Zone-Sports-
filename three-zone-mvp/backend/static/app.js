@@ -76,6 +76,7 @@ async function login() {
 function logout() {
   state.session = null;
   state.user = null;
+  state.selected = null;
   sessionStorage.removeItem("tz_session");
   closeWs();
   $("#logout-btn").classList.add("hidden");
@@ -87,6 +88,8 @@ function logout() {
   $("#events").innerHTML = "";
   $("#player").classList.add("hidden");
   $("#player-empty").classList.remove("hidden");
+  $("#op-event-label").textContent = "(select an event)";
+  $("#transition-buttons").innerHTML = "";
   state.inventory = null;
 }
 

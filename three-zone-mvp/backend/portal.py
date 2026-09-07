@@ -202,6 +202,7 @@ class PortalService:
     # schedules --------------------------------------------------------------------
     def upload_schedule(self, operator, filename, content):
         self.cp.require_operator(operator)
+        self._ensure_catalog()
         digest = "sha256:" + hashlib.sha256(content).hexdigest()
         rows = list(csv.DictReader(io.StringIO(content.decode("utf-8-sig"))))
         errors, parsed = [], []

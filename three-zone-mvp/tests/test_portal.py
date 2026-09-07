@@ -55,6 +55,12 @@ class PortalTests(unittest.TestCase):
         self.assertTrue(first["accepted"]); self.assertEqual(second["version"], first["version"] + 1)
         self.assertEqual(len(self.db.query("SELECT * FROM schedule_versions WHERE schedule_id=?", (first["schedule_id"],))), second["version"])
 
+    def test_schedule_upload_seeds_catalog_for_control_plane_import(self):
+        sample = b"school,team,sport,level,opponent,date,start time,location,home/away,season\nLincoln High,Lincoln Freshman Basketball,basketball,freshman,West,2026-11-12,19:00,Lincoln Gym,HOME,2026\n"
+        result = self.portal.upload_schedule(self.operator, "lincoln-2026.csv", sample)
+        self.assertTrue(result["accepted"])
+        self.assertFalse(result.get("errors"))
+
     def test_audit_persists_before_simulated_xrpl_receipt(self):
         session = self.session()
         self.portal.playback(session["session_id"], "evt_mw_basketball")
