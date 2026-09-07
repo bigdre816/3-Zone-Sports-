@@ -125,6 +125,15 @@
                 <button id="ingest-btn" type="button">Issue ingest token</button>
               </div>
             </div>
+            <div class="op-row">
+              <span class="op-label">Hosted media</span>
+              <div class="btn-row">
+                <button id="provision-btn" type="button">Provision</button>
+                <button id="sync-btn" type="button">Sync</button>
+                <button id="rotate-key-btn" type="button">Rotate key</button>
+                <button id="end-stream-btn" type="button" class="danger">End stream</button>
+              </div>
+            </div>
             <pre id="ingest-out" class="code hidden"></pre>
           </div>
         </section>
@@ -180,6 +189,7 @@ Lincoln High,Lincoln Freshman Basketball,basketball,freshman,West,2026-11-12,19:
   </div>
 
   <div id="toast" class="toast hidden"></div>
+  <script src="/vendor/hls.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

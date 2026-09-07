@@ -58,6 +58,7 @@ def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
     db.execute("DELETE FROM users WHERE user_id=?", ("demo-admin",))
 
     if _has_rows(db, "events"):
+        _backfill_property_ids(db)
         return False
 
     now = time.time()
@@ -125,4 +126,20 @@ def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
     )
     db.execute("INSERT INTO audit(ts,actor,action,event_id,detail) VALUES (?,?,?,?,?)",
                (now, "system", "seed.loaded", None, dumps({"events": len(events)})))
+    _backfill_property_ids(db)
     return True
+
+
+def _backfill_property_ids(db: Database) -> None:
+    """Attach seeded Midwest events to Lincoln High so property audit has a school."""
+    db.execute(
+        "UPDATE events SET property_id='school_lincoln' "
+        "WHERE property_id IS NULL AND zone='midwest'"
+    )
+    db.execute(
+        "UPDATE events SET property_id='school_lincoln' "
+        "WHERE event_id IN ('evt_mw_basketball','evt_mw_hockey','evt_mw_wrestling')"
+    )
+    db.execute(
+        "UPDATE events SET property_id='school_lakeside' WHERE event_id='evt_mw_volleyball'"
+    )

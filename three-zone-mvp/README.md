@@ -8,9 +8,11 @@ event inventory → rights + production clearance → live state → playback le
 
 The control plane owns the event, rights version, zone, production assignment,
 entitlement decision, audit trail, socket notifications, and replay lifecycle.
-The local demo uses a generated MP4 as the media adapter. A production
-deployment replaces that adapter with a managed SRT contribution, transcoder,
-packager, object store, and CDN.
+The local demo uses a generated MP4 as the media adapter (`TZ_MEDIA_PROVIDER=demo`).
+Cloudflare Stream is the first real hosted rail (signed HLS behind the same PDP).
+See [RUN_TONIGHT.md](RUN_TONIGHT.md) for provision, OBS/Larix, webhooks, viewer
+heartbeats, settlement manifests, and troubleshooting. Mux is a later empty seam
+on the same provider interface.
 
 ## Run it
 
@@ -138,7 +140,20 @@ docker run --rm -p 8000:8000 -p 8765:8765 \
 | `GET` | `/api/analytics` | Basic inventory and socket metrics |
 | `GET` | `/api/audit` | Operator-only append-only audit view |
 | `GET` | `/api/owner/inventory` | Owner-only back portal: prints/exports every part of the site |
+| `POST` | `/api/events/{event_id}/media/provision` | Operator binds one hosted live input (key returned once) |
+| `POST` | `/api/events/{event_id}/media/rotate-key` | Operator rotates ingest key (returned once) |
+| `POST` | `/api/events/{event_id}/media/sync` | Provider status, replay readiness, analytics snapshot |
+| `GET` | `/api/events/{event_id}/media/status` | Hosted input status without keys |
+| `GET` | `/api/events/{event_id}/settlement-manifest` | Session digests, Merkle root, XRPL enqueue |
+| `POST` | `/api/events/{event_id}/media/end` | Operator Bearer or media service key: live → replay |
+| `POST` | `/api/media/webhooks/cloudflare` | Cloudflare/demo webhook (shared secret) |
+| `POST` | `/api/events/{event_id}/view-sessions` | Authenticated viewer starts measurement |
+| `POST` | `/api/view-sessions/{id}/heartbeat` | Viewer heartbeat (not operator-only) |
+| `POST` | `/api/view-sessions/{id}/end` | Close a view session |
+| `GET` | `/api/properties/{id}/settlements` | Property-scoped settlements |
+| `POST` | `/api/properties/{id}/settlements/{sid}/verify` | MATCH / MISMATCH / INCOMPLETE / PENDING_PUBLICATION |
 | `GET` | `/demo/media/{event_id}.mp4` | Lease-gated local demo media |
+| `GET` | `/vendor/hls.min.js` | Pinned hls.js 1.5.x |
 
 The event socket is `ws://127.0.0.1:8765/ws/events/{event_id}` in the default
 run. The browser sends the session token in the WebSocket subprotocol list, and
@@ -165,8 +180,9 @@ python -m compileall -q backend run.py
 
 The tests cover live lease issuance, zone denial, lifecycle ordering, automatic
 replay transition, rights-revocation invalidation, version-bound lease rejection,
-event/source-scoped ingest credentials, media-service-key enforcement, and token
-tamper rejection.
+event/source-scoped ingest credentials, media-service-key enforcement, token
+tamper rejection, the hosted media rail (fake provider only), viewer sessions,
+Merkle settlement, and honest demo XRPL receipts.
 
 ## Scope note
 
