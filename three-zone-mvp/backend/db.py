@@ -194,6 +194,7 @@ CREATE TABLE IF NOT EXISTS upload_jobs (
     provider TEXT NOT NULL,
     provider_uid TEXT,
     upload_token TEXT,
+    upload_url TEXT,
     upload_method TEXT NOT NULL,
     status TEXT NOT NULL,
     expected_kind TEXT NOT NULL,
@@ -202,11 +203,14 @@ CREATE TABLE IF NOT EXISTS upload_jobs (
     error_code TEXT,
     retry_count INTEGER NOT NULL DEFAULT 0,
     expires_at REAL NOT NULL,
-    idempotency_key TEXT UNIQUE,
+    idempotency_key TEXT,
     intended_object_id TEXT,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_upload_jobs_owner_idem
+    ON upload_jobs(owner_profile_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 CREATE TABLE IF NOT EXISTS provider_webhook_events (
     provider_event_id TEXT PRIMARY KEY,
     provider TEXT NOT NULL,
@@ -403,6 +407,14 @@ class Database:
             cols = {row[1] for row in self._conn.execute("PRAGMA table_info(users)").fetchall()}
             if "password_hash" not in cols:
                 self._conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
+            job_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(upload_jobs)").fetchall()}
+            if job_cols and "upload_url" not in job_cols:
+                self._conn.execute("ALTER TABLE upload_jobs ADD COLUMN upload_url TEXT")
+            self._conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_upload_jobs_owner_idem "
+                "ON upload_jobs(owner_profile_id, idempotency_key) "
+                "WHERE idempotency_key IS NOT NULL"
+            )
             self._conn.commit()
 
     # --- primitives -------------------------------------------------------
