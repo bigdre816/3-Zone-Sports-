@@ -15,6 +15,11 @@ from dataclasses import dataclass, field
 # production by :meth:`Config.validate`.
 DEMO_TOKEN_SECRET = "three-zone-demo-token-secret-CHANGE-ME-0000000000"
 DEMO_MEDIA_SERVICE_KEY = "three-zone-demo-media-service-key-CHANGE-ME-000000"
+DEMO_SEED_PASSWORDS = {
+    "demo-viewer": "change-me-viewer-local",
+    "demo-worker": "change-me-worker-local",
+    "demo-owner": "change-me-owner-local",
+}
 
 MIN_SECRET_LEN = 32
 
@@ -49,6 +54,7 @@ class Config:
     xrpl_audit_account: str = ""
     xrpl_signing_secret: str = ""
     xrpl_key_id: str = ""
+    seed_passwords: dict = field(default_factory=dict)
 
     @classmethod
     def from_env(cls, http_port: int | None = None, ws_port: int | None = None,
@@ -79,6 +85,11 @@ class Config:
             xrpl_audit_account=os.environ.get("XRPL_AUDIT_ACCOUNT", ""),
             xrpl_signing_secret=os.environ.get("XRPL_SIGNING_SECRET", ""),
             xrpl_key_id=os.environ.get("XRPL_KEY_ID", ""),
+            seed_passwords={
+                "demo-viewer": os.environ.get("TZ_SEED_PASSWORD_VIEWER", DEMO_SEED_PASSWORDS["demo-viewer"]),
+                "demo-worker": os.environ.get("TZ_SEED_PASSWORD_WORKER", DEMO_SEED_PASSWORDS["demo-worker"]),
+                "demo-owner": os.environ.get("TZ_SEED_PASSWORD_OWNER", DEMO_SEED_PASSWORDS["demo-owner"]),
+            },
         )
         cfg.validate()
         return cfg
@@ -107,6 +118,9 @@ class Config:
         if not all((self.xrpl_rpc_url, self.xrpl_network, self.xrpl_audit_account,
                     self.xrpl_signing_secret, self.xrpl_key_id)):
             problems.append("XRPL configuration must be complete")
+        for account, password in self.seed_passwords.items():
+            if password == DEMO_SEED_PASSWORDS.get(account):
+                problems.append(f"TZ_SEED_PASSWORD for {account} is still the demo value")
         if problems:
             raise RuntimeError(
                 "Refusing to start in production with an unsafe configuration: "
@@ -121,7 +135,7 @@ class Config:
             "session_ttl": self.session_ttl,
             "lease_ttl": self.lease_ttl,
             "heartbeat_timeout": self.heartbeat_timeout,
-            "demo_accounts": ["demo-viewer", "demo-worker", "demo-owner"],
             "zones": ["midwest", "west", "east"],
             "simulation": self.env in ("demo", "development", "local"),
+            "register_enabled": True,
         }

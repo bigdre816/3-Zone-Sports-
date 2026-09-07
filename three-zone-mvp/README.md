@@ -25,9 +25,21 @@ python -m pip install -r requirements.txt
 python run.py
 ```
 
-Open <http://127.0.0.1:8000>.
+Open <http://127.0.0.1:8000> for the member site (sign in or create an account).
 
-The site has three tiers, each with its own portal:
+Open <http://127.0.0.1:8000/ops> for the operator/owner control plane.
+
+Sign in with username and password. Seeded local accounts (override with `TZ_SEED_PASSWORD_*`):
+
+| Username | Password | Role | Lands on |
+| --- | --- | --- | --- |
+| `demo-viewer` | `change-me-viewer-local` | member | `/` |
+| `demo-worker` | `change-me-worker-local` | operator | `/ops` |
+| `demo-owner` | `change-me-owner-local` | owner | `/ops` |
+
+Members can also **Create account** on `/`. That always creates a viewer. Staff accounts are not self-serve. From `/ops` use **Member site**; signed-in staff on `/` see **Control plane**.
+
+The site has three tiers:
 
 | Tier | Account | Capability |
 | --- | --- | --- |
@@ -66,18 +78,11 @@ docker run --rm -p 8000:8000 -p 8765:8765 \
 
 ## The demo path
 
-1. Sign in as `demo-viewer`.
-2. Filter to **midwest**; open `Lincoln Freshman Basketball` (live).
-3. The browser requests a playback lease, receives an event-scoped HTTP-only
-   cookie, opens the event socket (token in the WebSocket subprotocol, not the
-   URL), and loads the local managed-media adapter.
-4. Sign in as `demo-worker` in another tab to move `Lakeside Volleyball` through
-   the operator controls, issue an ingest token, send a heartbeat, and revoke
-   rights on a live event. Socket subscribers receive `rights.revoked`, and the
-   media endpoint rejects the existing lease on its next request.
-5. Sign in as `demo-owner` to open the Owner back portal, then **Print
-   everything** (page-ready report) or **Download JSON export** for a complete
-   dump of every part of the site.
+1. Open `/`, create a member account or sign in as `demo-viewer` / `change-me-viewer-local`.
+2. Use Live, Schedules, and Archives; open `Lincoln Freshman Basketball`.
+3. Sign out. Open `/ops` and sign in as `demo-owner` / `change-me-owner-local`.
+4. Use the left sidebar: Catalog, Player, Operations (create event, controls, schedule, audit), Owner inventory.
+5. Open **Member site**, then **Control plane** to move between the two sides.
 
 ## What is implemented
 

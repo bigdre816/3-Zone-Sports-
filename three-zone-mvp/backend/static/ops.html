@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Three-Zone Control Plane</title>
+  <link rel="stylesheet" href="/ops.css" />
+</head>
+<body>
+  <section id="auth-panel" class="auth-panel">
+    <div class="auth-card">
+      <h1>Control plane</h1>
+      <p class="muted">Sign in with your username and password.</p>
+      <form id="login-form">
+        <label>Username <input name="username" id="login-username" autocomplete="username" required /></label>
+        <label>Password <input name="password" id="login-password" type="password" autocomplete="current-password" required /></label>
+        <button id="login-btn" type="submit">Sign in</button>
+      </form>
+      <p class="muted auth-note">Members create accounts on the <a href="/">member site</a>.</p>
+    </div>
+  </section>
+
+  <div id="shell" class="shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-title">Three-Zone</div>
+        <div class="brand-sub">Control plane</div>
+      </div>
+      <nav class="side-nav">
+        <button type="button" class="nav-item active" data-pane="catalog">Catalog</button>
+        <button type="button" class="nav-item" data-pane="player">Player</button>
+        <details id="nav-operations" class="nav-group" open>
+          <summary>Operations</summary>
+          <button type="button" class="nav-item" data-pane="create">Create event</button>
+          <button type="button" class="nav-item" data-pane="controls">Event controls</button>
+          <button type="button" class="nav-item" data-pane="schedule">Schedule import</button>
+          <button type="button" class="nav-item" data-pane="audit">Analytics and audit</button>
+        </details>
+        <details id="nav-owner" class="nav-group hidden">
+          <summary>Owner</summary>
+          <button type="button" class="nav-item" data-pane="owner">Inventory</button>
+        </details>
+      </nav>
+      <div class="sidebar-account">
+        <div id="who" class="who"></div>
+        <a class="nav-link" href="/">Member site</a>
+        <button id="logout-btn" type="button" class="ghost">Sign out</button>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <main id="app">
+        <section data-pane="catalog" class="panel">
+          <div class="panel-head">
+            <h2>Catalog</h2>
+            <div class="filters" id="zone-filters"></div>
+          </div>
+          <div id="events" class="events"></div>
+        </section>
+
+        <section data-pane="player" class="panel hidden">
+          <div class="panel-head"><h2>Player</h2><span id="player-mode" class="badge"></span></div>
+          <div id="player-empty" class="empty">Select an event in Catalog to request a playback lease.</div>
+          <div id="player" class="player hidden">
+            <div class="player-title" id="player-title"></div>
+            <video id="video" controls playsinline muted></video>
+            <div class="player-meta">
+              <div id="player-status"></div>
+              <div id="player-score" class="score"></div>
+              <div id="player-feed" class="feed"></div>
+              <div id="socket-log" class="socket-log"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="operator" data-pane="create" class="panel hidden">
+          <div class="panel-head"><h2>Create event</h2></div>
+          <form id="create-form" class="form-grid">
+            <label>Title <input name="title" required /></label>
+            <label>Zone
+              <select name="zone"><option>midwest</option><option>west</option><option>east</option></select>
+            </label>
+            <label>Category <input name="category" value="general" /></label>
+            <label>Production mode
+              <select name="production_mode">
+                <option value="single_camera">single_camera</option>
+                <option value="multi_camera">multi_camera</option>
+                <option value="backup_active">backup_active</option>
+              </select>
+            </label>
+            <button type="submit">Create</button>
+          </form>
+        </section>
+
+        <section data-pane="controls" class="panel hidden">
+          <div class="panel-head"><h2>Event controls</h2></div>
+          <p class="muted">Controls for <span id="op-event-label">(select an event)</span></p>
+          <div id="op-controls" class="op-controls">
+            <div class="op-row">
+              <span class="op-label">Lifecycle</span>
+              <div id="transition-buttons" class="btn-row"></div>
+            </div>
+            <div class="op-row">
+              <span class="op-label">Rights</span>
+              <div class="btn-row">
+                <button id="revoke-btn" type="button" class="danger">Revoke rights</button>
+                <button id="restore-btn" type="button">Restore rights</button>
+              </div>
+            </div>
+            <div class="op-row">
+              <span class="op-label">Scoreboard</span>
+              <form id="score-form" class="btn-row">
+                <input name="home" type="number" placeholder="home" />
+                <input name="away" type="number" placeholder="away" />
+                <input name="period" placeholder="period" />
+                <input name="clock" placeholder="clock" />
+                <button type="submit">Update</button>
+              </form>
+            </div>
+            <div class="op-row">
+              <span class="op-label">Ingest</span>
+              <div class="btn-row">
+                <select id="ingest-source"><option>primary</option><option>backup</option></select>
+                <button id="ingest-btn" type="button">Issue ingest token</button>
+              </div>
+            </div>
+            <pre id="ingest-out" class="code hidden"></pre>
+          </div>
+        </section>
+
+        <section data-pane="schedule" class="panel hidden">
+          <div class="panel-head"><h2>Schedule import</h2></div>
+          <p class="muted">CSV with school, team, sport, level, opponent, date, start time, location, home/away, season. Malformed rows are rejected; a correction creates a new version.</p>
+          <form id="schedule-form" class="form-grid">
+            <label>CSV filename <input name="filename" value="lincoln-2026.csv" /></label>
+            <label>CSV body
+              <textarea name="csv" rows="6">school,team,sport,level,opponent,date,start time,location,home/away,season
+Lincoln High,Lincoln Freshman Basketball,basketball,freshman,West,2026-11-12,19:00,Lincoln Gym,HOME,2026</textarea>
+            </label>
+            <button type="submit">Preview and import</button>
+          </form>
+          <pre id="schedule-out" class="code hidden"></pre>
+        </section>
+
+        <section data-pane="audit" class="panel hidden">
+          <div class="panel-head"><h2>Analytics and audit</h2></div>
+          <div class="btn-row">
+            <button id="analytics-btn" type="button">Refresh analytics</button>
+            <button id="audit-btn" type="button">Refresh audit</button>
+          </div>
+          <pre id="analytics-out" class="code"></pre>
+          <div id="audit-out" class="audit"></div>
+        </section>
+
+        <section id="owner" data-pane="owner" class="panel hidden">
+          <div class="panel-head"><h2>Owner inventory</h2></div>
+          <p class="muted">Load, print, or export the site map, users, events, rights history, and audit log.</p>
+          <div class="btn-row">
+            <button id="owner-load-btn" type="button">Load full inventory</button>
+            <button id="owner-print-btn" type="button">Print everything</button>
+            <button id="owner-export-btn" type="button">Download JSON export</button>
+          </div>
+          <div id="owner-summary" class="owner-summary muted"></div>
+        </section>
+      </main>
+      <div id="print-root" class="print-root hidden"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

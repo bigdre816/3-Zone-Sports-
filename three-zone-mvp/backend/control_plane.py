@@ -13,6 +13,10 @@ import uuid
 
 from . import tokens
 from .db import Database, dumps, loads
+from .passwords import (
+    RESERVED, hash_password, normalize_username, valid_password, valid_username,
+    verify_password,
+)
 
 # ---------------------------------------------------------------------------
 # Lifecycle
@@ -83,19 +87,51 @@ TIERS = [
 # Every HTTP route the website exposes, with the tier that may reach it.
 SITE_ROUTES = [
     {"method": "GET", "path": "/", "tier": "public",
-     "purpose": "Single-page app shell (catalog, player, operator, owner)"},
-    {"method": "GET", "path": "/app.js", "tier": "public",
-     "purpose": "Frontend application logic"},
+     "purpose": "Three-Zone Sports Access member landing and portal"},
+    {"method": "GET", "path": "/portal.js", "tier": "public",
+     "purpose": "Member portal presentation logic"},
     {"method": "GET", "path": "/styles.css", "tier": "public",
-     "purpose": "Screen and print styles"},
+     "purpose": "Member portal styles"},
+    {"method": "GET", "path": "/ops", "tier": "public",
+     "purpose": "Operator/owner control-plane console"},
+    {"method": "GET", "path": "/app.js", "tier": "public",
+     "purpose": "Control-plane catalog, player, operator, and owner logic"},
+    {"method": "GET", "path": "/ops.css", "tier": "public",
+     "purpose": "Control-plane screen and print styles"},
     {"method": "GET", "path": "/favicon.ico", "tier": "public",
      "purpose": "Browser icon response"},
     {"method": "GET", "path": "/api/health", "tier": "public",
      "purpose": "Liveness probe"},
     {"method": "GET", "path": "/api/config", "tier": "public",
      "purpose": "Public runtime config (ports, TTLs, demo accounts)"},
+    {"method": "POST", "path": "/api/auth/login", "tier": "public",
+     "purpose": "Sign in with username and password"},
+    {"method": "POST", "path": "/api/auth/register", "tier": "public",
+     "purpose": "Create a member (viewer) account"},
     {"method": "POST", "path": "/api/auth/demo-login", "tier": "public",
      "purpose": "Sign in as a demo member/worker/owner account"},
+    {"method": "POST", "path": "/api/auth/start", "tier": "public",
+     "purpose": "Begin member verification"},
+    {"method": "POST", "path": "/api/auth/verify", "tier": "public",
+     "purpose": "Complete Treasure verification and issue a member session cookie"},
+    {"method": "POST", "path": "/api/auth/logout", "tier": "public",
+     "purpose": "Revoke the HTTP-only member session cookie"},
+    {"method": "GET", "path": "/api/member/me", "tier": "member",
+     "purpose": "Current verified member identity"},
+    {"method": "GET", "path": "/api/member/live", "tier": "member",
+     "purpose": "Authorized live and upcoming games"},
+    {"method": "GET", "path": "/api/member/schedules", "tier": "member",
+     "purpose": "Authorized team schedules"},
+    {"method": "GET", "path": "/api/member/archives", "tier": "member",
+     "purpose": "Authorized archive hierarchy"},
+    {"method": "GET", "path": "/api/member/search", "tier": "member",
+     "purpose": "Authorization-aware discovery search"},
+    {"method": "POST", "path": "/api/member/events/{id}/playback", "tier": "member",
+     "purpose": "Request a rights-checked playback lease"},
+    {"method": "POST", "path": "/api/admin/schedules/upload", "tier": "worker",
+     "purpose": "Import a versioned team schedule"},
+    {"method": "GET", "path": "/api/admin/audit/{id}", "tier": "worker",
+     "purpose": "Inspect a canonical audit event and XRPL receipt"},
     {"method": "GET", "path": "/api/me", "tier": "member",
      "purpose": "Current signed-in identity and entitlements"},
     {"method": "GET", "path": "/api/events", "tier": "member",
@@ -255,7 +291,47 @@ class ControlPlane:
             self.config.token_secret, "session", {"sub": account}, self.config.session_ttl
         )
         self.audit_log(account, "auth.demo_login")
-        return {"session_token": token, "user": user}
+        return {"session_token": token, "user": user, "home": self._home_for(user)}
+
+    def _issue_session(self, user: dict, action: str) -> dict:
+        token = tokens.sign(
+            self.config.token_secret, "session", {"sub": user["user_id"]}, self.config.session_ttl
+        )
+        self.audit_log(user["user_id"], action)
+        return {"session_token": token, "user": user, "home": self._home_for(user)}
+
+    @staticmethod
+    def _home_for(user: dict) -> str:
+        return "/ops" if user["role"] in ("operator", "owner", "admin") else "/"
+
+    def password_login(self, username: str, password: str) -> dict:
+        username = normalize_username(username)
+        row = self.db.query_one("SELECT * FROM users WHERE user_id=?", (username,))
+        if not row or not verify_password(password, row["password_hash"]):
+            raise AuthError("invalid username or password", "invalid_credentials")
+        user = self._user_dict(row)
+        if user["account_state"] != "active":
+            raise ForbiddenError("account suspended", "account_suspended")
+        return self._issue_session(user, "auth.login")
+
+    def register_viewer(self, username: str, password: str, display_name: str) -> dict:
+        username = normalize_username(username)
+        display_name = (display_name or "").strip() or username
+        if not valid_username(username) or username in RESERVED:
+            raise ValidationError("username is not available", "bad_username")
+        if not valid_password(password):
+            raise ValidationError("password must be 8–128 characters", "bad_password")
+        if self.get_user(username):
+            raise ConflictError("username is not available", "username_taken")
+        self.db.execute(
+            "INSERT INTO users(user_id,display_name,role,account_state,subscription,"
+            "zones,packages,destinations,password_hash) VALUES (?,?,?,?,?,?,?,?,?)",
+            (username, display_name[:80], "viewer", "active", "active",
+             dumps(["midwest"]), dumps(["standard"]), dumps(["web"]),
+             hash_password(password)),
+        )
+        user = self.get_user(username)
+        return self._issue_session(user, "auth.register")
 
     def verify_session(self, token: str) -> dict:
         try:
