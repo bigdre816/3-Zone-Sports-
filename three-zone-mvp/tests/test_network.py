@@ -195,6 +195,7 @@ class GameStudioTests(unittest.TestCase):
         })
         self.assertEqual(post["provenance"]["label"], "Three-Zone Game Clip")
         self.assertEqual(post["watch_full_game"]["label"], "Watch Full Game")
+        self.assertTrue(post.get("derived_media_asset_id") or post.get("media_asset_id"))
         upload = self.net.create_upload(self.member, {"kind": "photo"})
         token = upload["upload_url"].rsplit("/", 1)[-1]
         self.net.complete_fake_upload(token, {"duration_seconds": 0})

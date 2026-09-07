@@ -825,6 +825,9 @@ class NetworkService:
             clip = dict(self._row("clips", "clip_id", post["clip_id"]))
             card["provenance"] = self.clip_provenance(viewer, clip)
             card["watch_full_game"] = card["provenance"].get("watch_full_game")
+            card["derived_media_asset_id"] = clip.get("derived_media_asset_id")
+            card["source_media_asset_id"] = clip.get("source_media_asset_id")
+            card["media_asset_id"] = card["media_asset_id"] or clip.get("derived_media_asset_id")
         elif post["media_asset_id"]:
             card["provenance"] = {"label": "Member Upload", "source_type": "member_upload"}
         return card

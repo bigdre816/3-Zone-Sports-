@@ -45,15 +45,11 @@ function setView(name) {
 function mediaTag(item) {
   const id = item.derived_media_asset_id || item.media_asset_id || item.source_media_asset_id;
   if (!id) return "<div class='media-ph'>No media</div>";
-  const kind = (item.provenance && item.provenance.source_type === "member_upload" && !item.clip_id && item.sport)
-    ? "photo" : "video";
-  if (item.caption !== undefined && !item.clip_id && !item.start_seconds && item.media_asset_id && !item.source_game_id) {
-    return `<img alt="" src="/api/network/media/${id}" />`;
-  }
-  if (item.start_seconds != null || item.clip_id || item.game_id) {
+  if (item.clip_id || item.start_seconds != null || item.game_id || (item.provenance && item.provenance.source_type === "game_clip")) {
     return `<video src="/api/network/media/${id}" controls playsinline muted></video>`;
   }
-  return kind === "photo"
+  const photo = !item.clip_id && item.provenance && item.provenance.source_type === "member_upload";
+  return photo
     ? `<img alt="" src="/api/network/media/${id}" />`
     : `<video src="/api/network/media/${id}" controls playsinline muted></video>`;
 }
