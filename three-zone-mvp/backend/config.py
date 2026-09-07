@@ -34,6 +34,45 @@ def _truthy(raw: str | None, default: bool = False) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _first_env(*names: str) -> str:
+    for name in names:
+        raw = os.environ.get(name)
+        if raw is not None and raw.strip():
+            return raw.strip()
+    return ""
+
+
+def _cloudflare_credentials() -> tuple[str, str, str, str]:
+    """Load Stream credentials. Cursor environment secrets may use CLOUDFLARE.
+
+    A JSON object in CLOUDFLARE is also accepted so one dashboard secret can
+    carry account id, token, customer code, and webhook secret. Never log these.
+    """
+    import json
+    account = _first_env("TZ_CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID")
+    token = _first_env("TZ_CLOUDFLARE_API_TOKEN", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE")
+    customer = _first_env("TZ_CLOUDFLARE_CUSTOMER_CODE", "CLOUDFLARE_CUSTOMER_CODE")
+    webhook = _first_env("TZ_CLOUDFLARE_WEBHOOK_SECRET", "CLOUDFLARE_WEBHOOK_SECRET")
+    blob_raw = _first_env("CLOUDFLARE")
+    if blob_raw.startswith("{") and blob_raw.endswith("}"):
+        try:
+            blob = json.loads(blob_raw)
+        except json.JSONDecodeError:
+            blob = {}
+        if isinstance(blob, dict):
+            account = account or str(blob.get("account_id") or blob.get("TZ_CLOUDFLARE_ACCOUNT_ID") or "")
+            token = str(
+                blob.get("api_token") or blob.get("token") or blob.get("TZ_CLOUDFLARE_API_TOKEN") or token
+            )
+            customer = customer or str(
+                blob.get("customer_code") or blob.get("TZ_CLOUDFLARE_CUSTOMER_CODE") or ""
+            )
+            webhook = webhook or str(
+                blob.get("webhook_secret") or blob.get("TZ_CLOUDFLARE_WEBHOOK_SECRET") or ""
+            )
+    return account, token, customer, webhook
+
+
 @dataclass
 class Config:
     """Resolved configuration for one running instance."""
@@ -93,6 +132,8 @@ class Config:
         xrpl_account = os.environ.get("TZ_XRPL_ACCOUNT") or os.environ.get("XRPL_AUDIT_ACCOUNT", "")
         xrpl_secret = os.environ.get("TZ_XRPL_SIGNING_SECRET") or os.environ.get("XRPL_SIGNING_SECRET", "")
         xrpl_rpc = os.environ.get("TZ_XRPL_RPC_URL") or os.environ.get("XRPL_RPC_URL", "")
+        cf_account, cf_token, cf_customer, cf_webhook = _cloudflare_credentials()
+        media_provider = os.environ.get("TZ_MEDIA_PROVIDER", "demo").strip().lower() or "demo"
         cfg = cls(
             env=env,
             http_host=http_host,
@@ -107,12 +148,12 @@ class Config:
             lease_ttl=int(lease_raw),
             ingest_ttl=int(os.environ.get("TZ_INGEST_TTL", str(6 * 3600))),
             heartbeat_timeout=int(os.environ.get("TZ_HEARTBEAT_TIMEOUT", "12")),
-            media_provider=os.environ.get("TZ_MEDIA_PROVIDER", "demo").strip().lower() or "demo",
+            media_provider=media_provider,
             public_base_url=os.environ.get("TZ_PUBLIC_BASE_URL", default_origin).rstrip("/"),
-            cf_account_id=os.environ.get("TZ_CLOUDFLARE_ACCOUNT_ID", ""),
-            cf_api_token=os.environ.get("TZ_CLOUDFLARE_API_TOKEN", ""),
-            cf_customer_code=os.environ.get("TZ_CLOUDFLARE_CUSTOMER_CODE", ""),
-            cf_webhook_secret=os.environ.get("TZ_CLOUDFLARE_WEBHOOK_SECRET", ""),
+            cf_account_id=cf_account,
+            cf_api_token=cf_token,
+            cf_customer_code=cf_customer,
+            cf_webhook_secret=cf_webhook,
             cf_allowed_origins=cf_origins,
             cf_delete_recording_after_days=int(os.environ.get("TZ_CLOUDFLARE_DELETE_RECORDING_AFTER_DAYS", "365")),
             cf_prefer_low_latency=_truthy(os.environ.get("TZ_CLOUDFLARE_PREFER_LOW_LATENCY"), False),

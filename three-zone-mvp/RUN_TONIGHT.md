@@ -12,6 +12,15 @@ The player is never the authority. HLS URLs are issued only after Three-Zone PDP
 - Exact playback origins (no `*` in production)
 - Authorized footage only
 
+A Cursor Cloud environment secret named `CLOUDFLARE` is accepted as the API token.
+One JSON secret also works:
+
+```json
+{"account_id":"...","api_token":"...","customer_code":"...","webhook_secret":"..."}
+```
+
+Stream still needs account id, customer code, and webhook secret (separate secrets or that JSON). `TZ_MEDIA_PROVIDER=cloudflare` must be set or Provision stays on the demo rail. Environment secrets apply to **new** agents only.
+
 Placeholders (copy from `config.example.env`, never commit real secrets):
 
 ```bash

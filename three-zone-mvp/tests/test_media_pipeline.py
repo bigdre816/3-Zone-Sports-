@@ -514,9 +514,19 @@ class ConfigTests(unittest.TestCase):
         os.environ.pop("TZ_MEDIA_PROVIDER", None)
         os.environ.pop("TZ_PLAYBACK_LEASE_SECONDS", None)
         os.environ.pop("TZ_LEASE_TTL", None)
+        os.environ.pop("CLOUDFLARE", None)
         cfg = Config.from_env()
         self.assertEqual(cfg.media_provider, "demo")
         self.assertEqual(cfg.lease_ttl, 60)
+
+    def test_27b_cloudflare_env_alias_is_not_public(self):
+        os.environ["CLOUDFLARE"] = "cf-token-alias-value"
+        try:
+            cfg = Config.from_env()
+            self.assertEqual(cfg.cf_api_token, "cf-token-alias-value")
+            self.assertNotIn("cf-token-alias-value", str(cfg.public_config()))
+        finally:
+            os.environ.pop("CLOUDFLARE", None)
 
 
 class AuditorRoleTests(unittest.TestCase):
