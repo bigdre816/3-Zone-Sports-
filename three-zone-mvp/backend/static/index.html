@@ -7,22 +7,91 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <header><a class="brand" href="/">◢ <span>Three-Zone<small>SPORTS ACCESS</small></span></a><nav>Live Games　 Schedules　 Archives　 About</nav><button id="signin" class="quiet">Sign in</button><button id="signout" class="quiet hidden">Sign out</button><button id="enter">Verify and enter →</button></header>
+  <header>
+    <a class="brand" href="#home">◢ <span>Three-Zone<small>SPORTS ACCESS</small></span></a>
+    <nav>
+      <a href="#live">Live Games</a>
+      <a href="#schedules">Schedules</a>
+      <a href="#archives">Archives</a>
+      <a href="#about">About</a>
+    </nav>
+    <button id="signin" class="quiet" type="button">Sign in</button>
+    <button id="signout" class="quiet hidden" type="button">Sign out</button>
+    <button id="enter" type="button">Verify and enter →</button>
+  </header>
+
   <main>
     <section id="landing" class="hero">
-      <p class="eyebrow">MEMBERS PORTAL</p><h1>Three-Zone<br>Sports Access</h1><h2>♢ Verified by Treasure Network</h2>
+      <p class="eyebrow">MEMBERS PORTAL</p>
+      <h1>Three-Zone<br>Sports Access</h1>
+      <h2>Verified by Treasure Network</h2>
       <p>Your unified access to live games, team schedules, and school archives. Secure. Verified. Always on.</p>
-      <button id="hero-enter">Verify and enter　→</button>
-      <div class="benefits"><span>◉ <b>Live games</b><small>Watch in real time</small></span><span>▣ <b>Archives</b><small>Past games & highlights</small></span><span>▥ <b>Schedules</b><small>Never miss a game</small></span></div>
+      <button id="hero-enter" type="button">Verify and enter →</button>
+      <div class="benefits">
+        <a href="#live"><b>Live games</b><small>Watch in real time</small></a>
+        <a href="#archives"><b>Archives</b><small>Past games &amp; highlights</small></a>
+        <a href="#schedules"><b>Schedules</b><small>Never miss a game</small></a>
+      </div>
     </section>
+
     <section id="portal" class="hidden">
-      <p class="eyebrow">MEMBERS PORTAL <em id="demo-label">DEMO SIMULATION</em></p><h1>Welcome back, <span id="member-name">Member</span></h1><p class="sub">Your verified access to live games, schedules, and school archives.</p>
-      <input id="search" placeholder="Search schools, teams, or games…" />
-      <section><div class="section-title"><h2>◉ Live now</h2><span>Watch varsity and club games live.</span></div><div id="live" class="cards"></div></section>
-      <div class="columns"><section><div class="section-title"><h2>▥ Schedules</h2><span>Team games and event details.</span></div><div id="schedules" class="schedule"></div></section><section><div class="section-title"><h2>▣ Archives</h2><span>School → Team → Season → Game</span></div><div id="archives" class="cards archive"></div></section></div>
-      <section id="player-wrap" class="hidden"><h2 id="player-title"></h2><p id="player-state"></p><video id="video" controls playsinline muted></video></section>
+      <p class="eyebrow">MEMBERS PORTAL <em id="demo-label">DEMO SIMULATION</em></p>
+      <h1>Welcome back, <span id="member-name">Member</span></h1>
+      <p class="sub">Your verified access to live games, schedules, and school archives.</p>
+      <input id="search" type="search" placeholder="Search schools, teams, or games…" autocomplete="off" />
+      <div id="search-results" class="search-results hidden"></div>
+
+      <section id="section-live">
+        <div class="section-title"><h2>Live now</h2><span>Watch varsity and club games live.</span></div>
+        <div id="live" class="cards"></div>
+      </section>
+
+      <div class="columns">
+        <section id="section-schedules">
+          <div class="section-title"><h2>Schedules</h2><span>Team games and event details.</span></div>
+          <div id="schedules" class="schedule"></div>
+        </section>
+        <section id="section-archives">
+          <div class="section-title"><h2>Archives</h2><span>School → Team → Season → Game</span></div>
+          <div id="archives" class="cards archive"></div>
+        </section>
+      </div>
+
+      <section id="player-wrap" class="hidden">
+        <h2 id="player-title">Now playing</h2>
+        <p id="player-state"></p>
+        <video id="video" controls playsinline muted></video>
+      </section>
     </section>
-  </main><footer>Three-Zone Sports Access <span>Verified by Treasure Network</span></footer><div id="toast" class="toast hidden"></div>
+
+    <section id="page-about" class="page hidden">
+      <h1>About</h1>
+      <p>Three-Zone Sports Access is the member site for authorized live games, team schedules, and school archives. Treasure Network verifies membership. Three-Zone decides what you can watch.</p>
+      <p>Members see Live, Schedules, and Archives. Operators run events from the control plane.</p>
+    </section>
+    <section id="page-support" class="page hidden">
+      <h1>Support</h1>
+      <p>If a game will not play, it is not currently available with your access. Sign out and verify again if your session expired. Operators can restore rights from the control plane at <a href="/ops">/ops</a>.</p>
+    </section>
+    <section id="page-privacy" class="page hidden">
+      <h1>Privacy</h1>
+      <p>Member sessions are stored as HTTP-only cookies. Playback uses a short-lived server lease. This site does not collect recruiting profiles or athlete identity beyond the team and game you are entitled to watch.</p>
+    </section>
+    <section id="page-terms" class="page hidden">
+      <h1>Terms</h1>
+      <p>Access is limited to verified members with active entitlement and current rights. Live access does not automatically include archive access. Three-Zone may revoke a lease or event at any time.</p>
+    </section>
+  </main>
+
+  <footer>
+    Three-Zone Sports Access
+    <span>
+      <a href="#support">Support</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#terms">Terms</a>
+    </span>
+  </footer>
+  <div id="toast" class="toast hidden"></div>
   <script src="/portal.js"></script>
 </body>
 </html>

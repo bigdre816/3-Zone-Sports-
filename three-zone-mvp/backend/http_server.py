@@ -297,7 +297,14 @@ class _Handler(BaseHTTPRequestHandler):
 
     def h_member_schedules(self, p, b, u):
         _, user = self._member_session()
-        self._send_json(200, {"schedules": self.portal.schedules(user)})
+        filters = {}
+        if "?" in self.path:
+            from urllib.parse import parse_qs
+            query = parse_qs(self.path.split("?", 1)[1])
+            for key in ("school_id", "team_id", "season", "sport", "level"):
+                if query.get(key):
+                    filters[key] = query[key][0]
+        self._send_json(200, {"schedules": self.portal.schedules(user, filters)})
 
     def h_member_archives(self, p, b, u):
         _, user = self._member_session()
@@ -305,9 +312,12 @@ class _Handler(BaseHTTPRequestHandler):
 
     def h_member_search(self, p, b, u):
         _, user = self._member_session()
-        query = self.path.split("?", 1)[1] if "?" in self.path else ""
-        term = query.split("q=", 1)[1].split("&", 1)[0] if "q=" in query else ""
-        self._send_json(200, {"results": self.portal.search(user, term.replace("+", " "))})
+        from urllib.parse import parse_qs, unquote_plus
+        term = ""
+        if "?" in self.path:
+            query = parse_qs(self.path.split("?", 1)[1])
+            term = unquote_plus(query.get("q", [""])[0])
+        self._send_json(200, {"results": self.portal.search(user, term)})
 
     def h_member_playback(self, p, b, u):
         session, _ = self._member_session()
@@ -320,9 +330,16 @@ class _Handler(BaseHTTPRequestHandler):
     def h_archive_playback(self, p, b, u):
         session, _ = self._member_session()
         archive = self.cp.db.query_one("SELECT * FROM archive_objects WHERE archive_id=?", (p["archive_id"],))
-        if not archive: raise ControlError("archive not found", "archive_not_found")
+        if not archive:
+            raise ControlError("archive not found", "archive_not_found")
         result = self.portal.playback(session["session_id"], archive["event_id"], "archive")
-        self._send_json(200, result)
+        token = result.pop("lease_token")
+        eid = archive["event_id"]
+        cookie = (
+            f"tz_lease_{eid}={token}; Path=/demo/media/{eid}.mp4; "
+            f"Max-Age={self.cp.config.lease_ttl}; HttpOnly; SameSite=Strict"
+        )
+        self._send_json(200, result, extra_headers={"Set-Cookie": cookie})
 
     def h_schedule_upload(self, p, b, u):
         content = (b or {}).get("csv", "").encode()

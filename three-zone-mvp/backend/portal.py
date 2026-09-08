@@ -165,19 +165,50 @@ class PortalService:
         rows = self.db.query("""SELECT a.*,sc.name school,t.name team,t.sport,t.level FROM archive_objects a
                               JOIN schools sc ON sc.school_id=a.school_id JOIN teams t ON t.team_id=a.team_id
                               WHERE a.status='ARCHIVED' ORDER BY a.season DESC,a.title""")
-        return [dict(r) for r in rows]
+        items = [dict(r) for r in rows]
+        known = {item["event_id"] for item in items}
+        for event in self.cp.list_events(user):
+            if event["status"] in ("replay", "archive") and event["event_id"] not in known:
+                items.append({
+                    "archive_id": event["event_id"],
+                    "event_id": event["event_id"],
+                    "title": event["title"],
+                    "school": event.get("zone", ""),
+                    "team": event["title"],
+                    "season": "",
+                    "kind": "Replay" if event["status"] == "replay" else "Full Game",
+                    "status": "ARCHIVED",
+                    "sport": event["category"],
+                    "level": "",
+                })
+        return items
 
     def search(self, user, query):
-        q = "%" + (query or "").lower() + "%"
+        term = (query or "").strip().lower()
+        if not term:
+            return []
+        like = "%" + term + "%"
         results = []
-        for r in self.db.query("SELECT school_id,name,'school' kind FROM schools WHERE lower(name) LIKE ?", (q,)):
-            results.append(dict(r))
-        for r in self.db.query("SELECT team_id,name,'team' kind FROM teams WHERE lower(name) LIKE ?", (q,)):
-            results.append(dict(r))
-        for e in self.cp.list_events(user):
-            if query.lower() in e["title"].lower() or query.lower() in e["category"].lower():
-                results.append({"id": e["event_id"], "name": e["title"], "kind": "game"})
-        return results[:30]
+        for row in self.db.query("SELECT school_id AS id, name, 'school' AS kind FROM schools WHERE lower(name) LIKE ?", (like,)):
+            results.append(dict(row))
+        for row in self.db.query("SELECT team_id AS id, name, 'team' AS kind FROM teams WHERE lower(name) LIKE ?", (like,)):
+            results.append(dict(row))
+        for event in self.cp.list_events(user):
+            if term in event["title"].lower() or term in event["category"].lower():
+                kind = "archive" if event["status"] in ("replay", "archive") else "game"
+                results.append({"id": event["event_id"], "name": event["title"], "kind": kind})
+        for item in self.archives(user):
+            if term in item["title"].lower() or term in (item.get("school") or "").lower():
+                results.append({"id": item["archive_id"], "name": item["title"], "kind": "archive"})
+        seen = set()
+        unique = []
+        for item in results:
+            key = (item["kind"], item.get("id"), item["name"])
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(item)
+        return unique[:30]
 
     # Playback ---------------------------------------------------------------------
     def playback(self, session_id, event_id, use="live"):

@@ -78,6 +78,31 @@ class PortalTests(unittest.TestCase):
         self.assertIn("POST", app_js)
         self.assertGreater(len(app_js.splitlines()), 500)
 
+    def test_archive_playback_is_rights_checked(self):
+        session = self.session()
+        self.portal._ensure_catalog()
+        result = self.portal.playback(session["session_id"], "evt_mw_wrestling", "archive")
+        self.assertTrue(result["allow"])
+        self.assertEqual(result["mode"], "archive")
+
+    def test_search_returns_authorized_lincoln_entities(self):
+        self.session()
+        self.portal._ensure_catalog()
+        names = [item["name"] for item in self.portal.search(self.member, "Lincoln")]
+        self.assertTrue(any("Lincoln" in name for name in names))
+
+    def test_member_site_has_working_section_links(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "backend", "static", "index.html"), encoding="utf-8") as handle:
+            html = handle.read()
+        for href in ("#live", "#schedules", "#archives", "#about", "#support", "#privacy", "#terms"):
+            self.assertIn(f'href="{href}"', html)
+        with open(os.path.join(root, "backend", "static", "portal.js"), encoding="utf-8") as handle:
+            js = handle.read()
+        self.assertIn("/api/member/archive/", js)
+        self.assertIn("Watch archive", js)
+        self.assertIn("search-results", js)
+
 
 if __name__ == "__main__":
     unittest.main()
