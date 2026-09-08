@@ -25,11 +25,49 @@ python -m pip install -r requirements.txt
 python run.py
 ```
 
-Open <http://127.0.0.1:8000> for the Sports Access members portal.
+Open <http://127.0.0.1:8000> for the member site (sign in or create an account).
 
-Open <http://127.0.0.1:8000/ops> for the original operator/owner control-plane console.
+Open <http://127.0.0.1:8000/ops> for the operator/owner control plane.
 
-The site has three tiers, each with its own portal:
+Sign in with username and password. Seeded local accounts (override with `TZ_SEED_PASSWORD_*`):
+
+| Username | Password | Role | Lands on |
+| --- | --- | --- | --- |
+| `demo-viewer` | `change-me-viewer-local` | member | `/` |
+| `demo-worker` | `change-me-worker-local` | operator | `/ops` |
+| `demo-owner` | `change-me-owner-local` | owner | `/ops` |
+
+Members can also **Create account** on `/`. That always creates a viewer. Staff accounts are not self-serve. From `/ops` use **Member site**; signed-in staff on `/` see **Control plane**.
+
+The member site is also the sports network: **Watch it. Save it. Clip it. Share it.**
+
+Signed-in members can publish photos and short clips, upload a full game as an
+immutable source asset, trim a moment in Studio (90 seconds max), and share the
+derived clip on For You / Following / Local feeds. Full games stay private and
+pending verification until a worker reviews them. Game-derived clips keep a
+**Three-Zone Game Clip** provenance label and a **Watch Full Game** link when
+the viewer is authorized.
+
+Direct upload never sends large video or photo bytes through the application
+server. Full games get a resumable TUS URL; short clips use Cloudflare Stream
+`direct_upload` (`uploadURL`); photos use a separate object-storage adapter
+(presigned PUT). Local demo and CI use `TZ_MEDIA_PROVIDER=fake` and
+`TZ_PHOTO_STORAGE=fake`. Cloudflare Stream is opt-in for **video only**.
+
+Feed ranking is chronological (`published_at DESC, post_id DESC`). It is not
+machine learning.
+
+### Fake-provider local loop
+
+1. Sign in as a member on `/`.
+2. Create → Full Game, fill metadata, check the rights attestation, submit.
+3. The browser completes the fake provider upload (metadata only). Wait until
+   the UI says **Game ready**.
+4. Open the game from Profile → Games, set start/end in Studio (for example 0
+   and 20), render and publish.
+5. The feed shows **Three-Zone Game Clip** and **Watch Full Game**.
+
+The site has three tiers:
 
 | Tier | Account | Capability |
 | --- | --- | --- |
@@ -68,18 +106,11 @@ docker run --rm -p 8000:8000 -p 8765:8765 \
 
 ## The demo path
 
-1. Sign in as `demo-viewer`.
-2. Filter to **midwest**; open `Lincoln Freshman Basketball` (live).
-3. The browser requests a playback lease, receives an event-scoped HTTP-only
-   cookie, opens the event socket (token in the WebSocket subprotocol, not the
-   URL), and loads the local managed-media adapter.
-4. Sign in as `demo-worker` in another tab to move `Lakeside Volleyball` through
-   the operator controls, issue an ingest token, send a heartbeat, and revoke
-   rights on a live event. Socket subscribers receive `rights.revoked`, and the
-   media endpoint rejects the existing lease on its next request.
-5. Sign in as `demo-owner` to open the Owner back portal, then **Print
-   everything** (page-ready report) or **Download JSON export** for a complete
-   dump of every part of the site.
+1. Open `/`, create a member account or sign in as `demo-viewer` / `change-me-viewer-local`.
+2. Use Live, Schedules, and Archives; open `Lincoln Freshman Basketball`.
+3. Sign out. Open `/ops` and sign in as `demo-owner` / `change-me-owner-local`.
+4. Use the left sidebar: Catalog, Player, Operations (create event, controls, schedule, audit), Owner inventory.
+5. Open **Member site**, then **Control plane** to move between the two sides.
 
 ## What is implemented
 
@@ -130,6 +161,12 @@ docker run --rm -p 8000:8000 -p 8765:8765 \
 | `GET` | `/api/analytics` | Basic inventory and socket metrics |
 | `GET` | `/api/audit` | Operator-only append-only audit view |
 | `GET` | `/api/owner/inventory` | Owner-only back portal: prints/exports every part of the site |
+| `GET` | `/api/network/feed` | For You / Following / Local sports feed |
+| `POST` | `/api/network/uploads` | One-time direct-upload contract (no provider token) |
+| `POST` | `/api/network/games` | Submit a full-game source asset |
+| `POST` | `/api/network/clips` | Persist a Studio clip definition |
+| `GET` | `/api/network/review` | Worker review queue |
+| `GET` | `/api/network/evidence/{type}/{id}` | Owner evidence bundle |
 | `GET` | `/demo/media/{event_id}.mp4` | Lease-gated local demo media |
 
 The event socket is `ws://127.0.0.1:8765/ws/events/{event_id}` in the default

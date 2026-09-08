@@ -22,20 +22,46 @@ body {
   color: var(--text);
 }
 
-.topbar {
-  display: flex; justify-content: space-between; align-items: center;
-  gap: 16px; padding: 14px 22px; border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, #131a24, #0d1117); position: sticky; top: 0; z-index: 5;
+.auth-panel {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
 }
-.brand { display: flex; align-items: center; gap: 12px; }
-.brand .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--live);
-  box-shadow: 0 0 12px var(--live); }
-.brand-title { font-weight: 700; font-size: 16px; }
-.brand-sub { color: var(--muted); font-size: 12px; }
+.auth-card {
+  width: min(420px, 100%); background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; padding: 28px 24px;
+}
+.auth-card h1 { margin: 0 0 8px; font-size: 20px; font-weight: 650; }
+.auth-card form { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
+.auth-card label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.auth-note { margin-top: 16px; font-size: 13px; }
+.auth-note a { color: var(--accent); }
 
-.identity { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.identity label { color: var(--muted); font-size: 13px; }
-.who { color: var(--accent); font-size: 13px; margin-left: 4px; }
+.shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+.sidebar {
+  border-right: 1px solid var(--border); background: #10151c; padding: 18px 12px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.sidebar-brand { padding: 4px 8px 12px; border-bottom: 1px solid var(--border); }
+.brand-title { font-weight: 650; font-size: 15px; }
+.brand-sub { color: var(--muted); font-size: 12px; }
+.side-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.nav-item, .nav-link {
+  display: block; width: 100%; text-align: left; background: transparent; color: var(--text);
+  border: 0; border-radius: 6px; padding: 8px 10px; font-weight: 500; text-decoration: none;
+}
+.nav-item:hover, .nav-link:hover { background: var(--panel-2); }
+.nav-item.active { background: rgba(79,157,255,.14); color: var(--accent); }
+.nav-group { border: 0; background: transparent; padding: 4px 0; margin: 0; }
+.nav-group summary { color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.sidebar-account { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.sidebar-account .who { color: var(--muted); font-size: 12px; padding: 0 10px; }
+.muted { color: var(--muted); font-size: 13px; }
+
+.workspace { min-width: 0; }
+#app { display: block; padding: 18px; }
+.layout {
+  display: grid; gap: 16px; padding: 18px;
+  grid-template-columns: 1.3fr 1fr; grid-auto-rows: min-content;
+}
 
 select, input, button {
   font: inherit; color: var(--text); background: var(--panel-2);
@@ -52,7 +78,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   grid-template-columns: 1.3fr 1fr; grid-auto-rows: min-content;
 }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
-#operator { grid-column: 1 / -1; }
+#operator { }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .panel-head h2 { margin: 0; font-size: 15px; letter-spacing: .3px; }
 
@@ -116,14 +142,14 @@ summary { cursor: pointer; font-weight: 600; }
 .toast.ok { border-color: var(--green); }
 
 @media (max-width: 900px) {
-  .layout { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: 1fr; }
+  .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
 }
 
 /* -- owner back portal ------------------------------------------------ */
 .owner-summary { margin-top: 12px; font-size: 13px; }
 
 .print-root {
-  grid-column: 1 / -1;
   margin: 18px 22px 40px;
   padding: 22px 26px;
   background: #ffffff;
@@ -151,7 +177,7 @@ summary { cursor: pointer; font-weight: 600; }
 
 /* Print: show only the full inventory report as a clean document. */
 @media print {
-  .topbar, #app, #toast { display: none !important; }
+  #auth-panel, .sidebar, #app, #toast { display: none !important; }
   body { background: #ffffff; }
   .print-root, .print-root.hidden {
     display: block !important;

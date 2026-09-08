@@ -117,26 +117,26 @@ class PortalService:
 
     # Catalog ----------------------------------------------------------------------
     def _ensure_catalog(self):
-        if self.db.query_one("SELECT school_id FROM schools LIMIT 1"):
-            return
-        self.db.executemany("INSERT INTO schools VALUES (?,?,?)", [
+        # INSERT OR IGNORE so concurrent live/schedules/archives fetches cannot
+        # UNIQUE-crash while the demo catalog is being created for the first time.
+        self.db.executemany("INSERT OR IGNORE INTO schools VALUES (?,?,?)", [
             ("school_lincoln", "Lincoln High", "midwest"), ("school_lakeside", "Lakeside Prep", "midwest"),
             ("school_north", "Northridge", "midwest")])
-        self.db.executemany("INSERT INTO teams VALUES (?,?,?,?,?)", [
+        self.db.executemany("INSERT OR IGNORE INTO teams VALUES (?,?,?,?,?)", [
             ("team_lincoln_bball", "school_lincoln", "Lincoln Freshman Basketball", "basketball", "freshman"),
             ("team_lakeside_bball", "school_lakeside", "Lakeside Prep Basketball", "basketball", "varsity"),
             ("team_north_soccer", "school_north", "Northridge Soccer", "soccer", "varsity")])
         sid = "sch-lincoln-2026"
         stamp = time.time()
-        self.db.execute("INSERT INTO schedules VALUES (?,?,?,?,?,?)",
+        self.db.execute("INSERT OR IGNORE INTO schedules VALUES (?,?,?,?,?,?)",
                         (sid, "school_lincoln", "team_lincoln_bball", "2026", 1, "active"))
-        self.db.execute("INSERT INTO schedule_versions VALUES (?,?,?,?,?,?,?,?,?,?)",
+        self.db.execute("INSERT OR IGNORE INTO schedule_versions VALUES (?,?,?,?,?,?,?,?,?,?)",
                         (sid, 1, "fixture", "demo-fixtures", _hash({"schedule": sid}), "system",
                          stamp, stamp, None, "active"))
-        self.db.executemany("INSERT INTO schedule_events VALUES (?,?,?,?,?,?,?,?)", [
+        self.db.executemany("INSERT OR IGNORE INTO schedule_events VALUES (?,?,?,?,?,?,?,?)", [
             (sid, 1, "sce-lincoln-1", "Central Valley", stamp + 86400, "Riverside Stadium", "HOME", 1),
             (sid, 1, "sce-lincoln-2", "Maple Grove", stamp + 172800, "Lakeside Gym", "AWAY", 2)])
-        self.db.execute("INSERT INTO archive_objects VALUES (?,?,?,?,?,?,?,?,?)",
+        self.db.execute("INSERT OR IGNORE INTO archive_objects VALUES (?,?,?,?,?,?,?,?,?)",
                         ("arc-central-wrestling", "evt_mw_wrestling", "school_lincoln", "team_lincoln_bball",
                          "2026", "Full Game", "Central Wrestling — Full Game", "", "ARCHIVED"))
 
@@ -165,55 +165,24 @@ class PortalService:
         rows = self.db.query("""SELECT a.*,sc.name school,t.name team,t.sport,t.level FROM archive_objects a
                               JOIN schools sc ON sc.school_id=a.school_id JOIN teams t ON t.team_id=a.team_id
                               WHERE a.status='ARCHIVED' ORDER BY a.season DESC,a.title""")
-        items = [dict(r) for r in rows]
-        known = {item["event_id"] for item in items}
-        for event in self.cp.list_events(user):
-            if event["status"] in ("replay", "archive") and event["event_id"] not in known:
-                items.append({
-                    "archive_id": event["event_id"],
-                    "event_id": event["event_id"],
-                    "title": event["title"],
-                    "school": event.get("zone", ""),
-                    "team": event["title"],
-                    "season": "",
-                    "kind": "Replay" if event["status"] == "replay" else "Full Game",
-                    "status": "ARCHIVED",
-                    "sport": event["category"],
-                    "level": "",
-                })
-        return items
+        return [dict(r) for r in rows]
 
     def search(self, user, query):
-        term = (query or "").strip().lower()
-        if not term:
-            return []
-        like = "%" + term + "%"
+        q = "%" + (query or "").lower() + "%"
         results = []
-        for row in self.db.query("SELECT school_id AS id, name, 'school' AS kind FROM schools WHERE lower(name) LIKE ?", (like,)):
-            results.append(dict(row))
-        for row in self.db.query("SELECT team_id AS id, name, 'team' AS kind FROM teams WHERE lower(name) LIKE ?", (like,)):
-            results.append(dict(row))
-        for event in self.cp.list_events(user):
-            if term in event["title"].lower() or term in event["category"].lower():
-                kind = "archive" if event["status"] in ("replay", "archive") else "game"
-                results.append({"id": event["event_id"], "name": event["title"], "kind": kind})
-        for item in self.archives(user):
-            if term in item["title"].lower() or term in (item.get("school") or "").lower():
-                results.append({"id": item["archive_id"], "name": item["title"], "kind": "archive"})
-        seen = set()
-        unique = []
-        for item in results:
-            key = (item["kind"], item.get("id"), item["name"])
-            if key in seen:
-                continue
-            seen.add(key)
-            unique.append(item)
-        return unique[:30]
+        for r in self.db.query("SELECT school_id,name,'school' kind FROM schools WHERE lower(name) LIKE ?", (q,)):
+            results.append(dict(r))
+        for r in self.db.query("SELECT team_id,name,'team' kind FROM teams WHERE lower(name) LIKE ?", (q,)):
+            results.append(dict(r))
+        for e in self.cp.list_events(user):
+            if query.lower() in e["title"].lower() or query.lower() in e["category"].lower():
+                results.append({"id": e["event_id"], "name": e["title"], "kind": "game"})
+        return results[:30]
 
     # Playback ---------------------------------------------------------------------
-    def playback(self, session_id, event_id, use="live"):
-        session, user = self.session(session_id)
-        self.audit("playback.requested", event_id, "member", user["user_id"], verification_ref=session["verification_id"])
+    def playback_for_user(self, user, event_id, use="live", session_id=None):
+        """Issue a lease for a unified identity (Bearer or member cookie)."""
+        self.audit("playback.requested", event_id, "member", user["user_id"])
         event = self.cp.get_event_row(event_id)
         if use == "archive" and event["status"] != "archive":
             raise ForbiddenError("This game is not currently available with your access.", "archive_not_authorized")
@@ -223,16 +192,22 @@ class PortalService:
             self.audit("lease.denied", event_id, "member", user["user_id"])
             raise ForbiddenError("This game is not currently available with your access.", "playback_denied")
         self.db.execute("INSERT INTO lease_records VALUES (?,?,?,?,?,?,?,?,?,?)",
-                        (lease["lease_id"], event_id, user["user_id"], session_id, lease["rights_version"],
-                         lease["mode"], "active", time.time(), time.time() + lease["lease_ttl"], None))
+                        (lease["lease_id"], event_id, user["user_id"], session_id or "unified",
+                         lease["rights_version"], lease["mode"], "active", time.time(),
+                         time.time() + lease["lease_ttl"], None))
         self.audit("lease.issued", lease["lease_id"], "system", "rights-service",
-                   {"event_id": event_id, "simulated_media": True}, verification_ref=session["verification_id"],
+                   {"event_id": event_id, "simulated_media": True},
                    rights_version=lease["rights_version"])
         return lease
+
+    def playback(self, session_id, event_id, use="live"):
+        session, user = self.session(session_id)
+        return self.playback_for_user(user, event_id, use, session_id=session["session_id"])
 
     # schedules --------------------------------------------------------------------
     def upload_schedule(self, operator, filename, content):
         self.cp.require_operator(operator)
+        self._ensure_catalog()
         digest = "sha256:" + hashlib.sha256(content).hexdigest()
         rows = list(csv.DictReader(io.StringIO(content.decode("utf-8-sig"))))
         errors, parsed = [], []

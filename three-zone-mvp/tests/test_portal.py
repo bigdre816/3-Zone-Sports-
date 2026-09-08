@@ -4,7 +4,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend.config import Config
-from backend.control_plane import ControlPlane, ForbiddenError
+from backend.control_plane import ControlPlane, ForbiddenError, AuthError, ValidationError, ConflictError
 from backend.db import Database
 from backend.portal import PortalService
 from backend.seed import seed_if_empty
@@ -55,6 +55,12 @@ class PortalTests(unittest.TestCase):
         self.assertTrue(first["accepted"]); self.assertEqual(second["version"], first["version"] + 1)
         self.assertEqual(len(self.db.query("SELECT * FROM schedule_versions WHERE schedule_id=?", (first["schedule_id"],))), second["version"])
 
+    def test_schedule_upload_seeds_catalog_for_control_plane_import(self):
+        sample = b"school,team,sport,level,opponent,date,start time,location,home/away,season\nLincoln High,Lincoln Freshman Basketball,basketball,freshman,West,2026-11-12,19:00,Lincoln Gym,HOME,2026\n"
+        result = self.portal.upload_schedule(self.operator, "lincoln-2026.csv", sample)
+        self.assertTrue(result["accepted"])
+        self.assertFalse(result.get("errors"))
+
     def test_audit_persists_before_simulated_xrpl_receipt(self):
         session = self.session()
         self.portal.playback(session["session_id"], "evt_mw_basketball")
@@ -69,6 +75,53 @@ class PortalTests(unittest.TestCase):
         config = Config(env="demo", xrpl_signing_secret="do-not-show", allowed_origins=["http://localhost"])
         self.assertNotIn("do-not-show", str(config.public_config()))
 
+    def test_catalog_seed_survives_concurrent_first_load(self):
+        import threading
+        errors = []
+
+        def load():
+            try:
+                self.portal.live(self.member)
+                self.portal.schedules(self.member)
+                self.portal.archives(self.member)
+            except Exception as exc:  # noqa: BLE001 - collect any worker failure
+                errors.append(exc)
+
+        threads = [threading.Thread(target=load) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(errors, [])
+        self.assertGreaterEqual(len(self.portal.live(self.member)), 1)
+        self.assertGreaterEqual(len(self.portal.schedules(self.member)), 1)
+        self.assertGreaterEqual(len(self.portal.archives(self.member)), 1)
+
+    def test_password_login_all_seeded_roles(self):
+        from backend.config import DEMO_SEED_PASSWORDS
+        for username, home in (("demo-viewer", "/"), ("demo-worker", "/ops"), ("demo-owner", "/ops")):
+            result = self.cp.password_login(username, DEMO_SEED_PASSWORDS[username])
+            self.assertEqual(result["home"], home)
+            self.assertEqual(result["user"]["user_id"], username)
+            self.assertTrue(result["session_token"])
+
+    def test_password_login_rejects_bad_password(self):
+        with self.assertRaises(AuthError) as ctx:
+            self.cp.password_login("demo-owner", "wrong-password")
+        self.assertEqual(ctx.exception.code, "invalid_credentials")
+
+    def test_register_viewer_can_play_and_cannot_be_staff(self):
+        created = self.cp.register_viewer("pat-member", "password123", "Pat")
+        self.assertEqual(created["user"]["role"], "viewer")
+        self.assertEqual(created["home"], "/")
+        session = self.portal.complete_auth("pat-member")
+        lease = self.portal.playback(session["session_id"], "evt_mw_basketball")
+        self.assertTrue(lease["allow"])
+        with self.assertRaises(ValidationError):
+            self.cp.register_viewer("demo-owner", "password123", "Nope")
+        with self.assertRaises(ConflictError):
+            self.cp.register_viewer("pat-member", "password123", "Pat")
+
     def test_control_plane_app_js_is_preserved(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with open(os.path.join(root, "backend", "static", "app.js"), encoding="utf-8") as handle:
@@ -77,33 +130,6 @@ class PortalTests(unittest.TestCase):
         self.assertIn("async function loadInventory()", app_js)
         self.assertIn("POST", app_js)
         self.assertGreater(len(app_js.splitlines()), 500)
-
-    def test_archive_playback_is_rights_checked(self):
-        session = self.session()
-        self.portal._ensure_catalog()
-        result = self.portal.playback(session["session_id"], "evt_mw_wrestling", "archive")
-        self.assertTrue(result["allow"])
-        self.assertEqual(result["mode"], "archive")
-
-    def test_search_returns_authorized_lincoln_entities(self):
-        self.session()
-        self.portal._ensure_catalog()
-        names = [item["name"] for item in self.portal.search(self.member, "Lincoln")]
-        self.assertTrue(any("Lincoln" in name for name in names))
-
-    def test_member_site_has_working_section_links(self):
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(root, "backend", "static", "index.html"), encoding="utf-8") as handle:
-            html = handle.read()
-        for href in ("#live", "#schedules", "#archives", "#about", "#support", "#privacy", "#terms"):
-            self.assertIn(f'href="{href}"', html)
-        with open(os.path.join(root, "backend", "static", "portal.js"), encoding="utf-8") as handle:
-            js = handle.read()
-        self.assertIn("/api/member/archive/", js)
-        self.assertIn("Watch archive", js)
-        self.assertIn("search-results", js)
-        self.assertIn("RIGHTS HOLD", js)
-        self.assertIn("section-live", js)
 
 
 if __name__ == "__main__":

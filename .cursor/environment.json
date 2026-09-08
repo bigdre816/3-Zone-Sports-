@@ -1,17 +1,39 @@
 {
-  "name": "The-system Investment Tracker",
+  "name": "The-system Moten Control Plane",
   "install": "python3 --version",
   "terminals": [
     {
       "name": "web",
       "command": "python3 .cursor/serve.py",
-      "description": "Static dev server for the Investment Tracker app, served at http://localhost:8000/"
+      "description": "Static dev server for the Moten prototype at / and original System tracker at /System"
     }
   ],
   "ports": [
     {
       "name": "web",
       "port": 8000
+    }
+  ],
+  "mcpServerAllowlist": [
+    {
+      "name": "cloudflare",
+      "serverUrl": "https://mcp.cloudflare.com/mcp"
+    },
+    {
+      "name": "cloudflare-docs",
+      "serverUrl": "https://docs.mcp.cloudflare.com/mcp"
+    },
+    {
+      "name": "cloudflare-bindings",
+      "serverUrl": "https://bindings.mcp.cloudflare.com/mcp"
+    },
+    {
+      "name": "cloudflare-builds",
+      "serverUrl": "https://builds.mcp.cloudflare.com/mcp"
+    },
+    {
+      "name": "cloudflare-observability",
+      "serverUrl": "https://observability.mcp.cloudflare.com/mcp"
     }
   ]
 }

@@ -59,13 +59,19 @@ async function api(method, path, body) {
 }
 
 // -- auth --------------------------------------------------------------
-async function login() {
-  const account = $("#account").value;
+async function login(event) {
+  if (event) event.preventDefault();
+  const username = $("#login-username").value.trim();
+  const password = $("#login-password").value;
   try {
-    const res = await api("POST", "/api/auth/demo-login", { account });
+    const res = await api("POST", "/api/auth/login", { username, password });
     state.session = res.session_token;
     state.user = res.user;
     sessionStorage.setItem("tz_session", state.session);
+    if (res.home === "/") {
+      location.href = "/";
+      return;
+    }
     afterAuth();
     toast("Signed in as " + res.user.display_name, "ok");
   } catch (e) {
@@ -76,18 +82,21 @@ async function login() {
 function logout() {
   state.session = null;
   state.user = null;
+  state.selected = null;
   sessionStorage.removeItem("tz_session");
   closeWs();
-  $("#logout-btn").classList.add("hidden");
-  $("#login-btn").classList.remove("hidden");
+  $("#auth-panel").classList.remove("hidden");
+  $("#shell").classList.add("hidden");
   $("#who").textContent = "";
-  $("#operator").classList.add("hidden");
-  $("#owner").classList.add("hidden");
+  $("#nav-owner").classList.add("hidden");
   $("#print-root").classList.add("hidden");
   $("#events").innerHTML = "";
   $("#player").classList.add("hidden");
   $("#player-empty").classList.remove("hidden");
+  $("#op-event-label").textContent = "(select an event)";
+  $("#transition-buttons").innerHTML = "";
   state.inventory = null;
+  api("POST", "/api/auth/logout").catch(() => {});
 }
 
 async function restoreSession() {
@@ -102,13 +111,34 @@ async function restoreSession() {
 }
 
 function afterAuth() {
-  $("#login-btn").classList.add("hidden");
-  $("#logout-btn").classList.remove("hidden");
+  if (state.user && !canOperate(state.user)) {
+    location.href = "/";
+    return;
+  }
+  $("#auth-panel").classList.add("hidden");
+  $("#shell").classList.remove("hidden");
   $("#who").textContent = `${state.user.display_name} · ${state.user.role}`;
-  $("#operator").classList.toggle("hidden", !canOperate(state.user));
-  $("#owner").classList.toggle("hidden", !canOwn(state.user));
-  if (!canOwn(state.user)) $("#print-root").classList.add("hidden");
+  $("#nav-owner").classList.toggle("hidden", !canOwn(state.user));
+  $("#nav-operations").classList.toggle("hidden", !canOperate(state.user));
+  showPane("catalog");
   loadEvents();
+}
+
+function showPane(name) {
+  document.querySelectorAll("[data-pane]").forEach((pane) => {
+    pane.classList.toggle("hidden", pane.getAttribute("data-pane") !== name);
+  });
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    item.classList.toggle("active", item.getAttribute("data-pane") === name);
+  });
+  if (name === "audit") {
+    refreshAnalytics();
+    refreshAudit();
+  }
+  if (name === "network") {
+    refreshNetwork();
+    $("#network-evidence-form").classList.toggle("hidden", !canOwn(state.user));
+  }
 }
 
 // -- catalog -----------------------------------------------------------
@@ -163,8 +193,8 @@ function renderCatalog() {
     if (sb.home !== undefined) {
       card.appendChild(el("div", "muted", `Score ${sb.home}-${sb.away} · ${sb.period || ""} ${sb.clock || ""}`));
     }
-    const btn = el("button", null, ev.status === "replay" ? "Watch replay" : "Open");
-    btn.addEventListener("click", () => openEvent(ev.event_id));
+  const btn = el("button", null, ev.status === "replay" ? "Watch replay" : "Open");
+    btn.addEventListener("click", () => { showPane("player"); openEvent(ev.event_id); });
     card.appendChild(btn);
     box.appendChild(card);
   });
@@ -559,8 +589,11 @@ async function init() {
     toast("Could not load config", "bad");
     return;
   }
-  $("#login-btn").addEventListener("click", login);
+  $("#login-form").addEventListener("submit", login);
   $("#logout-btn").addEventListener("click", logout);
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    item.addEventListener("click", () => showPane(item.getAttribute("data-pane")));
+  });
   $("#create-form").addEventListener("submit", (e) => { e.preventDefault(); createEvent(e.target); });
   $("#score-form").addEventListener("submit", (e) => { e.preventDefault(); updateScore(e.target); });
   $("#revoke-btn").addEventListener("click", revokeRights);
@@ -578,7 +611,80 @@ async function init() {
       uploadSchedule(e.target);
     });
   }
+  const netRefresh = $("#network-refresh-btn");
+  if (netRefresh) netRefresh.addEventListener("click", refreshNetwork);
+  const gameForm = $("#network-game-form");
+  if (gameForm) gameForm.addEventListener("submit", (e) => { e.preventDefault(); decideNetworkGame(e.target); });
+  const caseForm = $("#network-case-form");
+  if (caseForm) caseForm.addEventListener("submit", (e) => { e.preventDefault(); decideNetworkCase(e.target); });
+  const evForm = $("#network-evidence-form");
+  if (evForm) evForm.addEventListener("submit", (e) => { e.preventDefault(); loadEvidence(e.target); });
   await restoreSession();
+}
+
+async function refreshNetwork() {
+  try {
+    const data = await api("GET", "/api/network/review");
+    const box = $("#network-queue");
+    box.innerHTML = "";
+    const add = (title, rows, fmt) => {
+      const h = el("h3", "", title);
+      box.appendChild(h);
+      if (!rows.length) { box.appendChild(el("p", "muted", "None")); return; }
+      rows.forEach((row) => box.appendChild(el("pre", "code", fmt(row))));
+    };
+    add("Pending games", data.games, (g) => `${g.game_id} ${g.game_number} ${g.verification_status} ${g.processing_status}`);
+    add("Uploads", data.uploads, (u) => `${u.upload_job_id} ${u.intended_type} ${u.status} ${u.error_code || ""}`);
+    add("Open cases", data.cases, (c) => `${c.case_id} ${c.subject_type} ${c.subject_id} ${c.classifier_result}`);
+    add("Reports", data.reports, (r) => `${r.report_id} ${r.subject_type} ${r.reason}`);
+  } catch (e) {
+    toast("Network queue failed: " + e.message, "bad");
+  }
+}
+
+async function decideNetworkGame(form) {
+  const data = Object.fromEntries(new FormData(form).entries());
+  try {
+    const res = await api("POST", `/api/network/review/games/${data.game_id}`, {
+      action: data.action, reason: data.reason,
+    });
+    $("#network-out").textContent = JSON.stringify(res, null, 2);
+    $("#network-out").classList.remove("hidden");
+    refreshNetwork();
+    toast("Game decision recorded", "ok");
+  } catch (e) {
+    toast("Game decision failed: " + e.message, "bad");
+  }
+}
+
+async function decideNetworkCase(form) {
+  const data = Object.fromEntries(new FormData(form).entries());
+  try {
+    const res = await api("POST", `/api/network/review/cases/${data.case_id}`, {
+      action: data.action, reason: data.reason,
+    });
+    $("#network-out").textContent = JSON.stringify(res, null, 2);
+    $("#network-out").classList.remove("hidden");
+    refreshNetwork();
+    toast("Moderation decision recorded", "ok");
+  } catch (e) {
+    toast("Moderation failed: " + e.message, "bad");
+  }
+}
+
+async function loadEvidence(form) {
+  const data = Object.fromEntries(new FormData(form).entries());
+  try {
+    const res = await api("GET", `/api/network/evidence/${data.subject_type}/${data.subject_id}`);
+    $("#network-out").textContent = JSON.stringify(res, null, 2);
+    $("#network-out").classList.remove("hidden");
+    const link = $("#evidence-html");
+    link.href = `/api/network/evidence/${data.subject_type}/${data.subject_id}.html`;
+    link.classList.remove("hidden");
+    toast("Evidence loaded", "ok");
+  } catch (e) {
+    toast("Evidence failed: " + e.message, "bad");
+  }
 }
 
 async function uploadSchedule(form) {

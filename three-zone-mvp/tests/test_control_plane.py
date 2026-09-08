@@ -250,6 +250,8 @@ class OwnerPortalTests(unittest.TestCase):
         self.assertIn("/api/owner/inventory", paths)
         self.assertIn("/ops", paths)
         self.assertIn("/api/member/live", paths)
+        self.assertIn("/api/auth/login", paths)
+        self.assertIn("/api/auth/register", paths)
 
 
 if __name__ == "__main__":

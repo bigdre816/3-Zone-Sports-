@@ -12,15 +12,16 @@ from __future__ import annotations
 import time
 
 from .db import Database, dumps
+from .passwords import hash_password
 
 HOUR = 3600
 DAY = 24 * HOUR
 
 
 def _user(uid, name, role, zones, packages, destinations,
-          account_state="active", subscription="active"):
+          account_state="active", subscription="active", password_hash=""):
     return (uid, name, role, account_state, subscription,
-            dumps(zones), dumps(packages), dumps(destinations))
+            dumps(zones), dumps(packages), dumps(destinations), password_hash)
 
 
 def _has_rows(db: Database, table: str) -> bool:
@@ -28,28 +29,48 @@ def _has_rows(db: Database, table: str) -> bool:
     return bool(row and row["c"])
 
 
-def seed_if_empty(db: Database) -> bool:
+def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
     """Populate demo data if the database has no events yet. Returns True if seeded."""
+    from .config import DEMO_SEED_PASSWORDS
+    passwords = seed_passwords or DEMO_SEED_PASSWORDS
     # Always upsert demo identities so existing pilot databases gain newly
     # introduced roles without requiring destructive data deletion.
     db.executemany(
         "INSERT OR REPLACE INTO users(user_id,display_name,role,account_state,subscription,"
-        "zones,packages,destinations) VALUES (?,?,?,?,?,?,?,?)",
+        "zones,packages,destinations,password_hash) VALUES (?,?,?,?,?,?,?,?,?)",
         [
             # Member site: a subscriber who can only watch what they are entitled to.
             _user("demo-viewer", "Demo Member (viewer)", "viewer",
-                  ["midwest"], ["standard"], ["web"]),
+                  ["midwest"], ["standard"], ["web"],
+                  password_hash=hash_password(passwords.get("demo-viewer", DEMO_SEED_PASSWORDS["demo-viewer"]))),
             # Back worker side: production staff who run events but cannot see the owner portal.
             _user("demo-worker", "Demo Worker (operator)", "operator",
-                  ["*"], ["*"], ["*"]),
+                  ["*"], ["*"], ["*"],
+                  password_hash=hash_password(passwords.get("demo-worker", DEMO_SEED_PASSWORDS["demo-worker"]))),
             # Owner side: full control plus the print-everything back portal.
             _user("demo-owner", "Demo Owner", "owner",
-                  ["*"], ["*"], ["*"]),
+                  ["*"], ["*"], ["*"],
+                  password_hash=hash_password(passwords.get("demo-owner", DEMO_SEED_PASSWORDS["demo-owner"]))),
         ],
     )
     # V1 used demo-admin. The explicit three-tier model replaces it with the
     # owner account; historical audit rows keep their original actor string.
     db.execute("DELETE FROM users WHERE user_id=?", ("demo-admin",))
+
+    now = time.time()
+    db.executemany(
+        "INSERT OR IGNORE INTO profiles(profile_id,user_id,handle,display_name,avatar,bio,market,"
+        "sports,profile_type,visibility,verification_state,verification_badge,team_id,created_at,updated_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [
+            ("prf_demo_viewer", "demo-viewer", "demo_viewer", "Demo Member (viewer)", "",
+             "Midwest fan", "midwest", dumps(["basketball"]), "fan", "public", "none", "", None, now, now),
+            ("prf_demo_worker", "demo-worker", "demo_worker", "Demo Worker (operator)", "",
+             "Operations", "midwest", dumps([]), "videographer", "public", "none", "", None, now, now),
+            ("prf_demo_owner", "demo-owner", "demo_owner", "Demo Owner", "",
+             "Owner", "midwest", dumps([]), "sports_organization", "public", "none", "", None, now, now),
+        ],
+    )
 
     if _has_rows(db, "events"):
         return False
