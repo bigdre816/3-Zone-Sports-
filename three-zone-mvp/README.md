@@ -48,10 +48,11 @@ pending verification until a worker reviews them. Game-derived clips keep a
 **Three-Zone Game Clip** provenance label and a **Watch Full Game** link when
 the viewer is authorized.
 
-Direct upload never sends large video through the application server. The API
-returns a one-time provider URL (resumable/tus for full games). Local demo and
-CI use `TZ_MEDIA_PROVIDER=fake`. A real Cloudflare Stream smoke test is opt-in
-via `TZ_CLOUDFLARE_ACCOUNT_ID` and `TZ_CLOUDFLARE_API_TOKEN`.
+Direct upload never sends large video or photo bytes through the application
+server. Full games get a resumable TUS URL; short clips use Cloudflare Stream
+`direct_upload` (`uploadURL`); photos use a separate object-storage adapter
+(presigned PUT). Local demo and CI use `TZ_MEDIA_PROVIDER=fake` and
+`TZ_PHOTO_STORAGE=fake`. Cloudflare Stream is opt-in for **video only**.
 
 Feed ranking is chronological (`published_at DESC, post_id DESC`). It is not
 machine learning.

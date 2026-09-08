@@ -88,11 +88,17 @@ class RateLimiter:
 
 
 class NetworkService:
-    def __init__(self, cp, portal, provider):
+    def __init__(self, cp, portal, provider, photo_storage=None):
         self.cp = cp
         self.portal = portal
         self.db = cp.db
         self.provider = provider
+        self.photo_storage = photo_storage
+        if self.photo_storage is None:
+            from .photo_storage import FakePhotoStorage
+            self.photo_storage = FakePhotoStorage(
+                webhook_secret=getattr(cp.config, "fake_webhook_secret", "fake-webhook-secret"),
+            )
         self.limiter = RateLimiter()
 
     # -- helpers -----------------------------------------------------------
@@ -451,14 +457,28 @@ class NetworkService:
             raise ForbiddenError("not authorized to view this clip", "clip_forbidden")
         return clip
 
+    def _adapter_for_kind(self, kind: str):
+        if kind == "photo":
+            return self.photo_storage
+        return self.provider
+
+    def _webhook_adapters(self):
+        adapters = [self.provider]
+        if self.photo_storage is not None:
+            adapters.append(self.photo_storage)
+        return adapters
+
     # -- uploads -----------------------------------------------------------
     def _safe_upload_contract(self, job, session) -> dict:
+        url = session.get("upload_url") or job.get("upload_url") or ""
+        method = session.get("upload_method") or job.get("upload_method")
         return {
             "upload_job_id": job["upload_job_id"],
-            "upload_url": session["upload_url"],
-            "expiry": session["expiry"],
-            "upload_method": session["upload_method"],
-            "resumable": bool(session.get("resumable")),
+            "upload_url": url,
+            "expiry": session.get("expiry") or job.get("expires_at"),
+            "upload_method": method,
+            "resumable": bool(session.get("resumable") if "resumable" in session
+                              else method == "tus"),
             "expected": {
                 "kind": job["expected_kind"],
                 "max_bytes": (
@@ -467,7 +487,7 @@ class NetworkService:
                     else 80 * 1024 * 1024
                 ),
                 "max_duration_seconds": (
-                    None if job["expected_kind"] == "game"
+                    None if job["expected_kind"] in ("game", "photo")
                     else self.cp.config.max_post_video_seconds
                 ),
             },
@@ -481,10 +501,13 @@ class NetworkService:
         profile = self.ensure_profile(user)
         idem = (data.get("idempotency_key") or "").strip() or None
         if idem:
-            existing = self.db.query_one("SELECT * FROM upload_jobs WHERE idempotency_key=?", (idem,))
+            existing = self.db.query_one(
+                "SELECT * FROM upload_jobs WHERE owner_profile_id=? AND idempotency_key=?",
+                (profile["profile_id"], idem),
+            )
             if existing:
                 session = {
-                    "upload_url": f"/api/network/provider/fake/upload/{existing['upload_token']}",
+                    "upload_url": existing["upload_url"] or "",
                     "expiry": existing["expires_at"],
                     "upload_method": existing["upload_method"],
                     "resumable": existing["upload_method"] == "tus",
@@ -497,20 +520,41 @@ class NetworkService:
         )
         if active and not data.get("retry"):
             raise ConflictError("an upload is already in progress", "upload_in_progress")
-        session = self.provider.create_direct_upload(kind)
+        max_bytes = (
+            self.cp.config.max_game_bytes if kind == "game"
+            else self.cp.config.max_photo_bytes if kind == "photo"
+            else 80 * 1024 * 1024
+        )
+        adapter = self._adapter_for_kind(kind)
+        session = adapter.create_direct_upload(
+            kind,
+            max_bytes=max_bytes,
+            max_duration_seconds=(
+                None if kind in ("game", "photo") else self.cp.config.max_post_video_seconds
+            ),
+            upload_length=(data or {}).get("byte_size") or max_bytes,
+            creator=profile["profile_id"],
+        )
         stamp = _now()
         job_id = _id("upl")
+        upload_url = session["upload_url"]
+        token = session.get("upload_token") or ""
         self.db.execute(
-            "INSERT INTO upload_jobs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO upload_jobs ("
+            "upload_job_id, owner_profile_id, intended_type, provider, provider_uid, "
+            "upload_token, upload_url, upload_method, status, expected_kind, byte_size, "
+            "duration_seconds, error_code, retry_count, expires_at, idempotency_key, "
+            "intended_object_id, created_at, updated_at"
+            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                job_id, profile["profile_id"], kind, self.provider.name,
-                session["provider_uid"], session["upload_url"].rsplit("/", 1)[-1],
+                job_id, profile["profile_id"], kind, adapter.name,
+                session["provider_uid"], token, upload_url,
                 session["upload_method"], "authorized", kind, None, None, None, 0,
                 session["expiry"], idem, None, stamp, stamp,
             ),
         )
         self._audit("MEDIA_UPLOAD_AUTHORIZED", job_id, "member", user["user_id"],
-                    {"kind": kind, "provider": self.provider.name})
+                    {"kind": kind, "provider": adapter.name})
         return self._safe_upload_contract(
             dict(self._row("upload_jobs", "upload_job_id", job_id)), session,
         )
@@ -556,18 +600,30 @@ class NetworkService:
         return self.create_upload(user, {"kind": job["intended_type"], "retry": True})
 
     def complete_fake_upload(self, token: str, meta: dict | None = None) -> dict:
-        if self.provider.name != "fake":
-            raise ForbiddenError("fake upload endpoint disabled", "provider_mismatch")
-        payload = self.provider.complete_upload(token, meta or {})
-        return self.apply_webhook({"X-Network-Webhook-Secret": self.cp.config.fake_webhook_secret}, payload)
+        payload = None
+        if hasattr(self.provider, "uploads") and token in getattr(self.provider, "uploads", {}):
+            payload = self.provider.complete_upload(token, meta or {})
+        elif hasattr(self.photo_storage, "uploads") and token in getattr(self.photo_storage, "uploads", {}):
+            payload = self.photo_storage.complete_upload(token, meta or {})
+        if payload is None:
+            raise ForbiddenError("unknown fake upload token", "unknown_upload")
+        return self.apply_webhook(
+            {"X-Network-Webhook-Secret": self.cp.config.fake_webhook_secret}, payload,
+        )
 
-    def apply_webhook(self, headers: dict, body: dict) -> dict:
+    def apply_webhook(self, headers: dict, body: dict, raw_body: bytes | None = None) -> dict:
         body = body or {}
-        if not self.provider.verify_webhook(headers or {}, body):
+        chosen = None
+        for adapter in self._webhook_adapters():
+            if adapter.verify_webhook(headers or {}, body, raw_body):
+                chosen = adapter
+                break
+        if chosen is None:
             raise AuthError("invalid webhook signature", "bad_webhook")
-        event_id = (body.get("provider_event_id") or "").strip()
-        uid = (body.get("provider_uid") or "").strip()
-        status = (body.get("status") or "").strip()
+        event = chosen.normalize_webhook(headers or {}, raw_body, body)
+        event_id = (event.get("provider_event_id") or "").strip()
+        uid = (event.get("provider_uid") or "").strip()
+        status = (event.get("status") or "").strip()
         if not event_id or not uid:
             raise ValidationError("malformed webhook", "bad_webhook_body")
         existing = self.db.query_one(
@@ -577,37 +633,37 @@ class NetworkService:
             return {"ok": True, "duplicate": True}
         self.db.execute(
             "INSERT INTO provider_webhook_events VALUES (?,?,?,?,?)",
-            (event_id, self.provider.name, uid, status, _now()),
+            (event_id, chosen.name, uid, status, _now()),
         )
         job = self.db.query_one("SELECT * FROM upload_jobs WHERE provider_uid=?", (uid,))
         clip = self.db.query_one("SELECT * FROM clips WHERE derived_media_asset_id IN "
                                  "(SELECT media_asset_id FROM media_assets WHERE provider_uid=?) "
-                                 "OR provider_job_id=?", (uid, body.get("job_id")))
+                                 "OR provider_job_id=?", (uid, event.get("job_id")))
         if job and job["status"] == "ready" and status != "ready":
             return {"ok": True, "ignored": "stale"}
         mapped = {
             "ready": "ready", "ok": "ready", "uploaded": "uploaded",
             "processing": "processing", "error": "failed", "failed": "failed",
-            "queued": "processing",
-        }.get(status, "processing")
+            "queued": "processing", "authorized": "authorized",
+        }.get(status, status or "processing")
         stamp = _now()
-        duration = body.get("duration_seconds")
+        duration = event.get("duration_seconds")
         if job:
             if mapped == "ready":
                 self._audit("MEDIA_UPLOAD_COMPLETED", job["upload_job_id"], "system", "media-provider")
                 self._audit("MEDIA_PROCESSING_STARTED", job["upload_job_id"], "system", "media-provider")
-                asset_id = self._ensure_asset(job, uid, duration, body.get("byte_size"))
+                asset_id = self._ensure_asset(job, uid, duration, event.get("byte_size"))
                 self.db.execute(
                     "UPDATE upload_jobs SET status='ready', duration_seconds=?, byte_size=?, updated_at=? "
                     "WHERE upload_job_id=?",
-                    (duration, body.get("byte_size"), stamp, job["upload_job_id"]),
+                    (duration, event.get("byte_size"), stamp, job["upload_job_id"]),
                 )
                 self._link_ready_job(dict(job), asset_id, duration)
                 self._audit("MEDIA_READY", asset_id, "system", "media-provider")
             elif mapped in ("failed", "quarantined", "expired"):
                 self.db.execute(
                     "UPDATE upload_jobs SET status=?, error_code=?, updated_at=? WHERE upload_job_id=?",
-                    (mapped, body.get("error_code") or mapped, stamp, job["upload_job_id"]),
+                    (mapped, event.get("error_code") or mapped, stamp, job["upload_job_id"]),
                 )
             else:
                 self.db.execute(
@@ -1245,6 +1301,7 @@ class NetworkService:
             "start_seconds": clip["start_seconds"],
             "end_seconds": clip["end_seconds"],
             "derived_media_asset_id": clip["derived_media_asset_id"],
+            "provider_job_id": clip["provider_job_id"],
             "caption": clip["caption"],
             "sport": clip["sport"],
             "publication_status": clip["publication_status"],

@@ -229,6 +229,37 @@ class GameStudioTests(unittest.TestCase):
             self.net.publish_clip(self.member, clip["clip_id"], {"visibility": "public"})
         self.assertEqual(ctx.exception.code, "rights_exceeded")
 
+    def test_clip_render_is_idempotent(self):
+        game = self._ready_game()
+        clip = self.net.create_clip_definition(self.member, {
+            "source_game_id": game["game_id"], "start_seconds": 0, "end_seconds": 20,
+        })
+        first = self.net.render_clip(self.member, clip["clip_id"])
+        second = self.net.render_clip(self.member, clip["clip_id"])
+        self.assertEqual(first["clip_id"], second["clip_id"])
+        self.assertEqual(first["provider_job_id"], second["provider_job_id"])
+        self.assertEqual(first["derived_media_asset_id"], second["derived_media_asset_id"])
+        self.assertEqual(len(self.provider.render_jobs), 1)
+
+    def test_idempotency_key_is_per_owner(self):
+        first = self.net.create_upload(self.member, {"kind": "photo", "idempotency_key": "shared-key"})
+        second = self.net.create_upload(self.member, {"kind": "photo", "idempotency_key": "shared-key"})
+        self.assertEqual(first["upload_job_id"], second["upload_job_id"])
+        other = self.net.create_upload(self.other, {"kind": "photo", "idempotency_key": "shared-key"})
+        self.assertNotEqual(other["upload_job_id"], first["upload_job_id"])
+
+    def test_photo_upload_uses_photo_store_not_stream(self):
+        contract = self.net.create_upload(self.member, {"kind": "photo"})
+        self.assertEqual(contract["upload_method"], "put")
+        self.assertTrue(contract["upload_url"].startswith("https://photos.test/"))
+        self.assertNotIn("videodelivery", contract["upload_url"])
+        self.assertNotIn("cloudflare", contract["upload_url"].lower())
+        self.assertNotIn("/api/network", contract["upload_url"])
+        blob = str(contract)
+        self.assertNotIn("api_token", blob)
+        with self.assertRaises(Exception):
+            self.provider.create_direct_upload("photo")
+
 
 class VisibilityAndFeedTests(unittest.TestCase):
     def setUp(self):

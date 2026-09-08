@@ -344,11 +344,26 @@ $("#composer").onsubmit = async event => {
     }
     status.textContent = "Requesting direct upload…";
     const upload = await api("POST", "/api/network/uploads", { kind: state.kind });
-    status.textContent = state.kind === "clip" ? "Uploading clip…" : "Uploading photo…";
-    await api("POST", upload.upload_url, {
-      duration_seconds: state.kind === "clip" ? 20 : 0,
-      filename: ($("#composer-file").files[0] || {}).name,
-    });
+    const file = $("#composer-file").files[0];
+    if (state.kind === "photo") {
+      status.textContent = "Uploading photo to object storage…";
+      const url = String(upload.upload_url || "");
+      const localFake = url.includes("photos.test") || url.startsWith("/");
+      if (file && upload.upload_method === "put" && !localFake) {
+        await fetch(url, { method: "PUT", body: file });
+      }
+      const token = url.split("?")[0].split("/").pop();
+      await api("POST", `/api/network/provider/fake/upload/${token}`, {
+        filename: file && file.name,
+        byte_size: file && file.size,
+      });
+    } else {
+      status.textContent = "Uploading clip…";
+      await api("POST", upload.upload_url, {
+        duration_seconds: 20,
+        filename: file && file.name,
+      });
+    }
     const published = await api("POST", "/api/network/posts", {
       upload_job_id: upload.upload_job_id,
       caption: form.caption.value,

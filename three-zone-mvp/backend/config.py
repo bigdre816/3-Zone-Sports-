@@ -65,6 +65,13 @@ class Config:
     max_photo_bytes: int = 8 * 1024 * 1024
     public_app_url: str = ""
     fake_webhook_secret: str = "fake-webhook-secret"
+    photo_storage: str = "fake"
+    photo_s3_endpoint: str = ""
+    photo_s3_bucket: str = ""
+    photo_s3_access_key: str = ""
+    photo_s3_secret_key: str = ""
+    photo_s3_region: str = "auto"
+    photo_webhook_secret: str = ""
 
     @classmethod
     def from_env(cls, http_port: int | None = None, ws_port: int | None = None,
@@ -110,6 +117,13 @@ class Config:
             max_photo_bytes=int(os.environ.get("TZ_MAX_PHOTO_BYTES", str(8 * 1024 * 1024))),
             public_app_url=os.environ.get("TZ_PUBLIC_APP_URL", ""),
             fake_webhook_secret=os.environ.get("TZ_FAKE_WEBHOOK_SECRET", "fake-webhook-secret"),
+            photo_storage=os.environ.get("TZ_PHOTO_STORAGE", "fake").strip().lower(),
+            photo_s3_endpoint=os.environ.get("TZ_PHOTO_S3_ENDPOINT", ""),
+            photo_s3_bucket=os.environ.get("TZ_PHOTO_S3_BUCKET", ""),
+            photo_s3_access_key=os.environ.get("TZ_PHOTO_S3_ACCESS_KEY", ""),
+            photo_s3_secret_key=os.environ.get("TZ_PHOTO_S3_SECRET_KEY", ""),
+            photo_s3_region=os.environ.get("TZ_PHOTO_S3_REGION", "auto"),
+            photo_webhook_secret=os.environ.get("TZ_PHOTO_WEBHOOK_SECRET", ""),
         )
         cfg.validate()
         return cfg
@@ -159,6 +173,7 @@ class Config:
             "simulation": self.env in ("demo", "development", "local"),
             "register_enabled": True,
             "media_provider": self.media_provider,
+            "photo_storage": self.photo_storage,
             "max_post_video_seconds": self.max_post_video_seconds,
             "max_game_clip_seconds": self.max_game_clip_seconds,
             "sports": ["basketball", "football", "soccer", "baseball", "volleyball", "other"],

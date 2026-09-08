@@ -21,6 +21,7 @@ from .control_plane import ControlError, ControlPlane
 from .identity import bearer_from_header, resolve_identity, resolve_identity_optional
 from .media_provider import build_provider
 from .network import NetworkService
+from .photo_storage import build_photo_storage
 from .portal import PortalService
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -184,12 +185,14 @@ class _Handler(BaseHTTPRequestHandler):
     # -- request parsing ---------------------------------------------------
     def _read_body(self) -> dict | None:
         length = int(self.headers.get("Content-Length") or 0)
+        self._raw_body = b""
         if length <= 0:
             return {}
         if length > self.cp.config.max_body_bytes:
             self._send_json(413, {"error": "request body too large", "code": "body_too_large"})
             return None
         raw = self.rfile.read(length)
+        self._raw_body = raw or b""
         if not raw:
             return {}
         try:
@@ -242,7 +245,9 @@ class _Handler(BaseHTTPRequestHandler):
         if origin is not None and ok:
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers",
-                             "Authorization, Content-Type, X-Media-Service-Key")
+                             "Authorization, Content-Type, X-Media-Service-Key, "
+                             "Webhook-Signature, X-Network-Webhook-Secret, "
+                             "Tus-Resumable, Upload-Length, Upload-Metadata")
             self.send_header("Access-Control-Max-Age", "600")
         self.send_header("Content-Length", "0")
         self.end_headers()
@@ -546,10 +551,13 @@ class _Handler(BaseHTTPRequestHandler):
         self._send_json(200, self.network.retry_upload(u, p["job_id"]))
 
     def h_net_webhook(self, p, b, u):
-        headers = {k: self.headers.get(k) for k in (
-            "X-Network-Webhook-Secret", "Webhook-Signature",
-        )}
-        self._send_json(200, self.network.apply_webhook(headers, b or {}))
+        headers = {}
+        for key in self.headers:
+            if key.lower() in ("x-network-webhook-secret", "webhook-signature"):
+                headers[key] = self.headers.get(key)
+        self._send_json(200, self.network.apply_webhook(
+            headers, b or {}, raw_body=getattr(self, "_raw_body", b""),
+        ))
 
     def h_net_fake_upload(self, p, b, u):
         self._send_json(200, self.network.complete_fake_upload(p["token"], b or {}))
@@ -704,9 +712,12 @@ class _Handler(BaseHTTPRequestHandler):
             self._safe_write(body)
 
 
-def make_http_server(config, cp: ControlPlane, media_dir: str) -> ThreadingHTTPServer:
+def make_http_server(config, cp: ControlPlane, media_dir: str,
+                     provider=None, photo_storage=None) -> ThreadingHTTPServer:
     portal = PortalService(cp)
-    network = NetworkService(cp, portal, build_provider(config))
+    provider = provider or build_provider(config)
+    photo_storage = photo_storage or build_photo_storage(config)
+    network = NetworkService(cp, portal, provider, photo_storage)
     handler = type("BoundHandler", (_Handler,), {
         "cp": cp, "portal": portal, "network": network, "media_dir": media_dir,
     })
