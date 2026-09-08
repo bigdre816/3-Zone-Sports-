@@ -392,18 +392,24 @@ class _Handler(BaseHTTPRequestHandler):
         term = self._qs().get("q", "")
         self._send_json(200, {"results": self.portal.search(u, term.replace("+", " "))})
 
-    def h_member_playback(self, p, b, u):
-        result = self.portal.playback_for_user(u, p["event_id"])
+    def _lease_response(self, result: dict, event_id: str) -> None:
         token = result.pop("lease_token")
-        eid = p["event_id"]
-        cookie = f"tz_lease_{eid}={token}; Path=/demo/media/{eid}.mp4; Max-Age={self.cp.config.lease_ttl}; HttpOnly; SameSite=Strict"
+        cookie = (
+            f"tz_lease_{event_id}={token}; Path=/demo/media/{event_id}.mp4; "
+            f"Max-Age={self.cp.config.lease_ttl}; HttpOnly; SameSite=Strict"
+        )
         self._send_json(200, result, extra_headers={"Set-Cookie": cookie})
 
+    def h_member_playback(self, p, b, u):
+        result = self.portal.playback_for_user(u, p["event_id"])
+        self._lease_response(result, p["event_id"])
+
     def h_archive_playback(self, p, b, u):
+        self.portal._ensure_catalog()
         archive = self.cp.db.query_one("SELECT * FROM archive_objects WHERE archive_id=?", (p["archive_id"],))
         if not archive: raise ControlError("archive not found", "archive_not_found")
         result = self.portal.playback_for_user(u, archive["event_id"], "archive")
-        self._send_json(200, result)
+        self._lease_response(result, archive["event_id"])
 
     def h_schedule_upload(self, p, b, u):
         content = (b or {}).get("csv", "").encode()

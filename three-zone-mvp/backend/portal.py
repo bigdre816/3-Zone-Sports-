@@ -168,15 +168,30 @@ class PortalService:
         return [dict(r) for r in rows]
 
     def search(self, user, query):
-        q = "%" + (query or "").lower() + "%"
+        self._ensure_catalog()
+        term = (query or "").strip().lower()
+        if len(term) < 2:
+            return []
+        q = "%" + term + "%"
         results = []
-        for r in self.db.query("SELECT school_id,name,'school' kind FROM schools WHERE lower(name) LIKE ?", (q,)):
-            results.append(dict(r))
-        for r in self.db.query("SELECT team_id,name,'team' kind FROM teams WHERE lower(name) LIKE ?", (q,)):
-            results.append(dict(r))
+        for r in self.db.query("SELECT school_id,name FROM schools WHERE lower(name) LIKE ?", (q,)):
+            results.append({"id": r["school_id"], "name": r["name"], "kind": "school"})
+        for r in self.db.query("SELECT team_id,name FROM teams WHERE lower(name) LIKE ?", (q,)):
+            results.append({"id": r["team_id"], "name": r["name"], "kind": "team"})
         for e in self.cp.list_events(user):
-            if query.lower() in e["title"].lower() or query.lower() in e["category"].lower():
-                results.append({"id": e["event_id"], "name": e["title"], "kind": "game"})
+            hay = f"{e['title']} {e['category']} {e['status']}".lower()
+            if term and term in hay:
+                results.append({
+                    "id": e["event_id"], "name": e["title"], "kind": "game",
+                    "status": e["status"],
+                })
+        for a in self.archives(user):
+            hay = f"{a['title']} {a['school']} {a['team']} {a['season']}".lower()
+            if term and term in hay:
+                results.append({
+                    "id": a["archive_id"], "name": a["title"], "kind": "archive",
+                    "event_id": a["event_id"],
+                })
         return results[:30]
 
     # Playback ---------------------------------------------------------------------
