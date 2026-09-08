@@ -81,8 +81,12 @@ class Config:
         ws_host = ws_host or os.environ.get("TZ_WS_HOST", "127.0.0.1")
         http_port = int(http_port or os.environ.get("TZ_HTTP_PORT", "8000"))
         ws_port = int(ws_port or os.environ.get("TZ_WS_PORT", "8765"))
-        default_origin = f"http://{http_host}:{http_port}"
+        default_origin = f"http://127.0.0.1:{http_port}" if http_host in ("0.0.0.0", "::") else f"http://{http_host}:{http_port}"
         allowed = _split_origins(os.environ.get("TZ_ALLOWED_ORIGINS", default_origin))
+        if http_host in ("0.0.0.0", "::"):
+            for extra in (f"http://127.0.0.1:{http_port}", f"http://localhost:{http_port}"):
+                if extra not in allowed:
+                    allowed.append(extra)
         cfg = cls(
             env=env,
             http_host=http_host,

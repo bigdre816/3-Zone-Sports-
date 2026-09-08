@@ -3,16 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Three-Zone member site</title>
+  <title>Three-Zone Sports Access</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <header>
-    <a class="brand" href="/">Three-Zone</a>
+    <a class="brand" href="#live">Three-Zone<small>Sports Access</small></a>
     <nav id="section-nav" class="hidden" aria-label="Member">
-      <a href="#feed" data-view="feed">Feed</a>
       <a href="#live" data-view="live">Live</a>
-      <a href="#watch" data-view="watch">Watch</a>
+      <a href="#watch" data-view="watch">Schedules</a>
+      <a href="#archives" data-view="watch">Archives</a>
+      <a href="#feed" data-view="feed">Feed</a>
       <a href="#inbox" data-view="inbox">Inbox</a>
       <a href="#profile" data-view="profile">Profile</a>
     </nav>
@@ -25,8 +26,9 @@
 
   <main>
     <section id="auth" class="auth">
-      <h1>Watch it. Save it. Clip it. Share it.</h1>
-      <p class="sub">The sports-only member network. Sign in to post, clip full games, and follow athletes.</p>
+      <p class="eyebrow">MEMBERS PORTAL</p>
+      <h1>Three-Zone Sports Access</h1>
+      <p class="sub">Verified live games, team schedules, and school archives. Watch it. Save it. Clip it. Share it.</p>
       <div id="public-feed" class="feed-col"></div>
       <div class="auth-grid">
         <form id="login-form">
@@ -47,7 +49,9 @@
     </section>
 
     <section id="portal" class="hidden">
-      <p class="eyebrow">Signed in as <span id="member-name">Member</span> · <span id="member-handle"></span></p>
+      <p class="eyebrow">MEMBERS PORTAL</p>
+      <h1>Welcome back, <span id="member-name">Member</span></h1>
+      <p class="sub">Your verified access to live games, schedules, and school archives. <span id="member-handle"></span></p>
       <div id="search-wrap">
         <input id="search" placeholder="Search schools, teams, or games" autocomplete="off" />
         <div id="search-results" class="search-results hidden" role="listbox"></div>
@@ -76,14 +80,14 @@
       </section>
 
       <section id="view-live" class="view hidden">
-        <div class="section-title"><h2>Live</h2><span>Games you can watch now or that are cleared to go live.</span></div>
+        <div class="section-title"><h2>Live now</h2><span>Watch varsity and club games live.</span></div>
         <div id="live-list" class="cards"></div>
       </section>
 
       <section id="view-watch" class="view hidden">
         <div class="columns">
           <section id="schedules">
-            <div class="section-title"><h2>Schedules</h2><span>Upcoming fixtures for entitled teams.</span></div>
+            <div class="section-title"><h2>Schedules</h2><span>Team games and event details.</span></div>
             <div id="schedule-list" class="schedule"></div>
           </section>
           <section id="archives">
@@ -159,6 +163,7 @@
   </main>
 
   <footer>
+    Three-Zone Sports Access
     <a href="#about">About</a>
     <a href="#support">Support</a>
     <a href="#privacy">Privacy</a>

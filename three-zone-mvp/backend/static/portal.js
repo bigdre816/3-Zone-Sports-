@@ -62,7 +62,7 @@ function applyRoute() {
   if (state.signedIn) {
     $("#auth").classList.add("hidden");
     $("#portal").classList.remove("hidden");
-    const name = MEMBER_VIEWS.has(view) ? view : "feed";
+    const name = MEMBER_VIEWS.has(view) ? view : "live";
     setView(name);
     if (name === "feed") loadFeed();
     if (name === "live" || name === "watch") loadCatalog();

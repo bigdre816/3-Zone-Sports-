@@ -131,12 +131,21 @@ class PortalTests(unittest.TestCase):
         self.assertIn("POST", app_js)
         self.assertGreater(len(app_js.splitlines()), 500)
 
+    def test_investment_tracker_is_not_on_the_site(self):
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.assertFalse(os.path.exists(os.path.join(repo, "System")))
+        with open(os.path.join(repo, ".cursor", "serve.py"), encoding="utf-8") as handle:
+            serve = handle.read()
+        self.assertIn("Sports Access", serve)
+        self.assertNotIn("Investment Tracker", serve)
+
     def test_member_site_keeps_network_shell_and_wired_watch(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         static = os.path.join(root, "backend", "static")
         with open(os.path.join(static, "index.html"), encoding="utf-8") as handle:
             html = handle.read()
-        for needle in ("Feed", "Live", "Watch", "Inbox", "Profile", "Create",
+        for needle in ("Feed", "Live", "Inbox", "Profile", "Create",
+                       "MEMBERS PORTAL", "Welcome back", "Sports Access",
                        "id=\"search-results\"", "id=\"view-about\"", "Watch it. Save it."):
             self.assertIn(needle, html)
         with open(os.path.join(static, "portal.js"), encoding="utf-8") as handle:
