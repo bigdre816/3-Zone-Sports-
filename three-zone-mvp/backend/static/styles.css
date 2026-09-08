@@ -54,7 +54,7 @@ footer a{text-decoration:none}
   .hero{min-height:auto;padding:50px 25px}
   .cards,.columns{grid-template-columns:1fr}
   #search{width:100%}
-  .schedule-row{grid-template-columns:1fr 1fr}
-  .schedule-row small{grid-column:1/-1}
+  .schedule-row{display:flex;flex-direction:column;grid-template-columns:none;border:1px solid #243e59;border-radius:9px;margin:8px 0;padding:14px;background:#0b1728}
+  .schedule-row small{grid-column:auto}
   footer span{float:none;margin-top:10px}
 }

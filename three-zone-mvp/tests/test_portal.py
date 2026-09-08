@@ -102,6 +102,8 @@ class PortalTests(unittest.TestCase):
         self.assertIn("/api/member/archive/", js)
         self.assertIn("Watch archive", js)
         self.assertIn("search-results", js)
+        self.assertIn("RIGHTS HOLD", js)
+        self.assertIn("section-live", js)
 
 
 if __name__ == "__main__":

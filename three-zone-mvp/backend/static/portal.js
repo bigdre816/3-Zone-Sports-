@@ -63,8 +63,12 @@ function showHash() {
 
   $("#landing").classList.add("hidden");
   $("#portal").classList.remove("hidden");
-  const target = $("#section-" + hash);
-  if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+  const showAll = !sections.includes(hash);
+  $("#section-live").classList.toggle("hidden", !showAll && hash !== "live");
+  $("#section-schedules").classList.toggle("hidden", !showAll && hash !== "schedules");
+  $("#section-archives").classList.toggle("hidden", !showAll && hash !== "archives");
+  const columns = document.querySelector(".columns");
+  if (columns) columns.classList.toggle("hidden", !showAll && hash === "live");
 }
 
 async function loadPortal() {
@@ -77,11 +81,12 @@ async function loadPortal() {
     api("GET", "/api/member/archives"),
   ]);
   $("#live").innerHTML = live.events.map((event) => {
-    const label = statusLabel(event.status);
-    const playable = event.status === "live";
-    const action = playable
-      ? `<button type="button" data-play="${event.event_id}" data-title="${event.title}">Watch live</button>`
-      : `<p>Available when this game goes live.</p>`;
+    const hold = event.rights && (event.rights.revoked || !event.rights.active);
+    const label = hold ? "RIGHTS HOLD" : statusLabel(event.status);
+    const playable = event.status === "live" && !hold;
+    let action = `<p>Available when this game goes live.</p>`;
+    if (hold) action = `<p>This game is not currently available with your access.</p>`;
+    else if (playable) action = `<button type="button" data-play="${event.event_id}" data-title="${event.title}">Watch live</button>`;
     return `<article id="event-${event.event_id}"><span class="pill">${label}</span><h3>${event.title}</h3>${action}</article>`;
   }).join("") || `<p class="empty">No live or upcoming games with your access.</p>`;
 
@@ -175,7 +180,11 @@ async function search(term) {
       showHash();
       if (btn.dataset.kind === "game") {
         const card = $("#event-" + btn.dataset.id);
-        if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (card) {
+          card.scrollIntoView({ behavior: "smooth", block: "center" });
+          const watch = card.querySelector("[data-play]");
+          if (watch) watch.click();
+        }
       }
     };
   });
