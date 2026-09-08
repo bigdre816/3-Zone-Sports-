@@ -24,9 +24,13 @@ const escapeText = value => {
   return node.innerHTML;
 };
 const STAFF = new Set(["operator", "owner", "admin"]);
-const state = { profile: null, mode: "for_you", sport: "", kind: "photo", tab: "posts" };
+const PAGE_VIEWS = new Set(["about", "support", "privacy", "terms"]);
+const MEMBER_VIEWS = new Set(["feed", "live", "watch", "inbox", "profile"]);
+const HASH_ALIAS = { schedules: "watch", archives: "watch" };
+const state = { profile: null, signedIn: false, mode: "for_you", sport: "", kind: "photo", tab: "posts" };
 
 function showSignedIn(member, profile) {
+  state.signedIn = true;
   $("#auth").classList.add("hidden");
   $("#portal").classList.remove("hidden");
   $("#section-nav").classList.remove("hidden");
@@ -40,6 +44,35 @@ function showSignedIn(member, profile) {
 
 function setView(name) {
   $$(".view").forEach(el => el.classList.toggle("hidden", el.id !== "view-" + name));
+}
+
+function routeName() {
+  const raw = (location.hash || "").replace(/^#/, "").split("/")[0];
+  return HASH_ALIAS[raw] || raw || "";
+}
+
+function applyRoute() {
+  const view = routeName();
+  if (PAGE_VIEWS.has(view)) {
+    $("#auth").classList.add("hidden");
+    $("#portal").classList.add("hidden");
+    setView(view);
+    return;
+  }
+  if (state.signedIn) {
+    $("#auth").classList.add("hidden");
+    $("#portal").classList.remove("hidden");
+    const name = MEMBER_VIEWS.has(view) ? view : "live";
+    setView(name);
+    if (name === "feed") loadFeed();
+    if (name === "live" || name === "watch") loadCatalog();
+    if (name === "inbox") loadInbox();
+    if (name === "profile") loadProfileTab();
+    return;
+  }
+  $("#auth").classList.remove("hidden");
+  $("#portal").classList.add("hidden");
+  $$(".page-view").forEach(el => el.classList.add("hidden"));
 }
 
 function mediaTag(item) {
@@ -144,28 +177,46 @@ function bindCards(root) {
   });
 }
 
+function liveCard(event) {
+  const rightsHold = !event.rights || event.rights.revoked;
+  let pill = "UPCOMING";
+  let action = "<p class='sub'>Cleared to go live. Watch live unlocks when the game starts.</p>";
+  if (rightsHold) {
+    pill = "RIGHTS HOLD";
+    action = "<p class='sub'>Playback is held until rights are restored.</p>";
+  } else if (event.status === "live") {
+    pill = "LIVE";
+    action = `<button data-event="${escapeText(event.event_id)}" type="button">Watch live</button>`;
+  }
+  return `<article><span class="pill">${pill}</span><h3>${escapeText(event.title)}</h3>${action}</article>`;
+}
+
 async function loadCatalog() {
-  const card = (title, stateLabel, id) =>
-    `<article><span class="pill">${stateLabel}</span><h3>${escapeText(title)}</h3>
-     <button data-event="${id}" type="button">Watch</button></article>`;
   try {
     const live = await api("GET", "/api/member/live");
-    $("#live-list").innerHTML = live.events.map(e => card(e.title, e.status === "live" ? "LIVE" : "UPCOMING", e.event_id)).join("");
-    $$("[data-event]").forEach(button => button.onclick = () => play(button.dataset.event));
+    $("#live-list").innerHTML = live.events.map(liveCard).join("")
+      || "<p class='empty'>No live or upcoming games in your zone.</p>";
+    $$("#live-list [data-event]").forEach(button => button.onclick = () => {
+      playMedia(`/api/member/events/${button.dataset.event}/playback`, button.closest("article").querySelector("h3").textContent, "Authorized playback lease issued");
+    });
   } catch (error) { toast(error.message); }
   try {
     const schedules = await api("GET", "/api/member/schedules");
     $("#schedule-list").innerHTML = schedules.schedules.map(s =>
       `<div class="schedule-row"><b>${escapeText(s.team)}</b><span>${escapeText(s.opponent)}</span>
        <span>${new Date(s.start_at * 1000).toLocaleDateString()}</span><small>${escapeText(s.location)}</small></div>`
-    ).join("");
+    ).join("") || "<p class='empty'>No upcoming fixtures.</p>";
   } catch (error) { toast(error.message); }
   try {
     const archives = await api("GET", "/api/member/archives");
     $("#archive-list").innerHTML = archives.archives.map(a =>
       `<article><span class="pill">ARCHIVED</span><h3>${escapeText(a.title)}</h3>
-       <p>${escapeText(a.school)} · ${escapeText(a.team)}<br>${escapeText(a.season)} · ${escapeText(a.kind)}</p></article>`
-    ).join("");
+       <p>${escapeText(a.school)} · ${escapeText(a.team)}<br>${escapeText(a.season)} · ${escapeText(a.kind)}</p>
+       <button data-archive="${escapeText(a.archive_id)}" type="button">Watch archive</button></article>`
+    ).join("") || "<p class='empty'>No archives available.</p>";
+    $$("#archive-list [data-archive]").forEach(button => button.onclick = () => {
+      playMedia(`/api/member/archive/${button.dataset.archive}/playback`, button.closest("article").querySelector("h3").textContent, "Authorized archive playback");
+    });
   } catch (error) { toast(error.message); }
 }
 
@@ -234,6 +285,7 @@ async function loadPortal() {
   const me = await api("GET", "/api/member/me");
   showSignedIn(me.member, me.profile);
   await Promise.all([loadFeed(), loadCatalog()]);
+  applyRoute();
 }
 
 async function submitAuth(path, body) {
@@ -255,28 +307,28 @@ $("#register-form").addEventListener("submit", async event => {
   try { await submitAuth("/api/auth/register", data); }
   catch (error) { toast(error.message); }
 });
-async function play(eventId) {
+async function playMedia(path, title, stateText) {
   try {
-    const result = await api("POST", `/api/member/events/${eventId}/playback`);
+    const result = await api("POST", path);
     $("#player-wrap").classList.remove("hidden");
-    $("#player-title").textContent = "Now playing";
-    $("#player-state").textContent = "Authorized playback lease issued";
-    $("#video").src = result.media_url + "?lease=" + result.lease_id;
+    $("#player-title").textContent = title || "Now playing";
+    $("#player-state").textContent = stateText;
+    $("#video").src = result.media_url + "?v=" + Date.now();
     $("#video").play().catch(() => {});
-  } catch (_) { toast("This game is not currently available with your access."); }
+    $("#player-wrap").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (error) {
+    toast(error.message || "This game is not currently available with your access.");
+  }
 }
 $("#signout").onclick = async () => {
   sessionStorage.removeItem("tz_session");
   await api("POST", "/api/auth/logout");
   location.reload();
 };
+window.addEventListener("hashchange", applyRoute);
 $$("#section-nav a").forEach(link => link.onclick = event => {
   event.preventDefault();
-  const view = link.dataset.view;
-  setView(view);
-  if (view === "feed") loadFeed();
-  if (view === "inbox") loadInbox();
-  if (view === "profile") loadProfileTab();
+  location.hash = link.dataset.view;
 });
 $$("[data-mode]").forEach(btn => btn.onclick = () => {
   state.mode = btn.dataset.mode;
@@ -429,14 +481,59 @@ $("#profile-form").onsubmit = async event => {
     loadProfileTab();
   } catch (error) { toast(error.message); }
 };
+async function openSearchItem(item) {
+  $("#search-results").classList.add("hidden");
+  if (item.kind === "archive") {
+    location.hash = "watch";
+    await playMedia(`/api/member/archive/${item.id}/playback`, item.name, "Authorized archive playback");
+    return;
+  }
+  if (item.kind === "game" && item.status === "live") {
+    location.hash = "live";
+    await playMedia(`/api/member/events/${item.id}/playback`, item.name, "Authorized playback lease issued");
+    return;
+  }
+  if (item.kind === "game" && item.status === "archive") {
+    location.hash = "watch";
+    return;
+  }
+  location.hash = item.kind === "game" ? "live" : "watch";
+}
+
 $("#search").oninput = async event => {
-  if (event.target.value.length < 2) return;
+  const query = event.target.value.trim();
+  const panel = $("#search-results");
+  if (query.length < 2) {
+    panel.classList.add("hidden");
+    panel.innerHTML = "";
+    return;
+  }
   try {
-    const result = await api("GET", "/api/member/search?q=" + encodeURIComponent(event.target.value));
-    toast(result.results.map(item => item.name).join(" · ") || "No authorized results");
+    const result = await api("GET", "/api/member/search?q=" + encodeURIComponent(query));
+    if (!result.results.length) {
+      panel.innerHTML = "<p class='empty'>No authorized results</p>";
+      panel.classList.remove("hidden");
+      return;
+    }
+    panel.innerHTML = result.results.map((item, index) =>
+      `<button type="button" role="option" data-index="${index}">
+        ${escapeText(item.name)}<span class="sub">${escapeText(item.kind)}${item.status ? " · " + item.status : ""}</span>
+      </button>`
+    ).join("");
+    panel.classList.remove("hidden");
+    panel.querySelectorAll("button").forEach(button => {
+      button.onclick = () => openSearchItem(result.results[Number(button.dataset.index)]);
+    });
   } catch (error) { toast(error.message); }
 };
+document.addEventListener("click", event => {
+  if (!$("#search-wrap") || $("#search-wrap").contains(event.target)) return;
+  $("#search-results").classList.add("hidden");
+});
 (async () => {
   try { await loadPortal(); }
-  catch (_) { loadPublicFeed(); }
+  catch (_) {
+    loadPublicFeed();
+    applyRoute();
+  }
 })();

@@ -3,16 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Three-Zone member site</title>
+  <title>Three-Zone Sports Access</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <header>
-    <a class="brand" href="/">Three-Zone</a>
+    <a class="brand" href="#live">Three-Zone<small>Sports Access</small></a>
     <nav id="section-nav" class="hidden" aria-label="Member">
-      <a href="#feed" data-view="feed">Feed</a>
       <a href="#live" data-view="live">Live</a>
-      <a href="#schedules" data-view="watch">Watch</a>
+      <a href="#watch" data-view="watch">Schedules</a>
+      <a href="#archives" data-view="watch">Archives</a>
+      <a href="#feed" data-view="feed">Feed</a>
       <a href="#inbox" data-view="inbox">Inbox</a>
       <a href="#profile" data-view="profile">Profile</a>
     </nav>
@@ -25,8 +26,9 @@
 
   <main>
     <section id="auth" class="auth">
-      <h1>Watch it. Save it. Clip it. Share it.</h1>
-      <p class="sub">The sports-only member network. Sign in to post, clip full games, and follow athletes.</p>
+      <p class="eyebrow">MEMBERS PORTAL</p>
+      <h1>Three-Zone Sports Access</h1>
+      <p class="sub">Verified live games, team schedules, and school archives. Watch it. Save it. Clip it. Share it.</p>
       <div id="public-feed" class="feed-col"></div>
       <div class="auth-grid">
         <form id="login-form">
@@ -47,8 +49,13 @@
     </section>
 
     <section id="portal" class="hidden">
-      <p class="eyebrow">Signed in as <span id="member-name">Member</span> · <span id="member-handle"></span></p>
-      <input id="search" placeholder="Search schools, teams, or games" />
+      <p class="eyebrow">MEMBERS PORTAL</p>
+      <h1>Welcome back, <span id="member-name">Member</span></h1>
+      <p class="sub">Your verified access to live games, schedules, and school archives. <span id="member-handle"></span></p>
+      <div id="search-wrap">
+        <input id="search" placeholder="Search schools, teams, or games" autocomplete="off" />
+        <div id="search-results" class="search-results hidden" role="listbox"></div>
+      </div>
 
       <section id="view-feed" class="view">
         <div class="section-title">
@@ -73,14 +80,14 @@
       </section>
 
       <section id="view-live" class="view hidden">
-        <div class="section-title"><h2>Live</h2><span>Games you can watch now or that are cleared to go live.</span></div>
+        <div class="section-title"><h2>Live now</h2><span>Watch varsity and club games live.</span></div>
         <div id="live-list" class="cards"></div>
       </section>
 
       <section id="view-watch" class="view hidden">
         <div class="columns">
           <section id="schedules">
-            <div class="section-title"><h2>Schedules</h2><span>Upcoming fixtures for entitled teams.</span></div>
+            <div class="section-title"><h2>Schedules</h2><span>Team games and event details.</span></div>
             <div id="schedule-list" class="schedule"></div>
           </section>
           <section id="archives">
@@ -130,7 +137,38 @@
         <video id="video" controls playsinline muted></video>
       </section>
     </section>
+
+    <section id="view-about" class="view page-view hidden">
+      <h1>About Three-Zone</h1>
+      <p>Three-Zone Sports Access is the member site for live high-school and youth games, schedules, and archives. Treasure verifies the member. Three-Zone authorizes playback. Every watch is recorded in the audit trail.</p>
+      <p class="sub">Signed-in members can also post photos and clips, upload a full game, trim a moment in Studio, and share media in Inbox. Feed ranking is chronological. It is not machine learning.</p>
+    </section>
+    <section id="view-support" class="view page-view hidden">
+      <h1>Support</h1>
+      <p>Sign in with a member account to watch entitled live games and archives. Staff use Control plane at <code>/ops</code>.</p>
+      <ul>
+        <li>Upcoming games stay listed until they go live. Watch live unlocks only while the game is live.</li>
+        <li>Archives play through the same rights check as live. If rights are held, playback stays off.</li>
+        <li>Search only returns schools, teams, and games you are authorized to see.</li>
+      </ul>
+    </section>
+    <section id="view-privacy" class="view page-view hidden">
+      <h1>Privacy</h1>
+      <p>Playback leases are HttpOnly cookies scoped to the media path. Search, live, schedule, and archive lists are server-filtered to your zone and package. Demo audit publication is labelled simulated until a production audit upstream is connected.</p>
+    </section>
+    <section id="view-terms" class="view page-view hidden">
+      <h1>Terms</h1>
+      <p>Access is entitlement-based. A live, archive, or full-game Watch action only plays when Three-Zone issues a lease. Public full-game uploads stay pending verification. You attest you have the right to upload media you publish.</p>
+    </section>
   </main>
+
+  <footer>
+    Three-Zone Sports Access
+    <a href="#about">About</a>
+    <a href="#support">Support</a>
+    <a href="#privacy">Privacy</a>
+    <a href="#terms">Terms</a>
+  </footer>
 
   <dialog id="create-dialog" aria-labelledby="create-title">
     <form method="dialog" class="dialog-bar">
