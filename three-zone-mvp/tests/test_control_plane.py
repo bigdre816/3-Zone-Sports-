@@ -256,6 +256,10 @@ class OwnerPortalTests(unittest.TestCase):
     def test_route_map_matches_owner_endpoint(self):
         paths = {r["path"] for r in SITE_ROUTES}
         self.assertIn("/api/owner/inventory", paths)
+        self.assertIn("/ops", paths)
+        self.assertIn("/api/member/live", paths)
+        self.assertIn("/api/auth/login", paths)
+        self.assertIn("/api/auth/register", paths)
 
 
 if __name__ == "__main__":

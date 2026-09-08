@@ -111,19 +111,34 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return self._send(500, {"error": "internal error"})
 
-    def _static(self, path: str):
-        filename = "index.html" if path in {"/", "/index.html"} else path.lstrip("/")
+    def do_HEAD(self):
+        path = self.path.split("?", 1)[0]
+        if path.startswith("/api/"):
+            return self._send(200, {"ok": True})
+        return self._static(path, body=False)
+
+    def _static(self, path: str, body: bool = True):
+        if path in {"/", "/index.html"}:
+            filename = "index.html"
+            content_type = "text/html; charset=utf-8"
+        elif path == "/System":
+            filename = "System"
+            content_type = "text/html; charset=utf-8"
+        else:
+            filename = path.lstrip("/")
+            content_type = None
         full = os.path.abspath(os.path.join(ROOT, filename))
         if not full.startswith(ROOT + os.sep) or not os.path.isfile(full):
             return self._send(404, {"error": "not found"})
         with open(full, "rb") as file:
             raw = file.read()
         self.send_response(200)
-        self.send_header("Content-Type", mimetypes.guess_type(full)[0] or "application/octet-stream")
+        self.send_header("Content-Type", content_type or mimetypes.guess_type(full)[0] or "application/octet-stream")
         self.send_header("Content-Length", str(len(raw)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(raw)
+        if body:
+            self.wfile.write(raw)
 
 
 def serve() -> None:

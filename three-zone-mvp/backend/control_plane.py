@@ -14,6 +14,10 @@ import uuid
 
 from . import tokens
 from .db import Database, dumps, loads
+from .passwords import (
+    RESERVED, hash_password, normalize_username, valid_password, valid_username,
+    verify_password,
+)
 
 # ---------------------------------------------------------------------------
 # Lifecycle
@@ -48,6 +52,8 @@ TIERS = [
             "Request a playback lease for a live or replay event",
             "Watch managed media while the lease and rights stay valid",
             "Receive live state, score, and revocation updates over the socket",
+            "Publish sports photos, clips, and full games on the member network",
+            "Create derived clips in Studio without mutating the source game",
         ],
     },
     {
@@ -63,6 +69,7 @@ TIERS = [
             "Revoke and restore rights during an incident",
             "Update the live scoreboard",
             "Read the operator audit log",
+            "Review pending games, uploads, and sports-only moderation cases",
         ],
     },
     {
@@ -77,6 +84,7 @@ TIERS = [
             "Open the owner back portal",
             "Print the full site inventory (users, events, all rights versions, audit)",
             "Download a complete JSON export of the whole system state",
+            "Export a source-to-clip evidence bundle without provider secrets",
         ],
     },
 ]
@@ -84,19 +92,51 @@ TIERS = [
 # Every HTTP route the website exposes, with the tier that may reach it.
 SITE_ROUTES = [
     {"method": "GET", "path": "/", "tier": "public",
-     "purpose": "Single-page app shell (catalog, player, operator, owner)"},
-    {"method": "GET", "path": "/app.js", "tier": "public",
-     "purpose": "Frontend application logic"},
+     "purpose": "Three-Zone Sports Access member landing and portal"},
+    {"method": "GET", "path": "/portal.js", "tier": "public",
+     "purpose": "Member portal presentation logic"},
     {"method": "GET", "path": "/styles.css", "tier": "public",
-     "purpose": "Screen and print styles"},
+     "purpose": "Member portal styles"},
+    {"method": "GET", "path": "/ops", "tier": "public",
+     "purpose": "Operator/owner control-plane console"},
+    {"method": "GET", "path": "/app.js", "tier": "public",
+     "purpose": "Control-plane catalog, player, operator, and owner logic"},
+    {"method": "GET", "path": "/ops.css", "tier": "public",
+     "purpose": "Control-plane screen and print styles"},
     {"method": "GET", "path": "/favicon.ico", "tier": "public",
      "purpose": "Browser icon response"},
     {"method": "GET", "path": "/api/health", "tier": "public",
      "purpose": "Liveness probe"},
     {"method": "GET", "path": "/api/config", "tier": "public",
      "purpose": "Public runtime config (ports, TTLs, demo accounts)"},
+    {"method": "POST", "path": "/api/auth/login", "tier": "public",
+     "purpose": "Sign in with username and password"},
+    {"method": "POST", "path": "/api/auth/register", "tier": "public",
+     "purpose": "Create a member (viewer) account"},
     {"method": "POST", "path": "/api/auth/demo-login", "tier": "public",
      "purpose": "Sign in as a demo member/worker/owner account"},
+    {"method": "POST", "path": "/api/auth/start", "tier": "public",
+     "purpose": "Begin member verification"},
+    {"method": "POST", "path": "/api/auth/verify", "tier": "public",
+     "purpose": "Complete Treasure verification and issue a member session cookie"},
+    {"method": "POST", "path": "/api/auth/logout", "tier": "public",
+     "purpose": "Revoke the HTTP-only member session cookie"},
+    {"method": "GET", "path": "/api/member/me", "tier": "member",
+     "purpose": "Current verified member identity"},
+    {"method": "GET", "path": "/api/member/live", "tier": "member",
+     "purpose": "Authorized live and upcoming games"},
+    {"method": "GET", "path": "/api/member/schedules", "tier": "member",
+     "purpose": "Authorized team schedules"},
+    {"method": "GET", "path": "/api/member/archives", "tier": "member",
+     "purpose": "Authorized archive hierarchy"},
+    {"method": "GET", "path": "/api/member/search", "tier": "member",
+     "purpose": "Authorization-aware discovery search"},
+    {"method": "POST", "path": "/api/member/events/{id}/playback", "tier": "member",
+     "purpose": "Request a rights-checked playback lease"},
+    {"method": "POST", "path": "/api/admin/schedules/upload", "tier": "worker",
+     "purpose": "Import a versioned team schedule"},
+    {"method": "GET", "path": "/api/admin/audit/{id}", "tier": "worker",
+     "purpose": "Inspect a canonical audit event and XRPL receipt"},
     {"method": "GET", "path": "/api/me", "tier": "member",
      "purpose": "Current signed-in identity and entitlements"},
     {"method": "GET", "path": "/api/events", "tier": "member",
@@ -135,6 +175,48 @@ SITE_ROUTES = [
      "purpose": "Owner back portal: print/export every single thing"},
     {"method": "WS", "path": "/ws/events/{id}", "tier": "member",
      "purpose": "Event-scoped live state, score, feed, lease, and rights updates"},
+    {"method": "GET", "path": "/api/network/feed", "tier": "public",
+     "purpose": "For You / Following / Local sports feed"},
+    {"method": "GET", "path": "/api/network/me/profile", "tier": "member",
+     "purpose": "Current member public profile"},
+    {"method": "POST", "path": "/api/network/me/profile", "tier": "member",
+     "purpose": "Update own profile (verified badges forbidden)"},
+    {"method": "GET", "path": "/api/network/profiles/{handle}", "tier": "public",
+     "purpose": "Public profile by handle"},
+    {"method": "POST", "path": "/api/network/profiles/{handle}/follow", "tier": "member",
+     "purpose": "Follow a profile"},
+    {"method": "POST", "path": "/api/network/uploads", "tier": "member",
+     "purpose": "Authorize a one-time direct upload (no provider token)"},
+    {"method": "POST", "path": "/api/network/webhooks/media", "tier": "service",
+     "purpose": "Idempotent media-provider webhook"},
+    {"method": "POST", "path": "/api/network/posts", "tier": "member",
+     "purpose": "Publish a sports photo or clip post"},
+    {"method": "POST", "path": "/api/network/games", "tier": "member",
+     "purpose": "Submit a full-game source asset"},
+    {"method": "POST", "path": "/api/network/clips", "tier": "member",
+     "purpose": "Create a Studio clip definition"},
+    {"method": "POST", "path": "/api/network/clips/{id}/render", "tier": "member",
+     "purpose": "Render a derived clip through the media adapter"},
+    {"method": "POST", "path": "/api/network/clips/{id}/publish", "tier": "member",
+     "purpose": "Publish, save, or prepare a derived clip"},
+    {"method": "POST", "path": "/api/network/react", "tier": "member",
+     "purpose": "Like a post, clip, or game"},
+    {"method": "POST", "path": "/api/network/comments", "tier": "member",
+     "purpose": "Add a one-level comment"},
+    {"method": "POST", "path": "/api/network/saves", "tier": "member",
+     "purpose": "Save a post privately"},
+    {"method": "POST", "path": "/api/network/shares", "tier": "member",
+     "purpose": "Send a media reference to another member"},
+    {"method": "GET", "path": "/api/network/inbox", "tier": "member",
+     "purpose": "Object-share inbox"},
+    {"method": "POST", "path": "/api/network/reports", "tier": "member",
+     "purpose": "Report content for review"},
+    {"method": "GET", "path": "/api/network/review", "tier": "worker",
+     "purpose": "Pending games, uploads, and moderation cases"},
+    {"method": "GET", "path": "/api/network/evidence/{type}/{id}", "tier": "owner",
+     "purpose": "Owner evidence bundle (JSON)"},
+    {"method": "GET", "path": "/api/network/media/{id}", "tier": "member",
+     "purpose": "Rights-gated UGC playback"},
 ]
 
 
@@ -308,7 +390,47 @@ class ControlPlane:
             self.config.token_secret, "session", {"sub": account}, self.config.session_ttl
         )
         self.audit_log(account, "auth.demo_login")
-        return {"session_token": token, "user": user}
+        return {"session_token": token, "user": user, "home": self._home_for(user)}
+
+    def _issue_session(self, user: dict, action: str) -> dict:
+        token = tokens.sign(
+            self.config.token_secret, "session", {"sub": user["user_id"]}, self.config.session_ttl
+        )
+        self.audit_log(user["user_id"], action)
+        return {"session_token": token, "user": user, "home": self._home_for(user)}
+
+    @staticmethod
+    def _home_for(user: dict) -> str:
+        return "/ops" if user["role"] in ("operator", "owner", "admin") else "/"
+
+    def password_login(self, username: str, password: str) -> dict:
+        username = normalize_username(username)
+        row = self.db.query_one("SELECT * FROM users WHERE user_id=?", (username,))
+        if not row or not verify_password(password, row["password_hash"]):
+            raise AuthError("invalid username or password", "invalid_credentials")
+        user = self._user_dict(row)
+        if user["account_state"] != "active":
+            raise ForbiddenError("account suspended", "account_suspended")
+        return self._issue_session(user, "auth.login")
+
+    def register_viewer(self, username: str, password: str, display_name: str) -> dict:
+        username = normalize_username(username)
+        display_name = (display_name or "").strip() or username
+        if not valid_username(username) or username in RESERVED:
+            raise ValidationError("username is not available", "bad_username")
+        if not valid_password(password):
+            raise ValidationError("password must be 8–128 characters", "bad_password")
+        if self.get_user(username):
+            raise ConflictError("username is not available", "username_taken")
+        self.db.execute(
+            "INSERT INTO users(user_id,display_name,role,account_state,subscription,"
+            "zones,packages,destinations,password_hash) VALUES (?,?,?,?,?,?,?,?,?)",
+            (username, display_name[:80], "viewer", "active", "active",
+             dumps(["midwest"]), dumps(["standard"]), dumps(["web"]),
+             hash_password(password)),
+        )
+        user = self.get_user(username)
+        return self._issue_session(user, "auth.register")
 
     def verify_session(self, token: str) -> dict:
         try:
@@ -607,6 +729,9 @@ class ControlPlane:
         elif status == "replay":
             resolved = "replay"
             start, end = rights["replay_start"], rights["replay_end"]
+        elif status == "archive":
+            resolved = "archive"
+            start, end = rights["replay_start"], rights["replay_end"]
         else:
             return deny("not_playable", f"event is {status}, not playable")
         if mode and mode != resolved:
@@ -730,6 +855,26 @@ class ControlPlane:
             "created_at": row["created_at"],
         }
 
+    def network_inventory_safe(self) -> dict:
+        """Counts only — never provider tokens or signed URLs."""
+        def count(table: str) -> int:
+            try:
+                row = self.db.query_one(f"SELECT COUNT(*) AS c FROM {table}")
+            except Exception:
+                return 0
+            return int(row["c"] if row else 0)
+
+        return {
+            "profiles": count("profiles"),
+            "posts": count("posts"),
+            "games": count("games"),
+            "clips": count("clips"),
+            "reactions": count("reactions"),
+            "comments": count("comments"),
+            "follows": count("follows"),
+            "media_assets": count("media_assets"),
+        }
+
     def owner_inventory(self, owner: dict) -> dict:
         """The owner back portal payload: literally every part of the website.
 
@@ -775,4 +920,5 @@ class ControlPlane:
             "events": events,
             "audit": audit,
             "analytics": self.analytics(),
+            "network": self.network_inventory_safe(),
         }
