@@ -9,6 +9,7 @@ serve Moten; `/System` serves the original tracker.
 import http.server
 import os
 import socketserver
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MOTEN_FILE = os.path.join(ROOT, "index.html")
@@ -59,10 +60,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 def main():
-    with socketserver.ThreadingTCPServer((HOST, PORT), Handler) as httpd:
-        httpd.allow_reuse_address = True
-        print(f"Moten control-plane server running at http://{HOST}:{PORT}/")
-        httpd.serve_forever()
+    # Cloud Agent entrypoint: Moten audit APIs + Moten UI at /, original
+    # Investment Tracker at /System. The static Handler above remains as a
+    # fallback if the audit package cannot be imported.
+    sys.path.insert(0, ROOT)
+    try:
+        from moten_audit.server import serve
+    except ImportError:
+        with socketserver.ThreadingTCPServer((HOST, PORT), Handler) as httpd:
+            httpd.allow_reuse_address = True
+            print(f"Moten control-plane server running at http://{HOST}:{PORT}/")
+            httpd.serve_forever()
+        return
+    serve()
 
 
 if __name__ == "__main__":
