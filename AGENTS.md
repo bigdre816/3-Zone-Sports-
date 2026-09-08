@@ -129,3 +129,28 @@ Three-Zone runtime/media/security services and Treasure runtime are **out of Pha
 ## 9. Disclaimer
 
 This repository implements a **process and evidence** system. It is not legal advice and does not determine patentability, inventorship, ownership, disclosure sufficiency, trade-secret status, privacy compliance, rights authority, or filing deadlines. Those require review by qualified counsel and responsible security/privacy professionals.
+
+## Cursor Cloud specific instructions
+
+Cloud Agent / subagent / automation runs for environment `bigdre816/The-system` use `.cursor/environment.json`. That file must start the **product in the checked-out revision**, not the leftover Investment Tracker static page.
+
+### Which app is running
+
+| Checkout | Product | URL | Health |
+| --- | --- | --- | --- |
+| Default branch (`main`) | Three-Zone Sports Access (`three-zone-mvp/`) | Member site `http://127.0.0.1:8000/` · operator console `http://127.0.0.1:8000/ops` | `GET /api/health` |
+| This Moten Phase 1 line | Control-plane workbench (`apps/control-plane/`) | `http://127.0.0.1:8100/` | `GET /healthz` |
+
+`install` / `start` live in `.cursor/scripts/cloud-agent-install.sh` and `cloud-agent-start.sh`. They detect which tree exists, install that tree's deps, bind `0.0.0.0`, and wait until health is green. Do **not** occupy port 8000 with `.cursor/serve.py` serving `System` when Three-Zone is present — that collision forced agents onto ad-hoc ports such as `18002`, after which computer-use subagents failed immediately.
+
+### What not to test
+
+- The root file `System` is a leftover **Investment Tracker** HTML prototype. It is not the Cloud Agent app.
+- This Moten branch has **no** `/ops`, no `demo-owner` / Lincoln schedule CSV portal, and no service on port `18002`.
+- Do not spawn `computerUse` / "walkthrough video" subagents against those Three-Zone routes while this Moten tree is checked out. They error with an empty transcript (no pod) and show up as dashboard **Error** runs.
+
+### Browser / computer-use
+
+- Chrome is `/usr/bin/google-chrome-stable` (`chromeExecutablePath` in `.cursor/environment.json`).
+- If computer-use is unavailable (missing executor, agent state could not be loaded), **stop retrying it**. Verify with `python -m pytest -q` in `apps/control-plane` (this branch) or `three-zone-mvp/tests` (`main`), plus `curl` to the health and HTML routes above.
+- Automations (for example Security Reviewer) should not treat nested computer-use children as required. A failed GUI subagent is not a product defect on this Moten checkout.
