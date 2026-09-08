@@ -12,7 +12,7 @@
     <nav id="section-nav" class="hidden" aria-label="Member">
       <a href="#feed" data-view="feed">Feed</a>
       <a href="#live" data-view="live">Live</a>
-      <a href="#schedules" data-view="watch">Watch</a>
+      <a href="#watch" data-view="watch">Watch</a>
       <a href="#inbox" data-view="inbox">Inbox</a>
       <a href="#profile" data-view="profile">Profile</a>
     </nav>
@@ -48,7 +48,10 @@
 
     <section id="portal" class="hidden">
       <p class="eyebrow">Signed in as <span id="member-name">Member</span> · <span id="member-handle"></span></p>
-      <input id="search" placeholder="Search schools, teams, or games" />
+      <div id="search-wrap">
+        <input id="search" placeholder="Search schools, teams, or games" autocomplete="off" />
+        <div id="search-results" class="search-results hidden" role="listbox"></div>
+      </div>
 
       <section id="view-feed" class="view">
         <div class="section-title">
@@ -130,7 +133,37 @@
         <video id="video" controls playsinline muted></video>
       </section>
     </section>
+
+    <section id="view-about" class="view page-view hidden">
+      <h1>About Three-Zone</h1>
+      <p>Three-Zone Sports Access is the member site for live high-school and youth games, schedules, and archives. Treasure verifies the member. Three-Zone authorizes playback. Moten records the audit trail.</p>
+      <p class="sub">Signed-in members can also post photos and clips, upload a full game, trim a moment in Studio, and share media in Inbox. Feed ranking is chronological. It is not machine learning.</p>
+    </section>
+    <section id="view-support" class="view page-view hidden">
+      <h1>Support</h1>
+      <p>Sign in with a member account to watch entitled live games and archives. Staff use Control plane at <code>/ops</code>.</p>
+      <ul>
+        <li>Upcoming games stay listed until they go live. Watch live unlocks only while the game is live.</li>
+        <li>Archives play through the same rights check as live. If rights are held, playback stays off.</li>
+        <li>Search only returns schools, teams, and games you are authorized to see.</li>
+      </ul>
+    </section>
+    <section id="view-privacy" class="view page-view hidden">
+      <h1>Privacy</h1>
+      <p>Playback leases are HttpOnly cookies scoped to the media path. Search, live, schedule, and archive lists are server-filtered to your zone and package. Demo audit publication is labelled simulated until a real Moten/XRPL upstream is connected.</p>
+    </section>
+    <section id="view-terms" class="view page-view hidden">
+      <h1>Terms</h1>
+      <p>Access is entitlement-based. A live, archive, or full-game Watch action only plays when Three-Zone issues a lease. Public full-game uploads stay pending verification. You attest you have the right to upload media you publish.</p>
+    </section>
   </main>
+
+  <footer>
+    <a href="#about">About</a>
+    <a href="#support">Support</a>
+    <a href="#privacy">Privacy</a>
+    <a href="#terms">Terms</a>
+  </footer>
 
   <dialog id="create-dialog" aria-labelledby="create-title">
     <form method="dialog" class="dialog-bar">
