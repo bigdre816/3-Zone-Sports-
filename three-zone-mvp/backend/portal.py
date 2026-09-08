@@ -168,6 +168,7 @@ class PortalService:
         return [dict(r) for r in rows]
 
     def search(self, user, query):
+        self._ensure_catalog()
         term = (query or "").strip().lower()
         if len(term) < 2:
             return []
