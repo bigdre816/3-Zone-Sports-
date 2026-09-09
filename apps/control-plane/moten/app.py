@@ -14,11 +14,11 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.engine import Engine
 
-from .config import APP_ROOT, ingest_shared_secret
+from .config import APP_ROOT
 from .database import init_db, make_engine, make_session_factory
 from .errors import MotenError
 from .models import Person
-from .planes import decision, evidence, export, intake, invention, signal
+from .planes import decision, evidence, export, invention, signal
 from .schemas import (
     AiInteractionCreate,
     ContributionCreate,
@@ -72,13 +72,6 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         x_moten_actor: str | None = Header(default=None),
     ) -> str:
         return x_moten_actor or DEFAULT_ACTOR
-
-    def verify_shared_secret(
-        x_moten_shared_secret: str | None = Header(default=None),
-    ) -> None:
-        expected = ingest_shared_secret()
-        if expected and x_moten_shared_secret != expected:
-            raise HTTPException(status_code=403, detail="invalid shared secret")
 
     @app.exception_handler(MotenError)
     async def _moten_error_handler(_request: Request, exc: MotenError):
@@ -372,66 +365,13 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     def chain(s=Depends(get_session)):
         return {"verified": evidence.verify_chain(s)}
 
-    @app.post("/intake/{handoff_type}", status_code=202)
-    def external_intake(
-        handoff_type: str,
-        body: dict,
-        _auth=Depends(verify_shared_secret),
-        actor=Depends(current_actor),
-        s=Depends(get_session),
-    ):
-        record, event_id = intake.ingest_external_payload(
-            s, handoff_type=handoff_type, payload=body, actor_person_id=actor,
-        )
-        return {
-            "accepted": True,
-            "intake_id": record.intake_id,
-            "source_object_id": record.source_object_id,
-            "audit_event_id": event_id,
-            "chain_verified": evidence.verify_chain(s),
-        }
-
-    @app.get("/intake/{intake_id}")
-    def external_intake_status(intake_id: str, s=Depends(get_session)):
-        record = intake.intake_status(s, intake_id)
-        if record is None:
-            raise HTTPException(status_code=404, detail=f"unknown intake {intake_id}")
-        return record
-
-    @app.get("/audit")
-    def audit_log(s=Depends(get_session)):
-        from .models import Event
-
-        rows = s.query(Event).order_by(Event.recorded_at.asc(), Event.event_id.asc()).all()
-        return {
-            "verified": evidence.verify_chain(s),
-            "events": [
-                {
-                    "event_id": row.event_id,
-                    "event_type": row.event_type,
-                    "object_id": row.object_id,
-                    "object_version": row.object_version,
-                    "recorded_at": row.recorded_at.isoformat(),
-                    "legal_effect": row.legal_effect,
-                    "links": row.links,
-                }
-                for row in rows
-            ],
-        }
-
-    @app.get("/health")
-    @app.get("/api/health")
     @app.get("/healthz")
     def healthz():
-        return {"status": "ok", "version": app.version, "service": "moten-control-plane"}
+        return {"status": "ok", "version": app.version}
 
     # ---- Reserved later-phase routes (Phase 3-4): fail closed with 501 ----
     def _reserved():
         return JSONResponse(status_code=501, content={"error": "NotImplemented", "detail": "Reserved for a later phase (spec §13-§17)."})
-
-    @app.api_route("/phase2/{rest_of_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
-    def reserved_phase2(rest_of_path: str):
-        return _reserved()
 
     for path in [
         "/v1/rights/events/{event_id}/leases",

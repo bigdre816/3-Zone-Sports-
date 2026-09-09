@@ -12,8 +12,6 @@ is enforced at TWO layers:
 
 from __future__ import annotations
 
-import os
-
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -31,13 +29,7 @@ class Base(DeclarativeBase):
 def make_engine(url: str | None = None) -> Engine:
     url = url or database_url()
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    kwargs = {"connect_args": connect_args, "future": True}
-    if not url.startswith("sqlite"):
-        kwargs["pool_pre_ping"] = True
-        kwargs["pool_recycle"] = int(os.environ.get("MOTEN_DB_POOL_RECYCLE_SECONDS", "1800"))
-        kwargs["pool_size"] = int(os.environ.get("MOTEN_DB_POOL_SIZE", "5"))
-        kwargs["max_overflow"] = int(os.environ.get("MOTEN_DB_MAX_OVERFLOW", "5"))
-    engine = create_engine(url, **kwargs)
+    engine = create_engine(url, connect_args=connect_args, future=True)
     if url.startswith("sqlite"):
 
         @event.listens_for(engine, "connect")

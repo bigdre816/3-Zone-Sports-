@@ -21,7 +21,6 @@ from .control_plane import ControlError, ControlPlane
 from .identity import bearer_from_header, resolve_identity, resolve_identity_optional
 from .mastery import article_html, full_page_html, load_markdown
 from .media_provider import build_provider
-from .moten_adapter import MotenIntakeService
 from .network import NetworkService
 from .photo_storage import build_photo_storage
 from .portal import PortalService
@@ -86,12 +85,6 @@ def _routes():
         ("GET", re.compile(r"^/api/analytics$"), "h_analytics", "session"),
         ("GET", re.compile(r"^/api/audit$"), "h_audit", "operator"),
         ("GET", re.compile(r"^/api/audit/verification-outbox$"), "h_verification_outbox", "operator"),
-        ("GET", re.compile(r"^/api/moten/discovery$"), "h_moten_discovery", "operator"),
-        ("GET", re.compile(r"^/api/moten/intake/jobs/(?P<job_id>mtn_[a-f0-9]+)$"), "h_moten_job", "operator"),
-        ("POST", re.compile(r"^/api/moten/intake/event$"), "h_moten_event", "operator"),
-        ("POST", re.compile(r"^/api/moten/intake/rights-version$"), "h_moten_rights", "operator"),
-        ("POST", re.compile(r"^/api/moten/intake/revocation-event$"), "h_moten_revocation", "operator"),
-        ("POST", re.compile(r"^/api/moten/intake/settlement$"), "h_moten_settlement", "operator"),
         ("GET", re.compile(r"^/api/owner/inventory$"), "h_owner_inventory", "owner"),
         ("GET", re.compile(r"^/api/owner/mastery$"), "h_owner_mastery", "owner"),
         ("GET", re.compile(rf"^/demo/media/{_EVENT_RE}\.mp4$"), "h_media", "none"),
@@ -150,7 +143,6 @@ class _Handler(BaseHTTPRequestHandler):
     cp: ControlPlane = None  # type: ignore
     portal: PortalService = None  # type: ignore
     network: NetworkService = None  # type: ignore
-    moten: MotenIntakeService = None  # type: ignore
     media_dir: str = "data/media"
     routes = _routes()
 
@@ -177,11 +169,11 @@ class _Handler(BaseHTTPRequestHandler):
             "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
         )
 
-    def _origin_allowed(self) -> bool:
+    def _origin_allowed(self) -> tuple[bool, str | None]:
         origin = self.headers.get("Origin")
         if origin is None:
-            return True
-        return any(origin == allowed for allowed in self.cp.config.allowed_origins)
+            return True, None
+        return (origin in self.cp.config.allowed_origins), origin
 
     def _base_headers(self, no_store: bool = True) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -190,51 +182,20 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", self._csp())
         if no_store:
             self.send_header("Cache-Control", "no-store")
-        origin = self.headers.get("Origin")
-        if origin is not None:
-            for allowed in self.cp.config.allowed_origins:
-                if origin == allowed:
-                    self.send_header("Access-Control-Allow-Origin", allowed)
-                    self.send_header("Access-Control-Allow-Credentials", "true")
-                    self.send_header("Vary", "Origin")
-                    break
+        ok, origin = self._origin_allowed()
+        if origin is not None and ok:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Credentials", "true")
+            self.send_header("Vary", "Origin")
 
-    @staticmethod
-    def _safe_header_value(value: str) -> str:
-        text = str(value)
-        if "\r" in text or "\n" in text:
-            raise ControlError("invalid header value", "bad_header")
-        return text
-
-    @staticmethod
-    def _safe_header_name(value: str) -> str:
-        text = str(value)
-        if not re.fullmatch(r"[A-Za-z0-9-]+", text):
-            raise ControlError("invalid header name", "bad_header")
-        return text
-
-    def _cookie_header(self, name: str, value: str, path: str, max_age: int) -> str:
-        if not re.fullmatch(r"[A-Za-z0-9_:-]+", name):
-            raise ControlError("invalid cookie name", "bad_header")
-        if "\r" in path or "\n" in path:
-            raise ControlError("invalid cookie path", "bad_header")
-        jar = SimpleCookie()
-        jar[name] = value
-        morsel = jar[name]
-        morsel["path"] = path
-        morsel["max-age"] = str(max_age)
-        morsel["httponly"] = True
-        morsel["samesite"] = "Strict"
-        return morsel.OutputString()
-
-    def _send_json(self, status: int, payload: dict, set_cookie: tuple[str, str, str, int] | None = None) -> None:
+    def _send_json(self, status: int, payload: dict, extra_headers: dict | None = None) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self._base_headers(no_store=True)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        if set_cookie is not None:
-            self.send_header("Set-Cookie", self._cookie_header(*set_cookie))
+        for key, value in (extra_headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         if self.command != "HEAD":
             self._safe_write(body)
@@ -311,8 +272,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     # -- dispatch ----------------------------------------------------------
     def do_OPTIONS(self):
-        ok = self._origin_allowed()
-        origin = self.headers.get("Origin")
+        ok, origin = self._origin_allowed()
         self.send_response(HTTPStatus.NO_CONTENT)
         self._base_headers(no_store=True)
         if origin is not None and ok:
@@ -335,7 +295,8 @@ class _Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
 
         # Reject disallowed cross-origin requests before doing any work.
-        if not self._origin_allowed():
+        ok, origin = self._origin_allowed()
+        if not ok:
             self._send_json(403, {"error": "origin not allowed", "code": "forbidden_origin"})
             return
 
@@ -410,11 +371,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     # -- API handlers ------------------------------------------------------
     def h_health(self, p, b, u):
-        self._send_json(200, {
-            "status": "ok",
-            "service": "three-zone-api",
-            "moten": {"configured": self.cp.config.moten_enabled},
-        })
+        self._send_json(200, {"status": "ok"})
 
     def h_live_readiness(self, p, b, u):
         # Operator/owner only. Never returns secret values — only presence/validity flags.
@@ -431,8 +388,9 @@ class _Handler(BaseHTTPRequestHandler):
     def _auth_cookie_response(self, result: dict):
         member = self.portal.complete_auth(result["user"]["user_id"])
         sid = member.pop("session_id")
+        cookie = f"tz_member_session={sid}; Path=/; Max-Age={self.cp.config.session_ttl}; HttpOnly; SameSite=Strict"
         payload = {**result, "member": member}
-        self._send_json(200, payload, set_cookie=("tz_member_session", sid, "/", self.cp.config.session_ttl))
+        self._send_json(200, payload, extra_headers={"Set-Cookie": cookie})
 
     def h_auth_login(self, p, b, u):
         body = b or {}
@@ -452,12 +410,13 @@ class _Handler(BaseHTTPRequestHandler):
     def h_auth_verify(self, p, b, u):
         result = self.portal.complete_auth((b or {}).get("member_id", "demo-viewer"))
         sid = result.pop("session_id")
-        self._send_json(200, result, set_cookie=("tz_member_session", sid, "/", self.cp.config.session_ttl))
+        cookie = f"tz_member_session={sid}; Path=/; Max-Age={self.cp.config.session_ttl}; HttpOnly; SameSite=Strict"
+        self._send_json(200, result, extra_headers={"Set-Cookie": cookie})
 
     def h_auth_logout(self, p, b, u):
         sid = self._cookie("tz_member_session")
         if sid: self.portal.logout(sid)
-        self._send_json(200, {"ok": True}, set_cookie=("tz_member_session", "", "/", 0))
+        self._send_json(200, {"ok": True}, extra_headers={"Set-Cookie": "tz_member_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"})
 
     def h_member_me(self, p, b, u):
         profile = self.network.get_own_profile(u)
@@ -480,11 +439,11 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _lease_response(self, result: dict, event_id: str) -> None:
         token = result.pop("lease_token")
-        self._send_json(
-            200,
-            result,
-            set_cookie=(f"tz_lease_{event_id}", token, f"/demo/media/{event_id}.mp4", self.cp.config.lease_ttl),
+        cookie = (
+            f"tz_lease_{event_id}={token}; Path=/demo/media/{event_id}.mp4; "
+            f"Max-Age={self.cp.config.lease_ttl}; HttpOnly; SameSite=Strict"
         )
+        self._send_json(200, result, extra_headers={"Set-Cookie": cookie})
 
     def h_member_playback(self, p, b, u):
         result = self.portal.playback_for_user(u, p["event_id"])
@@ -526,11 +485,11 @@ class _Handler(BaseHTTPRequestHandler):
         result = self.cp.request_playback(p["event_id"], u)
         token = result.pop("lease_token")
         event_id = p["event_id"]
-        self._send_json(
-            200,
-            result,
-            set_cookie=(f"tz_lease_{event_id}", token, f"/demo/media/{event_id}.mp4", self.cp.config.lease_ttl),
+        cookie = (
+            f"tz_lease_{event_id}={token}; Path=/demo/media/{event_id}.mp4; "
+            f"Max-Age={self.cp.config.lease_ttl}; HttpOnly; SameSite=Strict"
         )
+        self._send_json(200, result, extra_headers={"Set-Cookie": cookie})
 
     def h_transition(self, p, b, u):
         target = (b or {}).get("target", "")
@@ -641,31 +600,6 @@ class _Handler(BaseHTTPRequestHandler):
     def h_verification_outbox(self, p, b, u):
         self._send_json(200, {"outbox": self.cp.verification_outbox(u)})
 
-    def h_moten_discovery(self, p, b, u):
-        self._send_json(200, self.moten.discovery())
-
-    def h_moten_job(self, p, b, u):
-        try:
-            self._send_json(200, self.moten.status(p["job_id"]))
-        except LookupError:
-            self._send_json(404, {"error": "moten intake job not found", "code": "job_not_found"})
-
-    def h_moten_event(self, p, b, u):
-        event_id = (b or {}).get("event_id", "")
-        self._send_json(202, self.moten.handoff_event(u, event_id))
-
-    def h_moten_rights(self, p, b, u):
-        body = b or {}
-        self._send_json(202, self.moten.handoff_rights_version(u, body.get("event_id", ""), body.get("rights_version")))
-
-    def h_moten_revocation(self, p, b, u):
-        event_id = (b or {}).get("event_id", "")
-        self._send_json(202, self.moten.handoff_revocation_event(u, event_id))
-
-    def h_moten_settlement(self, p, b, u):
-        event_id = (b or {}).get("event_id", "")
-        self._send_json(202, self.moten.handoff_settlement(u, event_id))
-
     def h_owner_inventory(self, p, b, u):
         self._send_json(200, self.cp.owner_inventory(u))
 
@@ -698,17 +632,12 @@ class _Handler(BaseHTTPRequestHandler):
             return
         path = demo_media.ensure_media(self.media_dir, event_id)
         status, headers, body = demo_media.read_range(path, self.headers.get("Range"))
-        content_range = headers.get("Content-Range")
-        if content_range is not None and not re.fullmatch(r"bytes (\*/\d+|\d+-\d+/\d+)", content_range):
-            self._send_json(500, {"error": "invalid content range", "code": "internal"})
-            return
         self.send_response(status)
         self._base_headers(no_store=True)
-        self.send_header("Content-Type", "video/mp4")
-        self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Content-Length", str(len(body)))
-        if content_range is not None:
-            self.send_header("Content-Range", content_range)
+        for key, value in headers.items():
+            if key == "Cache-Control":
+                continue  # already set by _base_headers
+            self.send_header(key, value)
         self.end_headers()
         if self.command != "HEAD":
             self._safe_write(body)
@@ -795,11 +724,14 @@ class _Handler(BaseHTTPRequestHandler):
     def h_net_game_playback(self, p, b, u):
         result = self.network.game_playback(u, p["game_id"])
         token = result.pop("lease_token", None)
-        set_cookie = None
+        extra = {}
         if token and result.get("event_id"):
             eid = result["event_id"]
-            set_cookie = (f"tz_lease_{eid}", token, f"/demo/media/{eid}.mp4", self.cp.config.lease_ttl)
-        self._send_json(200, result, set_cookie=set_cookie)
+            extra["Set-Cookie"] = (
+                f"tz_lease_{eid}={token}; Path=/demo/media/{eid}.mp4; "
+                f"Max-Age={self.cp.config.lease_ttl}; HttpOnly; SameSite=Strict"
+            )
+        self._send_json(200, result, extra_headers=extra or None)
 
     def h_net_clip_create(self, p, b, u):
         data = b or {}
@@ -917,9 +849,8 @@ def make_http_server(config, cp: ControlPlane, media_dir: str,
     provider = provider or build_provider(config)
     photo_storage = photo_storage or build_photo_storage(config)
     network = NetworkService(cp, portal, provider, photo_storage)
-    moten = MotenIntakeService(cp)
     handler = type("BoundHandler", (_Handler,), {
-        "cp": cp, "portal": portal, "network": network, "moten": moten, "media_dir": media_dir,
+        "cp": cp, "portal": portal, "network": network, "media_dir": media_dir,
     })
     httpd = ThreadingHTTPServer((config.http_host, config.http_port), handler)
     httpd.daemon_threads = True

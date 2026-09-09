@@ -93,23 +93,6 @@ class Event(Base):
     change_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-class ExternalIntake(Base):
-    __tablename__ = "external_intake"
-    __table_args__ = {"info": IMMUTABLE}
-    intake_id: Mapped[str] = mapped_column(String, primary_key=True)
-    source_system: Mapped[str] = mapped_column(String, nullable=False)
-    handoff_type: Mapped[str] = mapped_column(String, nullable=False)
-    source_object_id: Mapped[str] = mapped_column(String, nullable=False)
-    source_version: Mapped[str | None] = mapped_column(String, nullable=True)
-    rights_version: Mapped[str | None] = mapped_column(String, nullable=True)
-    artifact_evd_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    payload_sha256: Mapped[str] = mapped_column(String, nullable=False)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="accepted")
-    change_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-
 # --------------------------------------------------------------------------
 # Signal plane — Research Registry
 # --------------------------------------------------------------------------

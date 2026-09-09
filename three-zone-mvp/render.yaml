@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: three-zone-api
+    name: three-zone-sports-api
     runtime: python
     pythonVersion: 3.12
     buildCommand: pip install -r requirements.txt
@@ -16,34 +16,20 @@ services:
         value: 8000
       - key: TZ_WS_PORT
         value: 8765
-      - key: TZ_DATABASE_URL
-        fromDatabase:
-          name: three-zone-postgres
-          property: connectionString
-      - key: TZ_DATA_DIR
-        value: /var/data
+      - key: TZ_DATABASE_PATH
+        value: /var/data/three_zone.sqlite3
       - key: TZ_TOKEN_SECRET
         sync: false
       - key: TZ_MEDIA_SERVICE_KEY
         sync: false
       - key: TZ_ALLOWED_ORIGINS
-        value: https://3zonesports.com,https://api.3zonesports.com
+        value: https://3zonesports.com,https://www.3zonesports.com
       - key: TZ_LIVE_MEDIA_PROVIDER
         value: demo
       - key: TZ_UGC_MEDIA_PROVIDER
         value: fake
-      - key: TZ_PHOTO_STORAGE
-        value: fake
-      - key: TZ_MOTEN_SERVICE_URL
-        sync: false
-      - key: TZ_MOTEN_SHARED_SECRET
-        sync: false
     disk:
       - name: data
         mountPath: /var/data
         sizeGB: 10
     healthCheckPath: /api/health
-databases:
-  - name: three-zone-postgres
-    databaseName: three_zone_prod
-    user: three_zone

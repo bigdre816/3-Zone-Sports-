@@ -24,11 +24,8 @@ from backend.seed import seed_if_empty
 from backend.ws_server import run_ws_process
 
 
-def _media_dir(database_locator: str, data_dir: str) -> str:
-    if "://" in database_locator:
-        base = os.path.abspath(data_dir or "data")
-    else:
-        base = os.path.dirname(os.path.abspath(database_locator)) or "."
+def _media_dir(database_path: str) -> str:
+    base = os.path.dirname(os.path.abspath(database_path)) or "."
     return os.path.join(base, "media")
 
 
@@ -42,11 +39,11 @@ def main() -> int:
     config = Config.from_env(http_port=args.http_port, ws_port=args.ws_port,
                              http_host=args.host, ws_host=args.host)
 
-    db = Database(config.database_locator)
+    db = Database(config.database_path)
     if seed_if_empty(db, config.seed_passwords):
-        print(f"[three-zone] seeded demo inventory into {config.database_locator}")
+        print(f"[three-zone] seeded demo inventory into {config.database_path}")
     cp = ControlPlane(db, config)
-    media_dir = _media_dir(config.database_locator, config.data_dir)
+    media_dir = _media_dir(config.database_path)
     os.makedirs(media_dir, exist_ok=True)
 
     ws_proc = multiprocessing.Process(target=run_ws_process, args=(config,), daemon=True)
@@ -57,7 +54,7 @@ def main() -> int:
         "\n  Three-Zone control-plane MVP\n"
         f"  HTTP  http://{config.http_host}:{config.http_port}\n"
         f"  WS    ws://{config.ws_host}:{config.ws_port}/ws/events/<event_id>\n"
-        f"  env   {config.env}   db {config.database_locator if '://' not in config.database_locator else 'configured remote database'}\n"
+        f"  env   {config.env}   db {config.database_path}\n"
         f"  origins {', '.join(config.allowed_origins)}\n"
         "  sign in with username + password (see README)\n"
         "  member site  /     control plane  /ops\n"
