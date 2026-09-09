@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: three-zone-sports-api
+    runtime: python
+    pythonVersion: 3.12
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run.py
+    envVars:
+      - key: TZ_ENV
+        value: production
+      - key: TZ_HTTP_HOST
+        value: 0.0.0.0
+      - key: TZ_WS_HOST
+        value: 0.0.0.0
+      - key: TZ_HTTP_PORT
+        value: 8000
+      - key: TZ_WS_PORT
+        value: 8765
+      - key: TZ_DATABASE_PATH
+        value: /var/data/three_zone.sqlite3
+      - key: TZ_TOKEN_SECRET
+        sync: false
+      - key: TZ_MEDIA_SERVICE_KEY
+        sync: false
+      - key: TZ_ALLOWED_ORIGINS
+        value: https://3zonesports.com,https://www.3zonesports.com
+      - key: TZ_LIVE_MEDIA_PROVIDER
+        value: demo
+      - key: TZ_UGC_MEDIA_PROVIDER
+        value: fake
+    disk:
+      - name: data
+        mountPath: /var/data
+        sizeGB: 10
+    healthCheckPath: /api/health

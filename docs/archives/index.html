@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Three-Zone Sports - Game archives and replays. Watch past games with provenance." />
+  <title>Archives · Three-Zone Sports</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%236ea8ff' width='100' height='100'/><text x='50' y='70' font-size='60' font-weight='bold' text-anchor='middle' fill='%230f141a'>3</text></svg>" />
+  <style>
+    :root {
+      --bg: #0f141a;
+      --panel: #171e27;
+      --line: #2a3544;
+      --text: #e8edf3;
+      --muted: #9aa7b6;
+      --accent: #6ea8ff;
+      --accent2: #74e0c0;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, sans-serif; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 18px 6%; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 100; }
+    .brand { display: flex; gap: 8px; font-weight: 700; font-size: 20px; color: var(--text); }
+    .brand small { color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: 650; }
+    nav { display: flex; gap: 32px; }
+    nav a { font-size: 14px; color: var(--text); text-decoration: none; }
+    nav a:hover { color: var(--accent); }
+    nav a.active { color: var(--accent2); }
+    main { max-width: 1200px; margin: 0 auto; padding: 56px 6% 72px; }
+    .eyebrow { color: var(--accent); font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 12px; }
+    h1 { font-size: clamp(32px, 5vw, 48px); line-height: 1.05; margin: 0 0 16px; }
+    .subtitle { color: var(--muted); font-size: 18px; margin: 0 0 48px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .card-img { width: 100%; height: 160px; background: rgba(110, 168, 255, 0.1); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; }
+    .card-content { padding: 16px; }
+    .card-content h3 { margin: 0 0 8px; font-size: 16px; }
+    .card-content p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+    .card-date { font-size: 12px; color: var(--muted); margin-top: 12px; }
+    button { cursor: pointer; border: none; padding: 10px 16px; border-radius: 6px; background: var(--accent); color: var(--bg); font-weight: 600; font-size: 12px; width: 100%; margin-top: 12px; }
+    button:hover { opacity: 0.9; }
+    .loading, .error, .unavailable { padding: 32px; text-align: center; color: var(--muted); }
+    .error { background: rgba(255, 127, 134, 0.1); border: 1px solid #ff7f86; border-radius: 8px; color: #ff7f86; }
+    .unavailable { background: var(--panel); border: 1px dashed var(--line); border-radius: 8px; }
+    footer { padding: 40px 6%; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; text-align: center; }
+    footer a { color: var(--accent); }
+    @media (max-width: 900px) { nav { gap: 16px; font-size: 12px; } .cards { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/" class="brand">Three-Zone<small>Sports Access</small></a>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/live/">Live</a>
+      <a href="/schedules/">Schedules</a>
+      <a href="/archives/" class="active">Archives</a>
+      <a href="/#signin">Member Sign In</a>
+    </nav>
+  </header>
+
+  <main>
+    <p class="eyebrow">Game Archives</p>
+    <h1>Replays & Clips</h1>
+    <p class="subtitle">Find past games with provenance. Watch replays, not throwaway social posts. Archives stay tied to verified events.</p>
+    <div id="archives-container" class="cards">
+      <div class="loading" style="grid-column: 1/-1;">Loading archives...</div>
+    </div>
+  </main>
+
+  <footer>
+    <p>Three-Zone Sports Access · <a href="/">3zonesports.com</a></p>
+  </footer>
+
+  <script src="/config.js"></script>
+  <script>
+    async function loadArchives() {
+      const container = document.getElementById('archives-container');
+      try {
+        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.member.archives);
+        const archives = data.archives || [];
+        
+        if (archives.length === 0) {
+          container.innerHTML = '<div class="unavailable" style="grid-column: 1/-1;">No archives available yet. Check back after games conclude.</div>';
+          return;
+        }
+
+        container.innerHTML = archives.map(archive => `
+          <div class="card">
+            <div class="card-img">Video Archive</div>
+            <div class="card-content">
+              <h3>${archive.away_team || 'Away'} vs ${archive.home_team || 'Home'}</h3>
+              <p>${archive.sport || 'Sports'} · ${archive.level || 'Competition'}</p>
+              <p>Final: ${archive.home_score || '—'} - ${archive.away_score || '—'}</p>
+              <div class="card-date">${new Date(archive.end_time).toLocaleDateString()}</div>
+              <button onclick="watchArchive('${archive.archive_id}')">Watch Replay</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (error) {
+        container.innerHTML = `<div class="error" style="grid-column: 1/-1;">Unable to load archives. ${error.message || 'Please try again.'}</div>`;
+      }
+    }
+
+    function watchArchive(archiveId) {
+      if (!ThreeZoneConfig.BACKEND_URL) {
+        alert('Member services are not yet configured.');
+        return;
+      }
+      window.location.href = ThreeZoneConfig.BACKEND_URL + '/?archive=' + archiveId;
+    }
+
+    document.addEventListener('DOMContentLoaded', loadArchives);
+  </script>
+</body>
+</html>
