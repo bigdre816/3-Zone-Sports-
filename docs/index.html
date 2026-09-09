@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Three-Zone Sports</title>
+  <meta name="description" content="Verified live games, team schedules, and school archives. Watch it. Save it. Clip it. Share it." />
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --bg: #0f141a;
+      --panel: #171e27;
+      --line: #2a3544;
+      --text: #e8edf3;
+      --muted: #9aa7b6;
+      --accent: #6ea8ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.5 "Segoe UI", Inter, system-ui, sans-serif;
+    }
+    header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 6%;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand {
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 700;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .brand small {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      font-weight: 650;
+    }
+    .domain { color: var(--muted); font-size: 13px; }
+    main { max-width: 920px; margin: 0 auto; padding: 56px 6% 72px; }
+    .eyebrow {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    h1 { font-size: clamp(32px, 5vw, 48px); line-height: 1.05; margin: 10px 0 12px; letter-spacing: -.03em; }
+    .sub { color: var(--muted); font-size: 18px; max-width: 38rem; }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin: 36px 0 40px;
+    }
+    article {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 18px;
+      min-height: 140px;
+    }
+    article h2 { font-size: 16px; margin: 0 0 8px; }
+    article p { margin: 0; color: var(--muted); font-size: 14px; }
+    .note {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 18px 20px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    footer {
+      padding: 20px 6% 36px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 800px) {
+      .cards { grid-template-columns: 1fr; }
+      header { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="brand" href="/">Three-Zone<small>Sports Access</small></a>
+    <span class="domain">3zonesports.com</span>
+  </header>
+  <main>
+    <p class="eyebrow">Public site</p>
+    <h1>Watch it. Save it. Clip it. Share it.</h1>
+    <p class="sub">Verified live games, team schedules, and school archives for members. This is the public front door for Three-Zone Sports.</p>
+    <div class="cards">
+      <article>
+        <h2>Live</h2>
+        <p>Rights-cleared games in the window they are supposed to be watched.</p>
+      </article>
+      <article>
+        <h2>Schedules</h2>
+        <p>Team and school calendars that stay tied to the same event record.</p>
+      </article>
+      <article>
+        <h2>Archives</h2>
+        <p>Replays and clips with provenance, not a throwaway social dump.</p>
+      </article>
+    </div>
+    <p class="note">Member sign-in and live playback run on the Three-Zone app. This domain is the public hostname for that product.</p>
+  </main>
+  <footer>Three-Zone Sports · 3zonesports.com</footer>
+</body>
+</html>
