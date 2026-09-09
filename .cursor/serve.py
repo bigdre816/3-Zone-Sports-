@@ -2,8 +2,8 @@
 """Compat entrypoint for Cloud Agent terminals (`python3 .cursor/serve.py`).
 
 Starts Three-Zone Sports Access on :8000 when `three-zone-mvp/` is present.
-Otherwise starts the Moten control plane on :8100. Never binds the leftover
-Investment Tracker static file when a real product tree exists.
+Otherwise starts the Moten control plane on :8100. Never binds leftover
+static prototypes when a real product tree exists.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ def main() -> None:
         return
 
     print(
-        "No Three-Zone or Moten app in this checkout; not starting Investment Tracker.",
+        "No Three-Zone or Moten app in this checkout; refusing leftover static prototypes.",
         file=sys.stderr,
     )
     sys.exit(1)
