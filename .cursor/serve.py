@@ -1,15 +1,9 @@
 #!/usr/bin/env python3
-"""Compat entrypoint for older Cloud Agent terminals (`python3 .cursor/serve.py`).
+"""Compat entrypoint for Cloud Agent terminals (`python3 .cursor/serve.py`).
 
-Historically this served the leftover Investment Tracker HTML file (`System`)
-on port 8000. That occupied the port Three-Zone needs for `/` and `/ops`, so
-agents started a second copy on ad-hoc ports (18002) and computer-use
-subagents then failed.
-
-This shim starts the product that actually exists in the checkout:
-Three-Zone on :8000 when `three-zone-mvp/` is present, otherwise the Moten
-control plane on :8100. It never binds the Investment Tracker static server
-when a real product tree is available.
+Starts Three-Zone Sports Access on :8000 when `three-zone-mvp/` is present.
+Otherwise starts the Moten control plane on :8100. Never binds the leftover
+Investment Tracker static file when a real product tree exists.
 """
 
 from __future__ import annotations
@@ -26,12 +20,14 @@ MOTEN = ROOT / "apps" / "control-plane" / "manage.py"
 
 def main() -> None:
     if TZ.is_file():
+        port = os.environ.get("PORT", "8000")
+        os.environ.setdefault("TZ_ENV", "demo")
         os.environ.setdefault("TZ_HTTP_HOST", "0.0.0.0")
         os.environ.setdefault("TZ_WS_HOST", "0.0.0.0")
-        os.environ.setdefault("TZ_HTTP_PORT", os.environ.get("PORT", "8000"))
+        os.environ.setdefault("TZ_HTTP_PORT", port)
         os.environ.setdefault(
             "TZ_ALLOWED_ORIGINS",
-            "http://127.0.0.1:8000,http://localhost:8000",
+            f"http://127.0.0.1:{port},http://localhost:{port}",
         )
         os.chdir(TZ.parent)
         sys.argv = [

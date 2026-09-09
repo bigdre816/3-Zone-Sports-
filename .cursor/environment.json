@@ -7,7 +7,7 @@
     {
       "name": "app-logs",
       "command": "touch /tmp/cloud-agent-apps.log; tail -F /tmp/cloud-agent-apps.log",
-      "description": "App server logs. Three-Zone (main): http://127.0.0.1:8000/ and /ops (health GET /api/health). Moten Phase 1: http://127.0.0.1:8100/ (health GET /healthz). Do not treat the leftover System Investment Tracker file as the product. Chrome: /usr/bin/google-chrome-stable."
+      "description": "App server logs. Three-Zone Sports Access (main): http://127.0.0.1:8000/ and /ops (health GET /api/health). Moten Phase 1: http://127.0.0.1:8100/ (health GET /healthz)."
     }
   ],
   "ports": [
@@ -22,6 +22,28 @@
     {
       "name": "moten-control-plane",
       "port": 8100
+    }
+  ],
+  "mcpServerAllowlist": [
+    {
+      "name": "cloudflare",
+      "serverUrl": "https://mcp.cloudflare.com/mcp"
+    },
+    {
+      "name": "cloudflare-docs",
+      "serverUrl": "https://docs.mcp.cloudflare.com/mcp"
+    },
+    {
+      "name": "cloudflare-bindings",
+      "serverUrl": "https://bindings.mcp.cloudflare.com/mcp"
+    },
+    {
+      "name": "cloudflare-builds",
+      "serverUrl": "https://builds.mcp.cloudflare.com/mcp"
+    },
+    {
+      "name": "cloudflare-observability",
+      "serverUrl": "https://observability.mcp.cloudflare.com/mcp"
     }
   ]
 }
