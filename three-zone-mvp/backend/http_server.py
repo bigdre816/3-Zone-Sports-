@@ -181,7 +181,10 @@ class _Handler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         if origin is None:
             return True, None
-        return (origin in self.cp.config.allowed_origins), origin
+        for allowed in self.cp.config.allowed_origins:
+            if origin == allowed:
+                return True, allowed
+        return False, origin
 
     def _base_headers(self, no_store: bool = True) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
