@@ -10,6 +10,11 @@ const state = {
   ws: null,
   wsEventId: null,
   inventory: null,
+  hls: null,
+  viewSession: null,
+  heartbeatTimer: null,
+  leaseTimer: null,
+  heartbeatSeq: 0,
 };
 
 const OPERATOR_ROLES = ["operator", "owner", "admin"];
@@ -80,6 +85,7 @@ async function login(event) {
 }
 
 function logout() {
+  stopMedia("logout");
   state.session = null;
   state.user = null;
   state.selected = null;
@@ -125,7 +131,7 @@ function afterAuth() {
 }
 
 function showPane(name) {
-  document.querySelectorAll("[data-pane]").forEach((pane) => {
+  document.querySelectorAll("#app [data-pane]").forEach((pane) => {
     pane.classList.toggle("hidden", pane.getAttribute("data-pane") !== name);
   });
   document.querySelectorAll(".nav-item").forEach((item) => {
@@ -134,6 +140,9 @@ function showPane(name) {
   if (name === "audit") {
     refreshAnalytics();
     refreshAudit();
+  }
+  if (name === "mastery") {
+    loadMastery();
   }
   if (name === "network") {
     refreshNetwork();
@@ -193,7 +202,10 @@ function renderCatalog() {
     if (sb.home !== undefined) {
       card.appendChild(el("div", "muted", `Score ${sb.home}-${sb.away} · ${sb.period || ""} ${sb.clock || ""}`));
     }
-  const btn = el("button", null, ev.status === "replay" ? "Watch replay" : "Open");
+    if (ev.replay_pending) {
+      card.appendChild(el("div", "muted", "Recording pending"));
+    }
+    const btn = el("button", null, ev.replay_pending ? "Recording pending" : (ev.status === "replay" ? "Watch replay" : "Open"));
     btn.addEventListener("click", () => { showPane("player"); openEvent(ev.event_id); });
     card.appendChild(btn);
     box.appendChild(card);
@@ -259,10 +271,7 @@ function onSocketMessage(eventId, raw) {
   } else if (m.type === "rights.revoked") {
     toast("Rights revoked — playback stopped", "bad");
     $("#player-status").textContent = "Status: rights revoked";
-    const v = $("#video");
-    v.pause();
-    v.removeAttribute("src");
-    v.load();
+    stopMedia("rights_revoked");
     loadEvents();
   } else if (m.type === "rights.restored") {
     toast("Rights restored (new version) — re-open to resume", "ok");
@@ -272,7 +281,82 @@ function onSocketMessage(eventId, raw) {
   }
 }
 
+function stopMedia(reason) {
+  if (state.heartbeatTimer) { clearInterval(state.heartbeatTimer); state.heartbeatTimer = null; }
+  if (state.leaseTimer) { clearInterval(state.leaseTimer); state.leaseTimer = null; }
+  if (state.viewSession) {
+    const sid = state.viewSession.session_id;
+    state.viewSession = null;
+    api("POST", `/api/view-sessions/${sid}/end`, { reason: reason || "pagehide" }).catch(() => {});
+  }
+  if (state.hls) {
+    try { state.hls.destroy(); } catch (_) {}
+    state.hls = null;
+  }
+  const v = $("#video");
+  if (v) {
+    v.pause();
+    v.removeAttribute("src");
+    v.load();
+  }
+}
+
+function attachMedia(url, mediaType) {
+  const v = $("#video");
+  const isHls = mediaType === "hls" || (url && url.indexOf(".m3u8") !== -1);
+  if (isHls && window.Hls && window.Hls.isSupported()) {
+    if (state.hls) { try { state.hls.destroy(); } catch (_) {} }
+    state.hls = new window.Hls({ enableWorker: false });
+    state.hls.loadSource(url);
+    state.hls.attachMedia(v);
+    v.play().catch(() => {});
+    return;
+  }
+  v.src = url;
+  v.play().catch(() => {});
+}
+
+async function startViewLoop(eventId, leaseId) {
+  const session = await api("POST", `/api/events/${eventId}/view-sessions`, { lease_id: leaseId });
+  state.viewSession = session;
+  state.heartbeatSeq = 0;
+  const interval = ((state.config && state.config.viewer_heartbeat_interval) || 15) * 1000;
+  const beat = async () => {
+    if (!state.viewSession) return;
+    state.heartbeatSeq += 1;
+    const v = $("#video");
+    try {
+      await api("POST", `/api/view-sessions/${state.viewSession.session_id}/heartbeat`, {
+        seq: state.heartbeatSeq,
+        playing: !!(v && !v.paused && !v.ended),
+        page_visible: document.visibilityState === "visible",
+        position_seconds: v ? v.currentTime : 0,
+      });
+    } catch (e) {
+      if (e.code === "rights_unavailable" || e.code === "rights_version_changed") {
+        stopMedia("rights_revoked");
+      }
+    }
+  };
+  state.heartbeatTimer = setInterval(beat, interval);
+}
+
+function scheduleLeaseRenew(eventId, ttl) {
+  if (state.leaseTimer) clearInterval(state.leaseTimer);
+  const wait = Math.max(5000, ((ttl || 60) * 1000) * 0.6);
+  state.leaseTimer = setInterval(async () => {
+    try {
+      const res = await api("POST", `/api/events/${eventId}/playback-session`);
+      attachMedia(res.media_url, res.media_type);
+    } catch (e) {
+      stopMedia("lease_expired");
+      $("#player-status").textContent = "Access denied: " + (e.code || e.message);
+    }
+  }, wait);
+}
+
 async function openEvent(eventId) {
+  stopMedia("pagehide");
   state.selected = eventId;
   const ev = state.events.find((e) => e.event_id === eventId);
   $("#player-title").textContent = ev ? ev.title : eventId;
@@ -284,17 +368,19 @@ async function openEvent(eventId) {
     $("#player-empty").classList.add("hidden");
     $("#player").classList.remove("hidden");
     $("#player-mode").textContent = res.mode;
-    $("#player-status").textContent = "Status: " + (ev ? ev.status : res.mode);
-    const v = $("#video");
-    v.src = res.media_url + "?v=" + res.lease_id; // cache-bust; auth is the HttpOnly cookie
-    v.play().catch(() => {});
+    let statusLine = "Status: " + (ev ? ev.status : res.mode);
+    if (ev && ev.replay_pending) statusLine = "Status: recording pending";
+    $("#player-status").textContent = statusLine;
+    attachMedia(res.media_url, res.media_type);
+    await startViewLoop(eventId, res.lease_id);
+    scheduleLeaseRenew(eventId, res.lease_ttl);
     connectWs(eventId);
   } catch (e) {
     $("#player-empty").classList.add("hidden");
     $("#player").classList.remove("hidden");
     $("#player-mode").textContent = "denied";
     $("#player-status").textContent = "Access denied: " + (e.code || e.message);
-    const v = $("#video"); v.removeAttribute("src"); v.load();
+    stopMedia();
     connectWs(eventId); // still observe state if the zone allows
     toast("Playback denied: " + (e.code || e.message), "bad");
   }
@@ -384,6 +470,48 @@ async function issueIngest() {
     out.classList.remove("hidden");
     toast("Ingest token issued", "ok");
   } catch (e) { toast("Ingest token failed: " + (e.code || e.message), "bad"); }
+}
+
+async function provisionMedia() {
+  if (!state.selected) return toast("Select an event first", "bad");
+  try {
+    const res = await api("POST", `/api/events/${state.selected}/media/provision`);
+    const out = $("#ingest-out");
+    out.textContent = `Provisioned input=${res.input_id}\ningest_url=${res.ingest_url}\nstream_key=${res.stream_key}\n(shown once; not stored)`;
+    out.classList.remove("hidden");
+    toast("Live input provisioned", "ok");
+    await loadEvents();
+  } catch (e) { toast("Provision failed: " + (e.code || e.message), "bad"); }
+}
+
+async function rotateMediaKey() {
+  if (!state.selected) return toast("Select an event first", "bad");
+  try {
+    const res = await api("POST", `/api/events/${state.selected}/media/rotate-key`);
+    const out = $("#ingest-out");
+    out.textContent = `Rotated input=${res.input_id}\ningest_url=${res.ingest_url}\nstream_key=${res.stream_key}\n(shown once; not stored)`;
+    out.classList.remove("hidden");
+    toast("Ingest key rotated", "ok");
+  } catch (e) { toast("Rotate failed: " + (e.code || e.message), "bad"); }
+}
+
+async function syncMedia() {
+  if (!state.selected) return toast("Select an event first", "bad");
+  try {
+    const res = await api("POST", `/api/events/${state.selected}/media/sync`);
+    toast(res.replay_pending ? "Recording pending" : ("Synced: " + (res.status || res.provider_state)), "ok");
+    await loadEvents();
+  } catch (e) { toast("Sync failed: " + (e.code || e.message), "bad"); }
+}
+
+async function endStream() {
+  if (!state.selected) return toast("Select an event first", "bad");
+  try {
+    const res = await api("POST", `/api/events/${state.selected}/media/end`);
+    toast(res.event && res.event.replay_pending ? "Stream ended — recording pending" : "Stream ended", "ok");
+    await loadEvents();
+    renderOperatorControls(state.selected);
+  } catch (e) { toast("End stream failed: " + (e.code || e.message), "bad"); }
 }
 
 async function refreshAnalytics() {
@@ -581,6 +709,29 @@ async function ownerExport() {
   }
 }
 
+async function loadMastery() {
+  const article = $("#mastery-article");
+  if (article.dataset.loaded === "1") return;
+  try {
+    const res = await api("GET", "/api/owner/mastery");
+    article.innerHTML = res.html || "";
+    article.dataset.loaded = "1";
+  } catch (e) {
+    article.textContent = "Could not load Three Zone Mastery: " + (e.code || e.message);
+    toast("Mastery failed: " + (e.code || e.message), "bad");
+  }
+}
+
+function printMastery() {
+  document.body.classList.add("printing-mastery");
+  const cleanup = () => {
+    document.body.classList.remove("printing-mastery");
+    window.removeEventListener("afterprint", cleanup);
+  };
+  window.addEventListener("afterprint", cleanup);
+  window.print();
+}
+
 // -- init --------------------------------------------------------------
 async function init() {
   try {
@@ -599,11 +750,24 @@ async function init() {
   $("#revoke-btn").addEventListener("click", revokeRights);
   $("#restore-btn").addEventListener("click", restoreRights);
   $("#ingest-btn").addEventListener("click", issueIngest);
+  const provisionBtn = $("#provision-btn");
+  if (provisionBtn) provisionBtn.addEventListener("click", provisionMedia);
+  const rotateBtn = $("#rotate-key-btn");
+  if (rotateBtn) rotateBtn.addEventListener("click", rotateMediaKey);
+  const syncBtn = $("#sync-btn");
+  if (syncBtn) syncBtn.addEventListener("click", syncMedia);
+  const endBtn = $("#end-stream-btn");
+  if (endBtn) endBtn.addEventListener("click", endStream);
+  window.addEventListener("pagehide", () => stopMedia("pagehide"));
   $("#analytics-btn").addEventListener("click", refreshAnalytics);
   $("#audit-btn").addEventListener("click", refreshAudit);
   $("#owner-load-btn").addEventListener("click", ownerLoad);
   $("#owner-print-btn").addEventListener("click", ownerPrint);
   $("#owner-export-btn").addEventListener("click", ownerExport);
+  $("#mastery-print-btn").addEventListener("click", async () => {
+    await loadMastery();
+    printMastery();
+  });
   const scheduleForm = $("#schedule-form");
   if (scheduleForm) {
     scheduleForm.addEventListener("submit", (e) => {

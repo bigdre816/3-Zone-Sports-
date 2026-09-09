@@ -40,6 +40,7 @@
         <details id="nav-owner" class="nav-group hidden">
           <summary>Owner</summary>
           <button type="button" class="nav-item" data-pane="owner">Inventory</button>
+          <button type="button" class="nav-item" data-pane="mastery">Mastery</button>
         </details>
       </nav>
       <div class="sidebar-account">
@@ -125,6 +126,15 @@
                 <button id="ingest-btn" type="button">Issue ingest token</button>
               </div>
             </div>
+            <div class="op-row">
+              <span class="op-label">Hosted media</span>
+              <div class="btn-row">
+                <button id="provision-btn" type="button">Provision</button>
+                <button id="sync-btn" type="button">Sync</button>
+                <button id="rotate-key-btn" type="button">Rotate key</button>
+                <button id="end-stream-btn" type="button" class="danger">End stream</button>
+              </div>
+            </div>
             <pre id="ingest-out" class="code hidden"></pre>
           </div>
         </section>
@@ -202,12 +212,24 @@ Lincoln High,Lincoln Freshman Basketball,basketball,freshman,West,2026-11-12,19:
           </div>
           <div id="owner-summary" class="owner-summary muted"></div>
         </section>
+
+        <section data-pane="mastery" class="panel hidden">
+          <div class="panel-head">
+            <h2>Three Zone Mastery</h2>
+            <div class="btn-row">
+              <button id="mastery-print-btn" type="button">Print this guide</button>
+            </div>
+          </div>
+          <p class="muted">Plain-English map of every engine, API, connection, Treasure path, and the XRPL blockchain publication chain. This is the printable owner copy.</p>
+          <article id="mastery-article" class="mastery-article"></article>
+        </section>
       </main>
       <div id="print-root" class="print-root hidden"></div>
     </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>
+  <script src="/vendor/hls.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

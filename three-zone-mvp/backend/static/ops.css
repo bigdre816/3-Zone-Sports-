@@ -149,6 +149,35 @@ summary { cursor: pointer; font-weight: 600; }
 /* -- owner back portal ------------------------------------------------ */
 .owner-summary { margin-top: 12px; font-size: 13px; }
 
+.mastery-article {
+  background: #ffffff;
+  color: #111418;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 22px 26px;
+  margin-top: 12px;
+  font: 15px/1.5 Georgia, "Times New Roman", serif;
+  max-height: calc(100vh - 180px);
+  overflow: auto;
+}
+.mastery-article h1 { font-size: 26px; margin: 0 0 10px; color: #111418; }
+.mastery-article h2 {
+  font-size: 18px; margin: 28px 0 10px; padding-bottom: 4px;
+  border-bottom: 2px solid #111418; color: #111418;
+}
+.mastery-article h3 { font-size: 15px; margin: 18px 0 6px; color: #111418; }
+.mastery-article p, .mastery-article li { color: #1b232c; }
+.mastery-article table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 12px; font-family: inherit; }
+.mastery-article th, .mastery-article td {
+  border: 1px solid #cdd5de; padding: 5px 7px; text-align: left; vertical-align: top;
+}
+.mastery-article th { background: #eef2f6; }
+.mastery-article code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: #f3f5f8; padding: 0 3px; }
+.mastery-article pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  background: #f3f5f8; border: 1px solid #d0d7de; padding: 10px; white-space: pre-wrap;
+}
+
 .print-root {
   margin: 18px 22px 40px;
   padding: 22px 26px;
@@ -175,14 +204,27 @@ summary { cursor: pointer; font-weight: 600; }
 .report-table th { background: #eef2f6; }
 .report-table tr:nth-child(even) td { background: #f7f9fb; }
 
-/* Print: show only the full inventory report as a clean document. */
+/* Print: inventory report OR mastery article as a clean document. */
 @media print {
-  #auth-panel, .sidebar, #app, #toast { display: none !important; }
+  #auth-panel, .sidebar, #toast { display: none !important; }
   body { background: #ffffff; }
-  .print-root, .print-root.hidden {
+  body:not(.printing-mastery) #app { display: none !important; }
+  body:not(.printing-mastery) .print-root, body:not(.printing-mastery) .print-root.hidden {
     display: block !important;
     margin: 0; border: 0; border-radius: 0; padding: 0;
   }
+  body.printing-mastery #app { display: block !important; }
+  body.printing-mastery .panel { display: none !important; }
+  body.printing-mastery .panel[data-pane="mastery"] {
+    display: block !important; background: #fff; border: 0; padding: 0;
+  }
+  body.printing-mastery .panel[data-pane="mastery"] .panel-head,
+  body.printing-mastery .panel[data-pane="mastery"] > .muted { display: none !important; }
+  body.printing-mastery .mastery-article {
+    display: block !important; max-height: none; overflow: visible;
+    margin: 0; border: 0; border-radius: 0; padding: 0; background: #fff;
+  }
+  body.printing-mastery .print-root { display: none !important; }
   .report-table th { background: #eef2f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .report-section { page-break-inside: avoid; }
 }

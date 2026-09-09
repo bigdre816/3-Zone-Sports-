@@ -519,12 +519,12 @@ def _uid_from_tus_location(location: str) -> str:
 
 
 def build_provider(config, http_request=None) -> MediaProvider:
-    name = getattr(config, "media_provider", "fake") or "fake"
+    name = config.ugc_provider_name() if hasattr(config, "ugc_provider_name") else getattr(config, "media_provider", "fake") or "fake"
     if name == "cloudflare":
         return CloudflareStreamProvider(
-            getattr(config, "cloudflare_account_id", ""),
-            getattr(config, "cloudflare_api_token", ""),
-            getattr(config, "cloudflare_webhook_secret", ""),
+            getattr(config, "cloudflare_account_id", "") or getattr(config, "cf_account_id", ""),
+            getattr(config, "cloudflare_api_token", "") or getattr(config, "cf_api_token", ""),
+            getattr(config, "cloudflare_webhook_secret", "") or getattr(config, "cf_webhook_secret", ""),
             http_request=http_request,
             max_game_bytes=getattr(config, "max_game_bytes", 8 * 1024 * 1024 * 1024),
             max_clip_seconds=getattr(config, "max_post_video_seconds", 90),

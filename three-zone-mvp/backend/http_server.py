@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 from . import demo_media
 from .control_plane import ControlError, ControlPlane
 from .identity import bearer_from_header, resolve_identity, resolve_identity_optional
+from .mastery import article_html, full_page_html, load_markdown
 from .media_provider import build_provider
 from .network import NetworkService
 from .photo_storage import build_photo_storage
@@ -33,6 +34,7 @@ _EVENT_RE = r"(?P<event_id>evt_[a-z0-9_]+)"
 def _routes():
     return [
         ("GET", re.compile(r"^/api/health$"), "h_health", "none"),
+        ("GET", re.compile(r"^/api/ops/live-readiness$"), "h_live_readiness", "operator"),
         ("GET", re.compile(r"^/api/config$"), "h_config", "none"),
         ("POST", re.compile(r"^/api/auth/demo-login$"), "h_login", "none"),
         ("POST", re.compile(r"^/api/auth/login$"), "h_auth_login", "none"),
@@ -58,18 +60,33 @@ def _routes():
         ("POST", re.compile(r"^/api/events$"), "h_events_create", "operator"),
         ("GET", re.compile(rf"^/api/events/{_EVENT_RE}$"), "h_event_get", "session"),
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/playback-session$"), "h_playback", "session"),
+        ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/view-sessions$"), "h_view_start", "none"),
+        ("POST", re.compile(r"^/api/view-sessions/(?P<session_id>VS-[A-Za-z0-9]+)/heartbeat$"), "h_view_heartbeat", "none"),
+        ("POST", re.compile(r"^/api/view-sessions/(?P<session_id>VS-[A-Za-z0-9]+)/end$"), "h_view_end", "none"),
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/transition$"), "h_transition", "operator"),
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/score$"), "h_score", "operator"),
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/rights/revoke$"), "h_revoke", "operator"),
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/rights/restore$"), "h_restore", "operator"),
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/ingest-token$"), "h_ingest_token", "operator"),
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/ingest/heartbeat$"), "h_heartbeat", "none"),
+        ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/media/provision$"), "h_media_provision", "operator"),
+        ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/media/rotate-key$"), "h_media_rotate", "operator"),
+        ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/media/sync$"), "h_media_sync", "operator"),
+        ("GET", re.compile(rf"^/api/events/{_EVENT_RE}/media/status$"), "h_media_status", "operator"),
+        ("GET", re.compile(rf"^/api/events/{_EVENT_RE}/settlement-manifest$"), "h_settlement_manifest", "operator"),
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/media/end$"), "h_media_end", "none"),
+        ("POST", re.compile(r"^/api/media/webhooks/cloudflare$"), "h_cf_webhook", "none"),
+        ("GET", re.compile(r"^/api/properties/(?P<property_id>[A-Za-z0-9_-]+)/settlements$"), "h_prop_settlements", "session"),
+        ("GET", re.compile(r"^/api/properties/(?P<property_id>[A-Za-z0-9_-]+)/settlements/(?P<sid>SET-[A-Za-z0-9]+)$"), "h_prop_settlement", "session"),
+        ("GET", re.compile(r"^/api/properties/(?P<property_id>[A-Za-z0-9_-]+)/settlements/(?P<sid>SET-[A-Za-z0-9]+)/sessions$"), "h_prop_sessions", "session"),
+        ("GET", re.compile(r"^/api/properties/(?P<property_id>[A-Za-z0-9_-]+)/settlements/(?P<sid>SET-[A-Za-z0-9]+)/sessions/(?P<session_id>VS-[A-Za-z0-9]+)/proof$"), "h_prop_proof", "session"),
+        ("POST", re.compile(r"^/api/properties/(?P<property_id>[A-Za-z0-9_-]+)/settlements/(?P<sid>SET-[A-Za-z0-9]+)/verify$"), "h_prop_verify", "session"),
         ("POST", re.compile(r"^/api/leases/validate$"), "h_leases_validate", "none"),
         ("GET", re.compile(r"^/api/analytics$"), "h_analytics", "session"),
         ("GET", re.compile(r"^/api/audit$"), "h_audit", "operator"),
         ("GET", re.compile(r"^/api/audit/verification-outbox$"), "h_verification_outbox", "operator"),
         ("GET", re.compile(r"^/api/owner/inventory$"), "h_owner_inventory", "owner"),
+        ("GET", re.compile(r"^/api/owner/mastery$"), "h_owner_mastery", "owner"),
         ("GET", re.compile(rf"^/demo/media/{_EVENT_RE}\.mp4$"), "h_media", "none"),
         ("GET", re.compile(r"^/api/network/me/profile$"), "h_net_me", "member"),
         ("POST", re.compile(r"^/api/network/me/profile$"), "h_net_me_update", "member"),
@@ -139,10 +156,16 @@ class _Handler(BaseHTTPRequestHandler):
         cfg = self.cp.config
         scheme = "wss" if cfg.is_production else "ws"
         ws_origin = f"{scheme}://{cfg.ws_host}:{cfg.ws_port}"
+        media_src = "'self'"
+        connect_src = f"'self' {ws_origin}"
+        host = cfg.cloudflare_playback_host
+        if host:
+            media_src += " " + host
+            connect_src += " " + host
         return (
             "default-src 'none'; "
             "script-src 'self'; style-src 'self'; img-src 'self' data:; "
-            f"media-src 'self'; connect-src 'self' {ws_origin}; "
+            f"media-src {media_src}; connect-src {connect_src}; "
             "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
         )
 
@@ -184,12 +207,13 @@ class _Handler(BaseHTTPRequestHandler):
             pass
 
     # -- request parsing ---------------------------------------------------
-    def _read_body(self) -> dict | None:
+    def _read_body(self, max_bytes: int | None = None) -> dict | None:
         length = int(self.headers.get("Content-Length") or 0)
         self._raw_body = b""
         if length <= 0:
             return {}
-        if length > self.cp.config.max_body_bytes:
+        limit = max_bytes if max_bytes is not None else self.cp.config.max_body_bytes
+        if length > limit:
             self._send_json(413, {"error": "request body too large", "code": "body_too_large"})
             return None
         raw = self.rfile.read(length)
@@ -238,6 +262,14 @@ class _Handler(BaseHTTPRequestHandler):
     def _member_session(self):
         return self.portal.session(self._cookie("tz_member_session") or "")
 
+    def _viewer_user(self):
+        """Bearer ops/member session, or the HTTP-only member cookie."""
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            return self.cp.verify_session(auth[len("Bearer "):].strip())
+        session, user = self._member_session()
+        return user
+
     # -- dispatch ----------------------------------------------------------
     def do_OPTIONS(self):
         ok, origin = self._origin_allowed()
@@ -246,7 +278,7 @@ class _Handler(BaseHTTPRequestHandler):
         if origin is not None and ok:
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers",
-                             "Authorization, Content-Type, X-Media-Service-Key, "
+                             "Authorization, Content-Type, X-Media-Service-Key, X-Webhook-Secret, "
                              "Webhook-Signature, X-Network-Webhook-Secret, "
                              "Tus-Resumable, Upload-Length, Upload-Metadata")
             self.send_header("Access-Control-Max-Age", "600")
@@ -274,6 +306,10 @@ class _Handler(BaseHTTPRequestHandler):
             return self._serve_static("ops.html")
         if method == "GET" and path in ("/app.js", "/portal.js", "/styles.css", "/ops.css"):
             return self._serve_static(path.lstrip("/"))
+        if method == "GET" and path.startswith("/vendor/") and ".." not in path:
+            return self._serve_static(path.lstrip("/"))
+        if method == "GET" and path in ("/three-zone-mastery", "/THREE_ZONE_MASTERY.md"):
+            return self._serve_mastery_page()
         if method == "GET" and path == "/favicon.ico":
             self.send_response(HTTPStatus.NO_CONTENT)
             self._base_headers(no_store=False)
@@ -290,7 +326,10 @@ class _Handler(BaseHTTPRequestHandler):
             params = match.groupdict()
             body = {}
             if method == "POST":
-                body = self._read_body()
+                limit = None
+                if func == "h_cf_webhook":
+                    limit = self.cp.config.webhook_max_body_bytes
+                body = self._read_body(limit)
                 if body is None:
                     return  # error already sent
             try:
@@ -333,6 +372,11 @@ class _Handler(BaseHTTPRequestHandler):
     # -- API handlers ------------------------------------------------------
     def h_health(self, p, b, u):
         self._send_json(200, {"status": "ok"})
+
+    def h_live_readiness(self, p, b, u):
+        # Operator/owner only. Never returns secret values — only presence/validity flags.
+        from .live_readiness import readiness
+        self._send_json(200, readiness(self.cp.config))
 
     def h_config(self, p, b, u):
         self._send_json(200, self.cp.config.public_config())
@@ -473,9 +517,69 @@ class _Handler(BaseHTTPRequestHandler):
         )
         self._send_json(200, result)
 
+    def h_media_provision(self, p, b, u):
+        self._send_json(201, self.cp.provision_media(p["event_id"], u))
+
+    def h_media_rotate(self, p, b, u):
+        self._send_json(200, self.cp.rotate_media_key(p["event_id"], u))
+
+    def h_media_sync(self, p, b, u):
+        self._send_json(200, self.cp.sync_media(p["event_id"], u))
+
+    def h_media_status(self, p, b, u):
+        self._send_json(200, self.cp.media_status(p["event_id"], u))
+
+    def h_settlement_manifest(self, p, b, u):
+        self._send_json(200, self.cp.settlement_manifest(p["event_id"], u))
+
     def h_media_end(self, p, b, u):
+        operator = None
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            try:
+                candidate = self.cp.verify_session(auth[len("Bearer "):].strip())
+                if candidate["role"] in ("operator", "owner", "admin"):
+                    operator = candidate
+            except ControlError:
+                operator = None
+        if operator is not None:
+            self._send_json(200, {"event": self.cp.media_end(p["event_id"], operator=operator)})
+            return
         key = self.headers.get("X-Media-Service-Key", "")
         self._send_json(200, {"event": self.cp.media_end(p["event_id"], key)})
+
+    def h_cf_webhook(self, p, b, u):
+        secret = self.headers.get("X-Webhook-Secret", "")
+        self._send_json(200, self.cp.handle_provider_webhook(b or {}, secret))
+
+    def h_view_start(self, p, b, u):
+        user = self._viewer_user()
+        result = self.cp.start_view_session(p["event_id"], user, (b or {}).get("lease_id", ""))
+        self._send_json(201, result)
+
+    def h_view_heartbeat(self, p, b, u):
+        user = self._viewer_user()
+        self._send_json(200, self.cp.view_heartbeat(p["session_id"], user, b or {}))
+
+    def h_view_end(self, p, b, u):
+        user = self._viewer_user()
+        reason = (b or {}).get("reason", "pagehide")
+        self._send_json(200, self.cp.end_view_session(p["session_id"], user, reason))
+
+    def h_prop_settlements(self, p, b, u):
+        self._send_json(200, {"settlements": self.cp.list_property_settlements(p["property_id"], u)})
+
+    def h_prop_settlement(self, p, b, u):
+        self._send_json(200, self.cp.get_property_settlement(p["property_id"], p["sid"], u))
+
+    def h_prop_sessions(self, p, b, u):
+        self._send_json(200, {"sessions": self.cp.list_settlement_sessions(p["property_id"], p["sid"], u)})
+
+    def h_prop_proof(self, p, b, u):
+        self._send_json(200, self.cp.settlement_session_proof(p["property_id"], p["sid"], p["session_id"], u))
+
+    def h_prop_verify(self, p, b, u):
+        self._send_json(200, self.cp.verify_property_settlement(p["property_id"], p["sid"], u))
 
     def h_leases_validate(self, p, b, u):
         key = self.headers.get("X-Media-Service-Key", "")
@@ -498,6 +602,23 @@ class _Handler(BaseHTTPRequestHandler):
 
     def h_owner_inventory(self, p, b, u):
         self._send_json(200, self.cp.owner_inventory(u))
+
+    def h_owner_mastery(self, p, b, u):
+        self._send_json(200, {
+            "title": "Three Zone Mastery",
+            "markdown": load_markdown(),
+            "html": article_html(),
+        })
+
+    def _serve_mastery_page(self):
+        body = full_page_html().encode("utf-8")
+        self.send_response(200)
+        self._base_headers(no_store=True)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self._safe_write(body)
 
     def h_media(self, p, b, u):
         event_id = p["event_id"]

@@ -11,7 +11,11 @@ const api = async (method, path, body) => {
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const data = await response.json();
-  if (!response.ok) throw Error(data.error || "Request failed");
+  if (!response.ok) {
+    const err = Error(data.error || "Request failed");
+    err.code = data.code;
+    throw err;
+  }
   return data;
 };
 const toast = text => {
@@ -28,6 +32,66 @@ const PAGE_VIEWS = new Set(["about", "support", "privacy", "terms"]);
 const MEMBER_VIEWS = new Set(["feed", "live", "watch", "inbox", "profile"]);
 const HASH_ALIAS = { schedules: "watch", archives: "watch" };
 const state = { profile: null, signedIn: false, mode: "for_you", sport: "", kind: "photo", tab: "posts" };
+
+const player = {
+  config: null,
+  hls: null,
+  ws: null,
+  viewSession: null,
+  heartbeatTimer: null,
+  leaseTimer: null,
+  seq: 0,
+  eventId: null,
+};
+
+function stopPortalMedia(reason) {
+  if (player.heartbeatTimer) { clearInterval(player.heartbeatTimer); player.heartbeatTimer = null; }
+  if (player.leaseTimer) { clearInterval(player.leaseTimer); player.leaseTimer = null; }
+  if (player.viewSession) {
+    const sid = player.viewSession.session_id;
+    player.viewSession = null;
+    api("POST", `/api/view-sessions/${sid}/end`, { reason: reason || "pagehide" }).catch(() => {});
+  }
+  if (player.hls) { try { player.hls.destroy(); } catch (_) {} player.hls = null; }
+  if (player.ws) { try { player.ws.close(); } catch (_) {} player.ws = null; }
+  const v = $("#video");
+  if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
+}
+
+function attachPortalMedia(url, mediaType) {
+  const v = $("#video");
+  const isHls = mediaType === "hls" || (url && url.indexOf(".m3u8") !== -1);
+  if (isHls && window.Hls && window.Hls.isSupported()) {
+    if (player.hls) { try { player.hls.destroy(); } catch (_) {} }
+    player.hls = new window.Hls({ enableWorker: false });
+    player.hls.loadSource(url);
+    player.hls.attachMedia(v);
+    v.play().catch(() => {});
+    return;
+  }
+  v.src = url;
+  v.play().catch(() => {});
+}
+
+function connectEventSocket(eventId) {
+  if (!player.config || !sessionStorage.getItem("tz_session")) return;
+  if (player.ws) { try { player.ws.close(); } catch (_) {} }
+  const url = player.config.ws_url_base + eventId;
+  let ws;
+  try { ws = new WebSocket(url, ["tz-session", sessionStorage.getItem("tz_session")]); }
+  catch (_) { return; }
+  player.ws = ws;
+  ws.onmessage = (msg) => {
+    let m; try { m = JSON.parse(msg.data); } catch (_) { return; }
+    if (m.type === "rights.revoked") {
+      toast("Playback stopped — rights revoked");
+      $("#player-state").textContent = "Rights revoked";
+      stopPortalMedia("rights_revoked");
+    } else if (m.type === "event.state" && m.snapshot && m.snapshot.replay_pending) {
+      $("#player-state").textContent = "Recording pending";
+    }
+  };
+}
 
 function showSignedIn(member, profile) {
   state.signedIn = true;
@@ -309,23 +373,62 @@ $("#register-form").addEventListener("submit", async event => {
 });
 async function playMedia(path, title, stateText) {
   try {
+    stopPortalMedia("pagehide");
+    if (!player.config) player.config = await api("GET", "/api/config");
     const result = await api("POST", path);
     $("#player-wrap").classList.remove("hidden");
     $("#player-title").textContent = title || "Now playing";
-    $("#player-state").textContent = stateText;
-    $("#video").src = result.media_url + "?v=" + Date.now();
-    $("#video").play().catch(() => {});
+    const leased = result.media_type === "hls"
+      ? "Authorized HLS lease issued"
+      : (stateText || "Authorized playback lease issued");
+    $("#player-state").textContent = leased;
+    attachPortalMedia(result.media_url, result.media_type);
     $("#player-wrap").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const eventMatch = path.match(/\/events\/(evt_[A-Za-z0-9_]+)\//);
+    if (eventMatch && result.lease_id) {
+      player.eventId = eventMatch[1];
+      const session = await api("POST", `/api/events/${player.eventId}/view-sessions`, { lease_id: result.lease_id });
+      player.viewSession = session;
+      player.seq = 0;
+      const interval = ((player.config && player.config.viewer_heartbeat_interval) || 15) * 1000;
+      player.heartbeatTimer = setInterval(async () => {
+        if (!player.viewSession) return;
+        player.seq += 1;
+        const v = $("#video");
+        try {
+          await api("POST", `/api/view-sessions/${player.viewSession.session_id}/heartbeat`, {
+            seq: player.seq,
+            playing: !!(v && !v.paused && !v.ended),
+            page_visible: document.visibilityState === "visible",
+            position_seconds: v ? v.currentTime : 0,
+          });
+        } catch (e) {
+          if (e.code === "rights_unavailable" || e.code === "rights_version_changed") {
+            stopPortalMedia("rights_revoked");
+          }
+        }
+      }, interval);
+      const wait = Math.max(5000, ((result.lease_ttl || 60) * 1000) * 0.6);
+      player.leaseTimer = setInterval(async () => {
+        try {
+          const renewed = await api("POST", path);
+          attachPortalMedia(renewed.media_url, renewed.media_type);
+        } catch (_) { stopPortalMedia("lease_expired"); }
+      }, wait);
+      connectEventSocket(player.eventId);
+    }
   } catch (error) {
-    toast(error.message || "This game is not currently available with your access.");
+    toast((error && error.message) || "This game is not currently available with your access.");
   }
 }
 $("#signout").onclick = async () => {
+  stopPortalMedia("logout");
   sessionStorage.removeItem("tz_session");
   await api("POST", "/api/auth/logout");
   location.reload();
 };
 window.addEventListener("hashchange", applyRoute);
+window.addEventListener("pagehide", () => stopPortalMedia("pagehide"));
 $$("#section-nav a").forEach(link => link.onclick = event => {
   event.preventDefault();
   location.hash = link.dataset.view;
@@ -531,6 +634,7 @@ document.addEventListener("click", event => {
   $("#search-results").classList.add("hidden");
 });
 (async () => {
+  try { player.config = await api("GET", "/api/config"); } catch (_) {}
   try { await loadPortal(); }
   catch (_) {
     loadPublicFeed();

@@ -128,6 +128,8 @@ class PortalTests(unittest.TestCase):
             app_js = handle.read()
         self.assertIn("async function revokeRights()", app_js)
         self.assertIn("async function loadInventory()", app_js)
+        self.assertIn("async function loadMastery()", app_js)
+        self.assertIn('querySelectorAll("#app [data-pane]")', app_js)
         self.assertIn("POST", app_js)
         self.assertGreater(len(app_js.splitlines()), 500)
 
@@ -154,6 +156,9 @@ class PortalTests(unittest.TestCase):
         self.assertIn("Watch archive", js)
         self.assertIn("/api/member/archive/", js)
         self.assertIn("search-results", js)
+        self.assertIn("attachPortalMedia", js)
+        self.assertIn("view-sessions", js)
+        self.assertIn("/vendor/hls.min.js", html)
         self.assertNotIn("?lease=", js)
 
     def test_upcoming_green_event_is_not_playable(self):

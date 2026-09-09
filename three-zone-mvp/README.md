@@ -8,9 +8,14 @@ event inventory → rights + production clearance → live state → playback le
 
 The control plane owns the event, rights version, zone, production assignment,
 entitlement decision, audit trail, socket notifications, and replay lifecycle.
-The local demo uses a generated MP4 as the media adapter. A production
-deployment replaces that adapter with a managed SRT contribution, transcoder,
-packager, object store, and CDN.
+The local demo uses a generated MP4 as the media adapter (`TZ_LIVE_MEDIA_PROVIDER=demo`).
+Cloudflare Stream is the first real hosted rail (signed HLS behind the same PDP).
+See [RUN_TONIGHT.md](RUN_TONIGHT.md) for provision, OBS/Larix, webhooks, viewer
+heartbeats, settlement manifests, troubleshooting, and
+`python scripts/live_readiness.py` / `GET /api/ops/live-readiness` before flipping
+`TZ_LIVE_MEDIA_PROVIDER=cloudflare`. Member-network uploads use
+`TZ_UGC_MEDIA_PROVIDER=fake` (or `cloudflare` for Stream TUS/clips). Mux is a later
+empty seam on the live-rail provider interface.
 
 ## Run it
 
@@ -51,8 +56,10 @@ the viewer is authorized.
 Direct upload never sends large video or photo bytes through the application
 server. Full games get a resumable TUS URL; short clips use Cloudflare Stream
 `direct_upload` (`uploadURL`); photos use a separate object-storage adapter
-(presigned PUT). Local demo and CI use `TZ_MEDIA_PROVIDER=fake` and
-`TZ_PHOTO_STORAGE=fake`. Cloudflare Stream is opt-in for **video only**.
+(presigned PUT). Local demo and CI use `TZ_LIVE_MEDIA_PROVIDER=demo`,
+`TZ_UGC_MEDIA_PROVIDER=fake`, and `TZ_PHOTO_STORAGE=fake`. Cloudflare Stream is
+opt-in for **video only**. `TZ_MEDIA_PROVIDER=fake` still maps to UGC fake + live demo;
+`TZ_MEDIA_PROVIDER=cloudflare` selects Cloudflare for both rails.
 
 Feed ranking is chronological (`published_at DESC, post_id DESC`). It is not
 machine learning.
@@ -80,6 +87,11 @@ panel) prints a complete, page-ready report and downloads a full JSON export:
 the tier/capability map, every route, all users, every event with its full
 rights version history (including revoked versions), analytics, and the complete
 audit log.
+
+**Three Zone Mastery** (`THREE_ZONE_MASTERY.md`, Owner → Mastery, or
+`/three-zone-mastery`) is the printable plain-English map of every engine, API,
+connection, Treasure verification path, and the XRPL blockchain publication
+chain. Print it from the owner sidebar.
 
 The initial inventory contains three Midwest live examples (distinct production
 modes, one on an active backup feed), a cleared (green) event, a replay, and
@@ -161,6 +173,17 @@ docker run --rm -p 8000:8000 -p 8765:8765 \
 | `GET` | `/api/analytics` | Basic inventory and socket metrics |
 | `GET` | `/api/audit` | Operator-only append-only audit view |
 | `GET` | `/api/owner/inventory` | Owner-only back portal: prints/exports every part of the site |
+| `POST` | `/api/events/{event_id}/media/provision` | Operator binds one hosted live input (key returned once) |
+| `POST` | `/api/events/{event_id}/media/rotate-key` | Operator rotates ingest key (returned once) |
+| `POST` | `/api/events/{event_id}/media/sync` | Provider status, replay readiness, analytics snapshot |
+| `GET` | `/api/events/{event_id}/media/status` | Hosted input status without keys |
+| `GET` | `/api/events/{event_id}/settlement-manifest` | Session digests, Merkle root, XRPL enqueue |
+| `POST` | `/api/media/webhooks/cloudflare` | Cloudflare/demo webhook (shared secret) |
+| `POST` | `/api/events/{event_id}/view-sessions` | Authenticated viewer starts measurement |
+| `POST` | `/api/view-sessions/{id}/heartbeat` | Viewer heartbeat (not operator-only) |
+| `POST` | `/api/view-sessions/{id}/end` | Close a view session |
+| `GET` | `/api/properties/{id}/settlements` | Property-scoped settlements |
+| `POST` | `/api/properties/{id}/settlements/{sid}/verify` | MATCH / MISMATCH / INCOMPLETE / PENDING_PUBLICATION |
 | `GET` | `/api/network/feed` | For You / Following / Local sports feed |
 | `POST` | `/api/network/uploads` | One-time direct-upload contract (no provider token) |
 | `POST` | `/api/network/games` | Submit a full-game source asset |
@@ -168,6 +191,7 @@ docker run --rm -p 8000:8000 -p 8765:8765 \
 | `GET` | `/api/network/review` | Worker review queue |
 | `GET` | `/api/network/evidence/{type}/{id}` | Owner evidence bundle |
 | `GET` | `/demo/media/{event_id}.mp4` | Lease-gated local demo media |
+| `GET` | `/vendor/hls.min.js` | Pinned hls.js 1.5.x |
 
 The event socket is `ws://127.0.0.1:8765/ws/events/{event_id}` in the default
 run. The browser sends the session token in the WebSocket subprotocol list, and
@@ -194,8 +218,9 @@ python -m compileall -q backend run.py
 
 The tests cover live lease issuance, zone denial, lifecycle ordering, automatic
 replay transition, rights-revocation invalidation, version-bound lease rejection,
-event/source-scoped ingest credentials, media-service-key enforcement, and token
-tamper rejection.
+event/source-scoped ingest credentials, media-service-key enforcement, token
+tamper rejection, the hosted media rail (fake provider only), viewer sessions,
+Merkle settlement, and honest demo XRPL receipts.
 
 ## Scope note
 
