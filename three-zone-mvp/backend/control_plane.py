@@ -8,6 +8,7 @@ the same decision is repeated by :meth:`validate_lease` on every media request.
 
 from __future__ import annotations
 
+import hashlib
 import time
 import uuid
 
@@ -51,6 +52,8 @@ TIERS = [
             "Request a playback lease for a live or replay event",
             "Watch managed media while the lease and rights stay valid",
             "Receive live state, score, and revocation updates over the socket",
+            "Publish sports photos, clips, and full games on the member network",
+            "Create derived clips in Studio without mutating the source game",
         ],
     },
     {
@@ -66,6 +69,7 @@ TIERS = [
             "Revoke and restore rights during an incident",
             "Update the live scoreboard",
             "Read the operator audit log",
+            "Review pending games, uploads, and sports-only moderation cases",
         ],
     },
     {
@@ -80,6 +84,7 @@ TIERS = [
             "Open the owner back portal",
             "Print the full site inventory (users, events, all rights versions, audit)",
             "Download a complete JSON export of the whole system state",
+            "Export a source-to-clip evidence bundle without provider secrets",
         ],
     },
 ]
@@ -196,6 +201,8 @@ SITE_ROUTES = [
      "purpose": "MATCH|MISMATCH|INCOMPLETE|PENDING_PUBLICATION (never silent repair)"},
     {"method": "GET", "path": "/api/audit", "tier": "worker",
      "purpose": "Read the audit log"},
+    {"method": "GET", "path": "/api/audit/verification-outbox", "tier": "worker",
+     "purpose": "Read canonical source events for the Treasure verification adapter"},
     {"method": "GET", "path": "/api/analytics", "tier": "member",
      "purpose": "Aggregate event and socket metrics"},
     {"method": "GET", "path": "/api/owner/inventory", "tier": "owner",
@@ -204,6 +211,48 @@ SITE_ROUTES = [
      "purpose": "Owner back portal: printable Three Zone Mastery article"},
     {"method": "WS", "path": "/ws/events/{id}", "tier": "member",
      "purpose": "Event-scoped live state, score, feed, lease, and rights updates"},
+    {"method": "GET", "path": "/api/network/feed", "tier": "public",
+     "purpose": "For You / Following / Local sports feed"},
+    {"method": "GET", "path": "/api/network/me/profile", "tier": "member",
+     "purpose": "Current member public profile"},
+    {"method": "POST", "path": "/api/network/me/profile", "tier": "member",
+     "purpose": "Update own profile (verified badges forbidden)"},
+    {"method": "GET", "path": "/api/network/profiles/{handle}", "tier": "public",
+     "purpose": "Public profile by handle"},
+    {"method": "POST", "path": "/api/network/profiles/{handle}/follow", "tier": "member",
+     "purpose": "Follow a profile"},
+    {"method": "POST", "path": "/api/network/uploads", "tier": "member",
+     "purpose": "Authorize a one-time direct upload (no provider token)"},
+    {"method": "POST", "path": "/api/network/webhooks/media", "tier": "service",
+     "purpose": "Idempotent media-provider webhook"},
+    {"method": "POST", "path": "/api/network/posts", "tier": "member",
+     "purpose": "Publish a sports photo or clip post"},
+    {"method": "POST", "path": "/api/network/games", "tier": "member",
+     "purpose": "Submit a full-game source asset"},
+    {"method": "POST", "path": "/api/network/clips", "tier": "member",
+     "purpose": "Create a Studio clip definition"},
+    {"method": "POST", "path": "/api/network/clips/{id}/render", "tier": "member",
+     "purpose": "Render a derived clip through the media adapter"},
+    {"method": "POST", "path": "/api/network/clips/{id}/publish", "tier": "member",
+     "purpose": "Publish, save, or prepare a derived clip"},
+    {"method": "POST", "path": "/api/network/react", "tier": "member",
+     "purpose": "Like a post, clip, or game"},
+    {"method": "POST", "path": "/api/network/comments", "tier": "member",
+     "purpose": "Add a one-level comment"},
+    {"method": "POST", "path": "/api/network/saves", "tier": "member",
+     "purpose": "Save a post privately"},
+    {"method": "POST", "path": "/api/network/shares", "tier": "member",
+     "purpose": "Send a media reference to another member"},
+    {"method": "GET", "path": "/api/network/inbox", "tier": "member",
+     "purpose": "Object-share inbox"},
+    {"method": "POST", "path": "/api/network/reports", "tier": "member",
+     "purpose": "Report content for review"},
+    {"method": "GET", "path": "/api/network/review", "tier": "worker",
+     "purpose": "Pending games, uploads, and moderation cases"},
+    {"method": "GET", "path": "/api/network/evidence/{type}/{id}", "tier": "owner",
+     "purpose": "Owner evidence bundle (JSON)"},
+    {"method": "GET", "path": "/api/network/media/{id}", "tier": "member",
+     "purpose": "Rights-gated UGC playback"},
 ]
 
 
@@ -314,9 +363,59 @@ class ControlPlane(PipelineMixin):
 
     # -- audit ------------------------------------------------------------
     def audit_log(self, actor: str, action: str, event_id: str | None = None, detail: dict | None = None) -> None:
-        self.db.execute(
+        audit_id = self.db.execute(
             "INSERT INTO audit(ts, actor, action, event_id, detail) VALUES (?,?,?,?,?)",
             (now(), actor, action, event_id, dumps(detail or {})),
+        )
+        # This is a source-side outbox only. It never calls XRPL or a signing
+        # service; a separately trusted adapter submits it to Treasure Network.
+        source_type = {
+            "rights.revoked": "rights.revoked",
+            "rights.restored": "rights.version.created",
+            "event.created": "media.object.created",
+            "feed.failover": "operation.drill.completed",
+        }.get(action, action)
+        payload = detail or {}
+        source_event = {
+            "schema": "moten.audit.event.v1",
+            "event_id": f"TZ-AUD-{audit_id}",
+            "event_type": source_type,
+            "schema_version": "v1",
+            "occurred_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "actor_type": "authorized_system",
+            "actor_id": actor,
+            "actor_role": "Three-Zone operator",
+            "authority_source": "THREE_ZONE_KC",
+            "organization_id": "THREE_ZONE_KC",
+            "department": "THREE_ZONE_OPERATIONS",
+            "project_family": "Three-Zone",
+            "object_type": "event",
+            "object_id": event_id or f"audit-{audit_id}",
+            "object_version": "v1",
+            "action": action,
+            "decision": None,
+            "reason_code": None,
+            "previous_event_id": None,
+            "previous_event_hash": None,
+            "correlation_id": f"three-zone-audit-{audit_id}",
+            "causation_id": None,
+            "source_system": "three-zone-mvp",
+            "environment": self.config.env,
+            "payload": payload,
+            "classification": "INTERNAL_AUDIT",
+            "on_chain_policy": "PERMITTED",
+            "legal_effect": "audit_evidence_only",
+            "created_by": actor,
+            "human_approval_id": None,
+            "signature_profile_id": None,
+        }
+        source_event["payload_hash"] = hashlib.sha256(dumps(payload).encode()).hexdigest()
+        raw = dumps(source_event)
+        source_event["canonical_event_hash"] = hashlib.sha256(raw.encode()).hexdigest()
+        self.db.execute(
+            "INSERT INTO audit_verification_outbox(audit_id,event_json,created_at) VALUES (?,?,?)",
+            (audit_id, dumps(source_event), now()),
         )
 
     def _outbox(self, event_id: str, type_: str, payload: dict) -> None:
@@ -459,7 +558,7 @@ class ControlPlane(PipelineMixin):
                 event_id, title, zone, (data.get("category") or "general"),
                 "scheduled", start, (data.get("production_mode") or "single_camera"),
                 "primary", "{}", 0, now(),
-                getattr(self.config, "media_provider", "demo"),
+                self.config.live_provider_name() if hasattr(self.config, "live_provider_name") else getattr(self.config, "media_provider", "demo"),
                 (data.get("property_id") or None),
             ),
         )
@@ -824,6 +923,16 @@ class ControlPlane(PipelineMixin):
             for r in rows
         ]
 
+    def verification_outbox(self, operator: dict, limit: int = 100) -> list[dict]:
+        """Trusted adapter feed; never an XRPL-direct source endpoint."""
+        self.require_operator(operator)
+        rows = self.db.query(
+            "SELECT id,audit_id,event_json,created_at,delivered_at FROM audit_verification_outbox"
+            " ORDER BY id ASC LIMIT ?", (limit,)
+        )
+        return [{"outbox_id": r["id"], "audit_id": r["audit_id"], "event": loads(r["event_json"], {}),
+                 "created_at": r["created_at"], "delivered_at": r["delivered_at"]} for r in rows]
+
     # -- owner back portal -----------------------------------------------
     def _rights_full(self, row) -> dict:
         """Full rights record including every version (active + revoked)."""
@@ -842,6 +951,26 @@ class ControlPlane(PipelineMixin):
             "replay_window": [row["replay_start"], row["replay_end"]],
             "archive_retention_days": row["archive_retention_days"],
             "created_at": row["created_at"],
+        }
+
+    def network_inventory_safe(self) -> dict:
+        """Counts only — never provider tokens or signed URLs."""
+        def count(table: str) -> int:
+            try:
+                row = self.db.query_one(f"SELECT COUNT(*) AS c FROM {table}")
+            except Exception:
+                return 0
+            return int(row["c"] if row else 0)
+
+        return {
+            "profiles": count("profiles"),
+            "posts": count("posts"),
+            "games": count("games"),
+            "clips": count("clips"),
+            "reactions": count("reactions"),
+            "comments": count("comments"),
+            "follows": count("follows"),
+            "media_assets": count("media_assets"),
         }
 
     def owner_inventory(self, owner: dict) -> dict:
@@ -889,4 +1018,5 @@ class ControlPlane(PipelineMixin):
             "events": events,
             "audit": audit,
             "analytics": self.analytics(),
+            "network": self.network_inventory_safe(),
         }

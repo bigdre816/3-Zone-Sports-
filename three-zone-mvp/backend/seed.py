@@ -57,6 +57,21 @@ def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
     # owner account; historical audit rows keep their original actor string.
     db.execute("DELETE FROM users WHERE user_id=?", ("demo-admin",))
 
+    now = time.time()
+    db.executemany(
+        "INSERT OR IGNORE INTO profiles(profile_id,user_id,handle,display_name,avatar,bio,market,"
+        "sports,profile_type,visibility,verification_state,verification_badge,team_id,created_at,updated_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [
+            ("prf_demo_viewer", "demo-viewer", "demo_viewer", "Demo Member (viewer)", "",
+             "Midwest fan", "midwest", dumps(["basketball"]), "fan", "public", "none", "", None, now, now),
+            ("prf_demo_worker", "demo-worker", "demo_worker", "Demo Worker (operator)", "",
+             "Operations", "midwest", dumps([]), "videographer", "public", "none", "", None, now, now),
+            ("prf_demo_owner", "demo-owner", "demo_owner", "Demo Owner", "",
+             "Owner", "midwest", dumps([]), "sports_organization", "public", "none", "", None, now, now),
+        ],
+    )
+
     if _has_rows(db, "events"):
         _backfill_property_ids(db)
         return False

@@ -1,12 +1,12 @@
 # Run tonight — Cloudflare live rail (or local fake)
 
-This is the operator runbook for the hosted media rail. Default `TZ_MEDIA_PROVIDER=demo` keeps the local MP4 + encoder-heartbeat path working. Cloudflare Stream is the first real hosted rail. These steps were verified against the **fake/demo provider** in tests; a real Cloudflare broadcast is **not** claimed here unless you have filled in live credentials and watched a real ingest.
+This is the operator runbook for the hosted media rail. Default `TZ_LIVE_MEDIA_PROVIDER=demo` (legacy alias `TZ_MEDIA_PROVIDER=demo`) keeps the local MP4 + encoder-heartbeat path working. Member-network uploads stay on `TZ_UGC_MEDIA_PROVIDER=fake` unless you opt into Stream TUS/clips. Cloudflare Stream is the first real hosted rail. These steps were verified against the **fake/demo provider** in tests; a real Cloudflare broadcast is **not** claimed here unless you have filled in live credentials and watched a real ingest.
 
 The player is never the authority. HLS URLs are issued only after Three-Zone PDP (`request_playback` / `validate_lease`). Viewer heartbeats are sent by the **authenticated member/session**, not by an operator.
 
 ## Landed on main (publication readiness)
 
-The mastery guide + Cloudflare HLS + settlement stack (PRs #13/#14) ships to `main` via the live-publication readiness branch. Before flipping `TZ_MEDIA_PROVIDER=cloudflare`:
+The mastery guide + Cloudflare HLS + settlement stack (PRs #13/#14) ships to `main` via the live-publication readiness branch. Before flipping `TZ_LIVE_MEDIA_PROVIDER=cloudflare`:
 
 ```bash
 python scripts/live_readiness.py
@@ -38,12 +38,12 @@ One JSON secret also works:
 {"account_id":"...","api_token":"...","customer_code":"...","webhook_secret":"..."}
 ```
 
-Stream still needs account id, customer code, and webhook secret (separate secrets or that JSON). `TZ_MEDIA_PROVIDER=cloudflare` must be set or Provision stays on the demo rail. Environment secrets apply to **new** agents only.
+Stream still needs account id, customer code, and webhook secret (separate secrets or that JSON). `TZ_LIVE_MEDIA_PROVIDER=cloudflare` (or legacy `TZ_MEDIA_PROVIDER=cloudflare`) must be set or Provision stays on the demo rail. Environment secrets apply to **new** agents only.
 
 Placeholders (copy from `config.example.env`, never commit real secrets):
 
 ```bash
-export TZ_MEDIA_PROVIDER=cloudflare
+export TZ_LIVE_MEDIA_PROVIDER=cloudflare
 export TZ_PUBLIC_BASE_URL=https://your.example
 export TZ_CLOUDFLARE_ACCOUNT_ID=your-account-id
 export TZ_CLOUDFLARE_API_TOKEN=your-api-token
@@ -65,7 +65,7 @@ cd three-zone-mvp
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
-TZ_MEDIA_PROVIDER=demo \
+TZ_LIVE_MEDIA_PROVIDER=demo \
 TZ_CLOUDFLARE_WEBHOOK_SECRET=local-demo-webhook-secret \
 TZ_ALLOWED_ORIGINS=http://127.0.0.1:8000 \
 python run.py
@@ -87,7 +87,7 @@ Open:
 
 ## Webhook curl for the local fake
 
-With `TZ_MEDIA_PROVIDER=demo` and `TZ_CLOUDFLARE_WEBHOOK_SECRET=local-demo-webhook-secret`, after **Provision** on a green event (note the returned `input_id`):
+With `TZ_LIVE_MEDIA_PROVIDER=demo` and `TZ_CLOUDFLARE_WEBHOOK_SECRET=local-demo-webhook-secret`, after **Provision** on a green event (note the returned `input_id`):
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8000/api/media/webhooks/cloudflare \

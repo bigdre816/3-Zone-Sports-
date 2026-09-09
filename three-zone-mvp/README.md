@@ -8,12 +8,14 @@ event inventory → rights + production clearance → live state → playback le
 
 The control plane owns the event, rights version, zone, production assignment,
 entitlement decision, audit trail, socket notifications, and replay lifecycle.
-The local demo uses a generated MP4 as the media adapter (`TZ_MEDIA_PROVIDER=demo`).
+The local demo uses a generated MP4 as the media adapter (`TZ_LIVE_MEDIA_PROVIDER=demo`).
 Cloudflare Stream is the first real hosted rail (signed HLS behind the same PDP).
 See [RUN_TONIGHT.md](RUN_TONIGHT.md) for provision, OBS/Larix, webhooks, viewer
 heartbeats, settlement manifests, troubleshooting, and
 `python scripts/live_readiness.py` / `GET /api/ops/live-readiness` before flipping
-`TZ_MEDIA_PROVIDER=cloudflare`. Mux is a later empty seam on the same provider interface.
+`TZ_LIVE_MEDIA_PROVIDER=cloudflare`. Member-network uploads use
+`TZ_UGC_MEDIA_PROVIDER=fake` (or `cloudflare` for Stream TUS/clips). Mux is a later
+empty seam on the live-rail provider interface.
 
 ## Run it
 
@@ -41,6 +43,36 @@ Sign in with username and password. Seeded local accounts (override with `TZ_SEE
 | `demo-owner` | `change-me-owner-local` | owner | `/ops` |
 
 Members can also **Create account** on `/`. That always creates a viewer. Staff accounts are not self-serve. From `/ops` use **Member site**; signed-in staff on `/` see **Control plane**.
+
+The member site is also the sports network: **Watch it. Save it. Clip it. Share it.**
+
+Signed-in members can publish photos and short clips, upload a full game as an
+immutable source asset, trim a moment in Studio (90 seconds max), and share the
+derived clip on For You / Following / Local feeds. Full games stay private and
+pending verification until a worker reviews them. Game-derived clips keep a
+**Three-Zone Game Clip** provenance label and a **Watch Full Game** link when
+the viewer is authorized.
+
+Direct upload never sends large video or photo bytes through the application
+server. Full games get a resumable TUS URL; short clips use Cloudflare Stream
+`direct_upload` (`uploadURL`); photos use a separate object-storage adapter
+(presigned PUT). Local demo and CI use `TZ_LIVE_MEDIA_PROVIDER=demo`,
+`TZ_UGC_MEDIA_PROVIDER=fake`, and `TZ_PHOTO_STORAGE=fake`. Cloudflare Stream is
+opt-in for **video only**. `TZ_MEDIA_PROVIDER=fake` still maps to UGC fake + live demo;
+`TZ_MEDIA_PROVIDER=cloudflare` selects Cloudflare for both rails.
+
+Feed ranking is chronological (`published_at DESC, post_id DESC`). It is not
+machine learning.
+
+### Fake-provider local loop
+
+1. Sign in as a member on `/`.
+2. Create → Full Game, fill metadata, check the rights attestation, submit.
+3. The browser completes the fake provider upload (metadata only). Wait until
+   the UI says **Game ready**.
+4. Open the game from Profile → Games, set start/end in Studio (for example 0
+   and 20), render and publish.
+5. The feed shows **Three-Zone Game Clip** and **Watch Full Game**.
 
 The site has three tiers:
 
@@ -146,13 +178,18 @@ docker run --rm -p 8000:8000 -p 8765:8765 \
 | `POST` | `/api/events/{event_id}/media/sync` | Provider status, replay readiness, analytics snapshot |
 | `GET` | `/api/events/{event_id}/media/status` | Hosted input status without keys |
 | `GET` | `/api/events/{event_id}/settlement-manifest` | Session digests, Merkle root, XRPL enqueue |
-| `POST` | `/api/events/{event_id}/media/end` | Operator Bearer or media service key: live → replay |
 | `POST` | `/api/media/webhooks/cloudflare` | Cloudflare/demo webhook (shared secret) |
 | `POST` | `/api/events/{event_id}/view-sessions` | Authenticated viewer starts measurement |
 | `POST` | `/api/view-sessions/{id}/heartbeat` | Viewer heartbeat (not operator-only) |
 | `POST` | `/api/view-sessions/{id}/end` | Close a view session |
 | `GET` | `/api/properties/{id}/settlements` | Property-scoped settlements |
 | `POST` | `/api/properties/{id}/settlements/{sid}/verify` | MATCH / MISMATCH / INCOMPLETE / PENDING_PUBLICATION |
+| `GET` | `/api/network/feed` | For You / Following / Local sports feed |
+| `POST` | `/api/network/uploads` | One-time direct-upload contract (no provider token) |
+| `POST` | `/api/network/games` | Submit a full-game source asset |
+| `POST` | `/api/network/clips` | Persist a Studio clip definition |
+| `GET` | `/api/network/review` | Worker review queue |
+| `GET` | `/api/network/evidence/{type}/{id}` | Owner evidence bundle |
 | `GET` | `/demo/media/{event_id}.mp4` | Lease-gated local demo media |
 | `GET` | `/vendor/hls.min.js` | Pinned hls.js 1.5.x |
 

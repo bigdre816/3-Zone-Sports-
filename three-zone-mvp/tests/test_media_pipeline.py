@@ -587,6 +587,8 @@ class ConfigTests(unittest.TestCase):
 
     def test_27_default_provider_is_demo(self):
         os.environ.pop("TZ_MEDIA_PROVIDER", None)
+        os.environ.pop("TZ_LIVE_MEDIA_PROVIDER", None)
+        os.environ.pop("TZ_UGC_MEDIA_PROVIDER", None)
         os.environ.pop("TZ_PLAYBACK_LEASE_SECONDS", None)
         os.environ.pop("TZ_LEASE_TTL", None)
         os.environ.pop("CLOUDFLARE", None)
@@ -602,6 +604,34 @@ class ConfigTests(unittest.TestCase):
             self.assertNotIn("cf-token-alias-value", str(cfg.public_config()))
         finally:
             os.environ.pop("CLOUDFLARE", None)
+
+    def test_27c_live_and_ugc_providers_are_independent(self):
+        from backend.media_provider import FakeProvider, build_provider
+        from backend.media_providers import get_provider
+        from backend.media_providers.demo import DemoProvider
+
+        fake = Config(media_provider="fake")
+        self.assertEqual(fake.live_provider_name(), "demo")
+        self.assertEqual(fake.ugc_provider_name(), "fake")
+        self.assertEqual(fake.media_provider, "demo")
+        self.assertIsInstance(get_provider(fake), DemoProvider)
+        self.assertIsInstance(build_provider(fake), FakeProvider)
+
+        split = Config(live_media_provider="cloudflare", ugc_media_provider="fake")
+        self.assertEqual(split.live_provider_name(), "cloudflare")
+        self.assertEqual(split.ugc_provider_name(), "fake")
+        self.assertEqual(split.media_provider, "cloudflare")
+
+        os.environ["TZ_MEDIA_PROVIDER"] = "fake"
+        os.environ.pop("TZ_LIVE_MEDIA_PROVIDER", None)
+        os.environ.pop("TZ_UGC_MEDIA_PROVIDER", None)
+        try:
+            cfg = Config.from_env()
+            self.assertEqual(cfg.live_provider_name(), "demo")
+            self.assertEqual(cfg.ugc_provider_name(), "fake")
+            self.assertEqual(cfg.media_provider, "demo")
+        finally:
+            os.environ.pop("TZ_MEDIA_PROVIDER", None)
 
 
 class AuditorRoleTests(unittest.TestCase):

@@ -18,7 +18,9 @@ header {
   display: flex; align-items: center; gap: 20px;
   padding: 12px 5%; border-bottom: 1px solid var(--line);
 }
-.brand { color: var(--text); text-decoration: none; font-weight: 700; }
+.brand { color: var(--text); text-decoration: none; font-weight: 700; display: flex; align-items: baseline; gap: 8px; }
+.brand small { color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 650; }
+#portal h1 { font-size: 28px; margin: 0 0 6px; }
 nav { display: flex; gap: 14px; flex: 1; }
 nav a { color: var(--muted); text-decoration: none; font-size: 13px; }
 nav a:hover { color: var(--text); }
@@ -45,9 +47,28 @@ input, textarea, select {
   border-radius: 6px; padding: 8px 10px;
 }
 .eyebrow { color: var(--muted); font-size: 13px; }
-#search {
-  width: min(360px, 100%); margin: 8px 0 18px; float: right;
+#search-wrap { position: relative; float: right; width: min(360px, 100%); margin: 8px 0 18px; }
+#search { width: 100%; margin: 0; float: none; }
+.search-results {
+  position: absolute; z-index: 5; left: 0; right: 0; top: 100%;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  margin-top: 4px; max-height: 280px; overflow: auto;
 }
+.search-results button {
+  display: block; width: 100%; text-align: left; background: transparent; color: var(--text);
+  border: 0; border-radius: 0; font-weight: 500; padding: 10px 12px;
+}
+.search-results button:hover { background: #1e2833; }
+.search-results .sub { display: block; font-size: 11px; }
+footer {
+  display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;
+  padding: 20px 5% 32px; border-top: 1px solid var(--line);
+}
+footer a { color: var(--muted); text-decoration: none; font-size: 13px; }
+footer a:hover { color: var(--text); }
+.page-view { max-width: 720px; }
+.page-view h1 { font-size: 24px; }
+.page-view ul { color: var(--muted); }
 .section-title { display: flex; gap: 10px; align-items: baseline; margin: 22px 0 10px; }
 .section-title h2 { margin: 0; font-size: 18px; }
 .section-title span { color: var(--muted); font-size: 12px; }
@@ -72,9 +93,36 @@ video { width: 100%; max-height: 420px; background: #000; }
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
   background: #dce8ff; color: #102033; padding: 10px 16px; border-radius: 6px; font-weight: 650;
 }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
+.chip {
+  background: transparent; color: var(--text); border: 1px solid var(--line);
+  padding: 6px 12px; font-weight: 600;
+}
+.chip.active { background: var(--accent); color: #081018; }
+.feed-col { display: flex; flex-direction: column; gap: 14px; max-width: 560px; }
+.post-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.post-card img, .post-card video, #studio-video, #composer-preview {
+  width: 100%; max-height: 360px; background: #000; border-radius: 8px;
+}
+.post-card .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.prov { color: var(--accent); font-size: 12px; font-weight: 650; margin: 0; }
+.empty { color: var(--muted); }
+.profile-head { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-grid { display: grid; gap: 10px; }
+.form-grid.compact { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.check { flex-direction: row; align-items: center; gap: 8px; }
+dialog {
+  background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  border-radius: 10px; width: min(520px, 94vw); padding: 16px;
+}
+.dialog-bar { display: flex; justify-content: space-between; align-items: center; background: none; border: 0; padding: 0 0 12px; }
+.create-choices { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
 @media (max-width: 800px) {
-  .auth-grid, .columns, .cards { grid-template-columns: 1fr; }
-  nav { display: none; }
-  #search { float: none; width: 100%; }
+  .auth-grid, .columns, .cards, .profile-head, .create-choices { grid-template-columns: 1fr; }
+  nav { display: flex; overflow-x: auto; }
+  #search, #search-wrap { float: none; width: 100%; }
   .schedule-row { grid-template-columns: 1fr 1fr; }
 }

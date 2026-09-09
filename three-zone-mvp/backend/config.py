@@ -95,7 +95,9 @@ class Config:
     ws_max_message_bytes: int = 16 * 1024
     ws_max_messages_per_10s: int = 40
     ws_max_conns_per_ip: int = 20
-    media_provider: str = "demo"
+    media_provider: str = "demo"  # live rail: demo | cloudflare (TZ_LIVE_MEDIA_PROVIDER)
+    live_media_provider: str = "demo"
+    ugc_media_provider: str = "fake"  # member network: fake | cloudflare
     public_base_url: str = ""
     cf_account_id: str = ""
     cf_api_token: str = ""
@@ -116,6 +118,57 @@ class Config:
     xrpl_batch_max_records: int = 500
     xrpl_batch_max_age_seconds: int = 3600
     seed_passwords: dict = field(default_factory=dict)
+    cloudflare_account_id: str = ""
+    cloudflare_api_token: str = ""
+    cloudflare_webhook_secret: str = ""
+    max_post_video_seconds: int = 90
+    max_game_clip_seconds: int = 90
+    max_game_bytes: int = 8 * 1024 * 1024 * 1024
+    max_photo_bytes: int = 8 * 1024 * 1024
+    public_app_url: str = ""
+    fake_webhook_secret: str = "fake-webhook-secret"
+    photo_storage: str = "fake"
+    photo_s3_endpoint: str = ""
+    photo_s3_bucket: str = ""
+    photo_s3_access_key: str = ""
+    photo_s3_secret_key: str = ""
+    photo_s3_region: str = "auto"
+    photo_webhook_secret: str = ""
+
+    def __post_init__(self) -> None:
+        """Keep live/UGC provider names and Cloudflare credential aliases in sync."""
+        name = (self.media_provider or "demo").strip().lower()
+        live = (self.live_media_provider or "").strip().lower()
+        ugc = (self.ugc_media_provider or "").strip().lower()
+        if name == "fake":
+            self.live_media_provider = live if live in ("demo", "cloudflare") else "demo"
+            self.ugc_media_provider = "fake"
+        elif name == "cloudflare":
+            self.live_media_provider = "cloudflare"
+            self.ugc_media_provider = ugc if ugc in ("fake", "cloudflare") else "cloudflare"
+        else:
+            self.live_media_provider = live if live in ("demo", "cloudflare") else "demo"
+            self.ugc_media_provider = ugc if ugc in ("fake", "cloudflare") else "fake"
+        # Events.media_provider is the live rail. Never persist the UGC name.
+        self.media_provider = self.live_media_provider
+        if not self.cf_account_id and self.cloudflare_account_id:
+            self.cf_account_id = self.cloudflare_account_id
+        if not self.cf_api_token and self.cloudflare_api_token:
+            self.cf_api_token = self.cloudflare_api_token
+        if not self.cf_webhook_secret and self.cloudflare_webhook_secret:
+            self.cf_webhook_secret = self.cloudflare_webhook_secret
+        if not self.cloudflare_account_id:
+            self.cloudflare_account_id = self.cf_account_id
+        if not self.cloudflare_api_token:
+            self.cloudflare_api_token = self.cf_api_token
+        if not self.cloudflare_webhook_secret:
+            self.cloudflare_webhook_secret = self.cf_webhook_secret
+
+    def live_provider_name(self) -> str:
+        return self.live_media_provider if self.live_media_provider in ("demo", "cloudflare") else "demo"
+
+    def ugc_provider_name(self) -> str:
+        return self.ugc_media_provider if self.ugc_media_provider in ("fake", "cloudflare") else "fake"
 
     @classmethod
     def from_env(cls, http_port: int | None = None, ws_port: int | None = None,
@@ -125,15 +178,26 @@ class Config:
         ws_host = ws_host or os.environ.get("TZ_WS_HOST", "127.0.0.1")
         http_port = int(http_port or os.environ.get("TZ_HTTP_PORT", "8000"))
         ws_port = int(ws_port or os.environ.get("TZ_WS_PORT", "8765"))
-        default_origin = f"http://{http_host}:{http_port}"
+        default_origin = f"http://127.0.0.1:{http_port}" if http_host in ("0.0.0.0", "::") else f"http://{http_host}:{http_port}"
         allowed = _split_origins(os.environ.get("TZ_ALLOWED_ORIGINS", default_origin))
+        if http_host in ("0.0.0.0", "::"):
+            for extra in (f"http://127.0.0.1:{http_port}", f"http://localhost:{http_port}"):
+                if extra not in allowed:
+                    allowed.append(extra)
         cf_origins = _split_origins(os.environ.get("TZ_CLOUDFLARE_ALLOWED_ORIGINS", ",".join(allowed)))
         lease_raw = os.environ.get("TZ_PLAYBACK_LEASE_SECONDS") or os.environ.get("TZ_LEASE_TTL") or "60"
         xrpl_account = os.environ.get("TZ_XRPL_ACCOUNT") or os.environ.get("XRPL_AUDIT_ACCOUNT", "")
         xrpl_secret = os.environ.get("TZ_XRPL_SIGNING_SECRET") or os.environ.get("XRPL_SIGNING_SECRET", "")
         xrpl_rpc = os.environ.get("TZ_XRPL_RPC_URL") or os.environ.get("XRPL_RPC_URL", "")
         cf_account, cf_token, cf_customer, cf_webhook = _cloudflare_credentials()
-        media_provider = os.environ.get("TZ_MEDIA_PROVIDER", "demo").strip().lower() or "demo"
+        legacy = os.environ.get("TZ_MEDIA_PROVIDER", "").strip().lower()
+        live_name = os.environ.get("TZ_LIVE_MEDIA_PROVIDER", "").strip().lower()
+        ugc_name = os.environ.get("TZ_UGC_MEDIA_PROVIDER", "").strip().lower()
+        if not live_name:
+            live_name = "cloudflare" if legacy == "cloudflare" else "demo"
+        if not ugc_name:
+            ugc_name = "cloudflare" if legacy == "cloudflare" else "fake"
+        media_provider = live_name
         cfg = cls(
             env=env,
             http_host=http_host,
@@ -149,6 +213,8 @@ class Config:
             ingest_ttl=int(os.environ.get("TZ_INGEST_TTL", str(6 * 3600))),
             heartbeat_timeout=int(os.environ.get("TZ_HEARTBEAT_TIMEOUT", "12")),
             media_provider=media_provider,
+            live_media_provider=live_name,
+            ugc_media_provider=ugc_name,
             public_base_url=os.environ.get("TZ_PUBLIC_BASE_URL", default_origin).rstrip("/"),
             cf_account_id=cf_account,
             cf_api_token=cf_token,
@@ -173,6 +239,22 @@ class Config:
                 "demo-worker": os.environ.get("TZ_SEED_PASSWORD_WORKER", DEMO_SEED_PASSWORDS["demo-worker"]),
                 "demo-owner": os.environ.get("TZ_SEED_PASSWORD_OWNER", DEMO_SEED_PASSWORDS["demo-owner"]),
             },
+            cloudflare_account_id=cf_account,
+            cloudflare_api_token=cf_token,
+            cloudflare_webhook_secret=cf_webhook,
+            max_post_video_seconds=int(os.environ.get("TZ_MAX_POST_VIDEO_SECONDS", "90")),
+            max_game_clip_seconds=int(os.environ.get("TZ_MAX_GAME_CLIP_SECONDS", "90")),
+            max_game_bytes=int(os.environ.get("TZ_MAX_GAME_BYTES", str(8 * 1024 * 1024 * 1024))),
+            max_photo_bytes=int(os.environ.get("TZ_MAX_PHOTO_BYTES", str(8 * 1024 * 1024))),
+            public_app_url=os.environ.get("TZ_PUBLIC_APP_URL", ""),
+            fake_webhook_secret=os.environ.get("TZ_FAKE_WEBHOOK_SECRET", "fake-webhook-secret"),
+            photo_storage=os.environ.get("TZ_PHOTO_STORAGE", "fake").strip().lower(),
+            photo_s3_endpoint=os.environ.get("TZ_PHOTO_S3_ENDPOINT", ""),
+            photo_s3_bucket=os.environ.get("TZ_PHOTO_S3_BUCKET", ""),
+            photo_s3_access_key=os.environ.get("TZ_PHOTO_S3_ACCESS_KEY", ""),
+            photo_s3_secret_key=os.environ.get("TZ_PHOTO_S3_SECRET_KEY", ""),
+            photo_s3_region=os.environ.get("TZ_PHOTO_S3_REGION", "auto"),
+            photo_webhook_secret=os.environ.get("TZ_PHOTO_WEBHOOK_SECRET", ""),
         )
         cfg.validate()
         return cfg
@@ -189,22 +271,25 @@ class Config:
 
     def validate(self) -> None:
         """Refuse to run in production with demo/weak secrets."""
-        if self.media_provider not in ("demo", "cloudflare"):
-            raise RuntimeError("TZ_MEDIA_PROVIDER must be demo or cloudflare")
+        live = self.live_provider_name()
+        ugc = self.ugc_provider_name()
+        if live not in ("demo", "cloudflare"):
+            raise RuntimeError("TZ_LIVE_MEDIA_PROVIDER must be demo or cloudflare")
+        if ugc not in ("fake", "cloudflare"):
+            raise RuntimeError("TZ_UGC_MEDIA_PROVIDER must be fake or cloudflare")
         if self.lease_ttl > 60:
-            # Pilot lease must be 60 seconds or less.
             self.lease_ttl = 60
-        if "*" in self.cf_allowed_origins and (self.is_production or self.media_provider == "cloudflare"):
+        if "*" in self.cf_allowed_origins and (self.is_production or live == "cloudflare"):
             if self.is_production:
                 raise RuntimeError("TZ_CLOUDFLARE_ALLOWED_ORIGINS must not use a wildcard in production")
         if not self.is_production:
-            if self.media_provider == "cloudflare":
+            if live == "cloudflare" or ugc == "cloudflare":
                 missing = []
                 if not self.cf_account_id:
                     missing.append("TZ_CLOUDFLARE_ACCOUNT_ID")
                 if not self.cf_api_token:
                     missing.append("TZ_CLOUDFLARE_API_TOKEN")
-                if not self.cf_customer_code:
+                if live == "cloudflare" and not self.cf_customer_code:
                     missing.append("TZ_CLOUDFLARE_CUSTOMER_CODE")
                 if not self.cf_webhook_secret:
                     missing.append("TZ_CLOUDFLARE_WEBHOOK_SECRET")
@@ -234,12 +319,12 @@ class Config:
             problems.append("TZ_ALLOWED_ORIGINS must be set")
         if "*" in self.allowed_origins or "*" in self.cf_allowed_origins:
             problems.append("wildcard origins are refused in production")
-        if self.media_provider == "cloudflare":
+        if live == "cloudflare" or ugc == "cloudflare":
             if not self.cf_account_id:
                 problems.append("TZ_CLOUDFLARE_ACCOUNT_ID is required")
             if not self.cf_api_token:
                 problems.append("TZ_CLOUDFLARE_API_TOKEN is required")
-            if not self.cf_customer_code:
+            if live == "cloudflare" and not self.cf_customer_code:
                 problems.append("TZ_CLOUDFLARE_CUSTOMER_CODE is required")
             if not self.cf_webhook_secret:
                 problems.append("TZ_CLOUDFLARE_WEBHOOK_SECRET is required")
@@ -273,8 +358,15 @@ class Config:
             "zones": ["midwest", "west", "east"],
             "simulation": self.env in ("demo", "development", "local"),
             "register_enabled": True,
-            "media_provider": self.media_provider,
+            "media_provider": self.live_provider_name(),
+            "live_media_provider": self.live_provider_name(),
+            "ugc_media_provider": self.ugc_provider_name(),
             "viewer_heartbeat_interval": self.viewer_heartbeat_interval,
-            "hls_enabled": self.media_provider == "cloudflare",
+            "hls_enabled": self.live_provider_name() == "cloudflare",
             "cloudflare_playback_host": host,
+            "photo_storage": self.photo_storage,
+            "max_post_video_seconds": self.max_post_video_seconds,
+            "max_game_clip_seconds": self.max_game_clip_seconds,
+            "sports": ["basketball", "football", "soccer", "baseball", "volleyball", "other"],
+            "feed_ranking": "published_at DESC, post_id DESC (chronological; not machine learning)",
         }

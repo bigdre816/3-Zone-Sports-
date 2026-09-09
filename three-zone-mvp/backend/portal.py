@@ -168,21 +168,36 @@ class PortalService:
         return [dict(r) for r in rows]
 
     def search(self, user, query):
-        q = "%" + (query or "").lower() + "%"
+        self._ensure_catalog()
+        term = (query or "").strip().lower()
+        if len(term) < 2:
+            return []
+        q = "%" + term + "%"
         results = []
-        for r in self.db.query("SELECT school_id,name,'school' kind FROM schools WHERE lower(name) LIKE ?", (q,)):
-            results.append(dict(r))
-        for r in self.db.query("SELECT team_id,name,'team' kind FROM teams WHERE lower(name) LIKE ?", (q,)):
-            results.append(dict(r))
+        for r in self.db.query("SELECT school_id,name FROM schools WHERE lower(name) LIKE ?", (q,)):
+            results.append({"id": r["school_id"], "name": r["name"], "kind": "school"})
+        for r in self.db.query("SELECT team_id,name FROM teams WHERE lower(name) LIKE ?", (q,)):
+            results.append({"id": r["team_id"], "name": r["name"], "kind": "team"})
         for e in self.cp.list_events(user):
-            if query.lower() in e["title"].lower() or query.lower() in e["category"].lower():
-                results.append({"id": e["event_id"], "name": e["title"], "kind": "game"})
+            hay = f"{e['title']} {e['category']} {e['status']}".lower()
+            if term and term in hay:
+                results.append({
+                    "id": e["event_id"], "name": e["title"], "kind": "game",
+                    "status": e["status"],
+                })
+        for a in self.archives(user):
+            hay = f"{a['title']} {a['school']} {a['team']} {a['season']}".lower()
+            if term and term in hay:
+                results.append({
+                    "id": a["archive_id"], "name": a["title"], "kind": "archive",
+                    "event_id": a["event_id"],
+                })
         return results[:30]
 
     # Playback ---------------------------------------------------------------------
-    def playback(self, session_id, event_id, use="live"):
-        session, user = self.session(session_id)
-        self.audit("playback.requested", event_id, "member", user["user_id"], verification_ref=session["verification_id"])
+    def playback_for_user(self, user, event_id, use="live", session_id=None):
+        """Issue a lease for a unified identity (Bearer or member cookie)."""
+        self.audit("playback.requested", event_id, "member", user["user_id"])
         event = self.cp.get_event_row(event_id)
         if use == "archive" and event["status"] != "archive":
             raise ForbiddenError("This game is not currently available with your access.", "archive_not_authorized")
@@ -192,12 +207,17 @@ class PortalService:
             self.audit("lease.denied", event_id, "member", user["user_id"])
             raise ForbiddenError("This game is not currently available with your access.", "playback_denied")
         self.db.execute("INSERT OR REPLACE INTO lease_records VALUES (?,?,?,?,?,?,?,?,?,?)",
-                        (lease["lease_id"], event_id, user["user_id"], session_id, lease["rights_version"],
-                         lease["mode"], "active", time.time(), time.time() + lease["lease_ttl"], None))
+                        (lease["lease_id"], event_id, user["user_id"], session_id or "unified",
+                         lease["rights_version"], lease["mode"], "active", time.time(),
+                         time.time() + lease["lease_ttl"], None))
         self.audit("lease.issued", lease["lease_id"], "system", "rights-service",
-                   {"event_id": event_id, "simulated_media": True}, verification_ref=session["verification_id"],
+                   {"event_id": event_id, "simulated_media": True},
                    rights_version=lease["rights_version"])
         return lease
+
+    def playback(self, session_id, event_id, use="live"):
+        session, user = self.session(session_id)
+        return self.playback_for_user(user, event_id, use, session_id=session["session_id"])
 
     # schedules --------------------------------------------------------------------
     def upload_schedule(self, operator, filename, content):

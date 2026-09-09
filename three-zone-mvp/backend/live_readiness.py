@@ -43,7 +43,9 @@ def readiness(cfg: Config) -> dict:
     warnings: list[str] = []
     checks: dict = {
         "env": cfg.env,
-        "media_provider": cfg.media_provider,
+        "media_provider": cfg.live_provider_name(),
+        "live_media_provider": cfg.live_provider_name(),
+        "ugc_media_provider": cfg.ugc_provider_name(),
         "public_base_url_set": bool(cfg.public_base_url),
         "allowed_origins": len(cfg.allowed_origins),
         "wildcard_origins": "*" in cfg.allowed_origins or "*" in cfg.cf_allowed_origins,
@@ -55,10 +57,11 @@ def readiness(cfg: Config) -> dict:
     if checks["wildcard_origins"]:
         blockers.append("wildcard origins are set; use exact playback origins")
 
-    if cfg.media_provider == "demo":
+    live = cfg.live_provider_name()
+    if live == "demo":
         checks["demo_rail"] = "ready"
         warnings.append("demo rail only — OBS/Cloudflare Stream ingest is not active")
-    elif cfg.media_provider == "cloudflare":
+    elif live == "cloudflare":
         missing = []
         if not cfg.cf_account_id:
             missing.append("TZ_CLOUDFLARE_ACCOUNT_ID")
@@ -78,7 +81,7 @@ def readiness(cfg: Config) -> dict:
         if not cfg.public_base_url.startswith("https://") and cfg.is_production:
             blockers.append("TZ_PUBLIC_BASE_URL must be https in production for webhooks")
     else:
-        blockers.append(f"unknown media provider: {cfg.media_provider}")
+        blockers.append(f"unknown live media provider: {live}")
 
     if cfg.is_production:
         if checks["token_secret_is_demo"] or checks["media_key_is_demo"]:

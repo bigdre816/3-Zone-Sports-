@@ -133,6 +133,101 @@ class PortalTests(unittest.TestCase):
         self.assertIn("POST", app_js)
         self.assertGreater(len(app_js.splitlines()), 500)
 
+    def test_investment_tracker_is_not_on_the_site(self):
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.assertFalse(os.path.exists(os.path.join(repo, "System")))
+        with open(os.path.join(repo, ".cursor", "serve.py"), encoding="utf-8") as handle:
+            serve = handle.read()
+        self.assertIn("Sports Access", serve)
+        self.assertNotIn("Investment Tracker", serve)
+
+    def test_member_site_keeps_network_shell_and_wired_watch(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        static = os.path.join(root, "backend", "static")
+        with open(os.path.join(static, "index.html"), encoding="utf-8") as handle:
+            html = handle.read()
+        for needle in ("Feed", "Live", "Inbox", "Profile", "Create",
+                       "MEMBERS PORTAL", "Welcome back", "Sports Access",
+                       "id=\"search-results\"", "id=\"view-about\"", "Watch it. Save it."):
+            self.assertIn(needle, html)
+        with open(os.path.join(static, "portal.js"), encoding="utf-8") as handle:
+            js = handle.read()
+        self.assertIn("Watch live", js)
+        self.assertIn("Watch archive", js)
+        self.assertIn("/api/member/archive/", js)
+        self.assertIn("search-results", js)
+        self.assertIn("attachPortalMedia", js)
+        self.assertIn("view-sessions", js)
+        self.assertIn("/vendor/hls.min.js", html)
+        self.assertNotIn("?lease=", js)
+
+    def test_upcoming_green_event_is_not_playable(self):
+        with self.assertRaises(ForbiddenError) as ctx:
+            self.portal.playback(self.session()["session_id"], "evt_mw_hockey")
+        self.assertIn(ctx.exception.code, ("not_playable", "playback_denied"))
+
+    def test_archive_playback_issues_lease(self):
+        self.portal._ensure_catalog()
+        result = self.portal.playback(self.session()["session_id"], "evt_mw_wrestling", use="archive")
+        self.assertTrue(result["allow"])
+        self.assertEqual(result["mode"], "archive")
+        self.assertTrue(self.cp.validate_lease("evt_mw_wrestling", result["lease_token"])["valid"])
+
+    def test_search_returns_stable_ids_and_archives(self):
+        hits = self.portal.search(self.member, "lincoln")
+        self.assertTrue(any(item["kind"] == "school" and item["id"] == "school_lincoln" for item in hits))
+        self.assertTrue(any(item["kind"] == "game" and item["id"] == "evt_mw_basketball" for item in hits))
+        wrestling = self.portal.search(self.member, "wrestling")
+        self.assertTrue(any(item["kind"] == "archive" and item["id"] == "arc-central-wrestling" for item in wrestling))
+
+    def test_archive_http_playback_sets_lease_cookie_not_json_token(self):
+        import json
+        import threading
+        import urllib.request
+
+        from backend.config import DEMO_SEED_PASSWORDS
+        from backend.http_server import make_http_server
+
+        cfg = Config(env="demo", http_host="127.0.0.1", http_port=0,
+                     allowed_origins=["http://127.0.0.1"])
+        httpd = make_http_server(cfg, self.cp, "/tmp")
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            base = f"http://{host}:{port}"
+            login = urllib.request.Request(
+                base + "/api/auth/login",
+                data=json.dumps({
+                    "username": "demo-viewer",
+                    "password": DEMO_SEED_PASSWORDS["demo-viewer"],
+                }).encode(),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(login, timeout=5) as resp:
+                token = json.loads(resp.read())["session_token"]
+            req = urllib.request.Request(
+                base + "/api/member/archive/arc-central-wrestling/playback",
+                data=b"{}",
+                method="POST",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + token,
+                },
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                body = json.loads(resp.read())
+                cookie = resp.headers.get("Set-Cookie") or ""
+            self.assertNotIn("lease_token", body)
+            self.assertTrue(body["allow"])
+            self.assertEqual(body["media_url"], "/demo/media/evt_mw_wrestling.mp4")
+            self.assertIn("tz_lease_evt_mw_wrestling=", cookie)
+            self.assertIn("HttpOnly", cookie)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
 
 if __name__ == "__main__":
     unittest.main()
