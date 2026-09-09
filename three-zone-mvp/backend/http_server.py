@@ -21,6 +21,7 @@ from .control_plane import ControlError, ControlPlane
 from .identity import bearer_from_header, resolve_identity, resolve_identity_optional
 from .mastery import article_html, full_page_html, load_markdown
 from .media_provider import build_provider
+from .moten_adapter import MotenIntakeService
 from .network import NetworkService
 from .photo_storage import build_photo_storage
 from .portal import PortalService
@@ -85,6 +86,12 @@ def _routes():
         ("GET", re.compile(r"^/api/analytics$"), "h_analytics", "session"),
         ("GET", re.compile(r"^/api/audit$"), "h_audit", "operator"),
         ("GET", re.compile(r"^/api/audit/verification-outbox$"), "h_verification_outbox", "operator"),
+        ("GET", re.compile(r"^/api/moten/discovery$"), "h_moten_discovery", "operator"),
+        ("GET", re.compile(r"^/api/moten/intake/jobs/(?P<job_id>mtn_[a-f0-9]+)$"), "h_moten_job", "operator"),
+        ("POST", re.compile(r"^/api/moten/intake/event$"), "h_moten_event", "operator"),
+        ("POST", re.compile(r"^/api/moten/intake/rights-version$"), "h_moten_rights", "operator"),
+        ("POST", re.compile(r"^/api/moten/intake/revocation-event$"), "h_moten_revocation", "operator"),
+        ("POST", re.compile(r"^/api/moten/intake/settlement$"), "h_moten_settlement", "operator"),
         ("GET", re.compile(r"^/api/owner/inventory$"), "h_owner_inventory", "owner"),
         ("GET", re.compile(r"^/api/owner/mastery$"), "h_owner_mastery", "owner"),
         ("GET", re.compile(rf"^/demo/media/{_EVENT_RE}\.mp4$"), "h_media", "none"),
@@ -143,6 +150,7 @@ class _Handler(BaseHTTPRequestHandler):
     cp: ControlPlane = None  # type: ignore
     portal: PortalService = None  # type: ignore
     network: NetworkService = None  # type: ignore
+    moten: MotenIntakeService = None  # type: ignore
     media_dir: str = "data/media"
     routes = _routes()
 
@@ -371,7 +379,11 @@ class _Handler(BaseHTTPRequestHandler):
 
     # -- API handlers ------------------------------------------------------
     def h_health(self, p, b, u):
-        self._send_json(200, {"status": "ok"})
+        self._send_json(200, {
+            "status": "ok",
+            "service": "three-zone-api",
+            "moten": {"configured": self.cp.config.moten_enabled},
+        })
 
     def h_live_readiness(self, p, b, u):
         # Operator/owner only. Never returns secret values — only presence/validity flags.
@@ -599,6 +611,31 @@ class _Handler(BaseHTTPRequestHandler):
 
     def h_verification_outbox(self, p, b, u):
         self._send_json(200, {"outbox": self.cp.verification_outbox(u)})
+
+    def h_moten_discovery(self, p, b, u):
+        self._send_json(200, self.moten.discovery())
+
+    def h_moten_job(self, p, b, u):
+        try:
+            self._send_json(200, self.moten.status(p["job_id"]))
+        except LookupError:
+            self._send_json(404, {"error": "moten intake job not found", "code": "job_not_found"})
+
+    def h_moten_event(self, p, b, u):
+        event_id = (b or {}).get("event_id", "")
+        self._send_json(202, self.moten.handoff_event(u, event_id))
+
+    def h_moten_rights(self, p, b, u):
+        body = b or {}
+        self._send_json(202, self.moten.handoff_rights_version(u, body.get("event_id", ""), body.get("rights_version")))
+
+    def h_moten_revocation(self, p, b, u):
+        event_id = (b or {}).get("event_id", "")
+        self._send_json(202, self.moten.handoff_revocation_event(u, event_id))
+
+    def h_moten_settlement(self, p, b, u):
+        event_id = (b or {}).get("event_id", "")
+        self._send_json(202, self.moten.handoff_settlement(u, event_id))
 
     def h_owner_inventory(self, p, b, u):
         self._send_json(200, self.cp.owner_inventory(u))
@@ -849,8 +886,9 @@ def make_http_server(config, cp: ControlPlane, media_dir: str,
     provider = provider or build_provider(config)
     photo_storage = photo_storage or build_photo_storage(config)
     network = NetworkService(cp, portal, provider, photo_storage)
+    moten = MotenIntakeService(cp)
     handler = type("BoundHandler", (_Handler,), {
-        "cp": cp, "portal": portal, "network": network, "media_dir": media_dir,
+        "cp": cp, "portal": portal, "network": network, "moten": moten, "media_dir": media_dir,
     })
     httpd = ThreadingHTTPServer((config.http_host, config.http_port), handler)
     httpd.daemon_threads = True
