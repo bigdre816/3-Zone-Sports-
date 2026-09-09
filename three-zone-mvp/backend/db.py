@@ -174,6 +174,42 @@ CREATE TABLE IF NOT EXISTS archive_objects (
     archive_id TEXT PRIMARY KEY, event_id TEXT NOT NULL, school_id TEXT NOT NULL, team_id TEXT NOT NULL,
     season TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, thumbnail TEXT, status TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS camera_sources (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    transport TEXT NOT NULL CHECK (transport IN ('rtsp', 'onvif')),
+    endpoint TEXT NOT NULL,
+    username_secret_ref TEXT,
+    password_secret_ref TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'pending',
+    rights_policy_id TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS camera_sources_endpoint_uq
+    ON camera_sources(endpoint);
+CREATE TABLE IF NOT EXISTS camera_secrets (
+    secret_ref TEXT PRIMARY KEY,
+    secret_value TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS camera_archive_objects (
+    id TEXT PRIMARY KEY,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    storage_key TEXT NOT NULL UNIQUE,
+    sha256 TEXT NOT NULL,
+    recorded_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS camera_archive_verification_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    object_id TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    delivered_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_camera_archive_verify_pending
+    ON camera_archive_verification_outbox(delivered_at, id);
 CREATE TABLE IF NOT EXISTS lease_records (
     lease_id TEXT PRIMARY KEY, event_id TEXT NOT NULL, member_id TEXT NOT NULL, session_id TEXT NOT NULL,
     rights_version INTEGER NOT NULL, permitted_use TEXT NOT NULL, status TEXT NOT NULL,

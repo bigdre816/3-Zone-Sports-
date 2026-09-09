@@ -13,8 +13,8 @@ from moten.errors import (
     NotNaturalPerson,
     TwoPersonRequired,
 )
-from moten.models import CalendarEntry, InventionVersion, SecurityIncident
-from moten.planes import decision, invention, signal
+from moten.models import CalendarEntry, ChainHead, InventionVersion, SecurityIncident
+from moten.planes import decision, evidence, invention, signal
 from moten.util import allocate_id
 
 
@@ -220,3 +220,30 @@ def test_question_versioning_is_new_row(app):
         versions = signal.question_versions(s, rq.rq_id)
         assert [v.revision for v in versions] == [1, 2]
         assert versions[0].exact_wording == "Pay $5?"  # prior wording preserved
+
+
+def test_evidence_append_uses_serialized_chain_head(app):
+    with app.state.session_scope() as s:
+        _persons(s)
+        first = evidence.append_event(
+            s,
+            event_type="research.question.created",
+            object_id="RQ-2026-000001",
+            payload={"a": 1},
+            actor_person_id="P-2026-000001",
+            actor_role="founder",
+        )
+        head = s.query(ChainHead).filter(ChainHead.ledger == "moten").one()
+        assert head.sequence == 1
+        first_hash = head.head_hash
+        second = evidence.append_event(
+            s,
+            event_type="research.question.version.committed",
+            object_id="RQ-2026-000001",
+            payload={"b": 2},
+            actor_person_id="P-2026-000001",
+            actor_role="founder",
+        )
+        assert second.previous_event_hash == first_hash
+        assert head.sequence == 2
+        assert head.head_hash != first_hash
