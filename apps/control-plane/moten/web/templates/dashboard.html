@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Moten{% endblock %}
+{% block content %}
+<h1>Invention candidate dashboard</h1>
+<div class="sub">Every candidate shows lifecycle state, IP posture, and its next irreversible deadline. Evidence hash chain:
+  {% if chain_ok %}<span class="ok">verified</span>{% else %}<span class="warn">BROKEN</span>{% endif %}.
+</div>
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Title</th><th>Lifecycle</th><th>IP posture</th><th>Filed</th><th>Next deadline</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><a class="inv" href="/inventions/{{ r.inv.inv_id }}?actor={{ actor_id }}">{{ r.inv.inv_id }}</a></td>
+        <td>{{ r.inv.title }}</td>
+        <td><span class="badge state">{{ r.inv.lifecycle_state }}</span></td>
+        <td><span class="badge posture">{{ r.inv.ip_posture }}</span></td>
+        <td>
+          {% if r.filed %}
+            <span class="badge filed">Filed</span>
+            <span class="datelabel">USPTO filing date</span>{{ r.filing_date }}
+          {% else %}<span class="pill">not filed</span>{% endif %}
+        </td>
+        <td>
+          {% if r.next_deadline %}
+            <span class="datelabel">next irreversible deadline</span>{{ r.next_deadline }}
+          {% else %}<span class="pill">—</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Capture a new invention candidate</h2>
+  <div class="sub">Playbook A — a new idea in one problem sentence and a mechanism (inputs → transformation → outputs).</div>
+  <form class="stack" method="post" action="/inventions/new?actor={{ actor_id }}">
+    <div><label>Title</label><input type="text" name="title" placeholder="TZ-0X …" required></div>
+    <div><label>Problem (one sentence, no marketing)</label><textarea name="problem" required></textarea></div>
+    <div><label>Mechanism — inputs (comma-separated)</label><input type="text" name="inputs" placeholder="demand observations, rights windows"></div>
+    <div><label>Mechanism — transformation</label><input type="text" name="transformation" placeholder="join + constrained ranking, fail-closed"></div>
+    <div><label>Mechanism — outputs (comma-separated)</label><input type="text" name="outputs" placeholder="ranked opportunity set"></div>
+    <div><label>Technical effect (optional)</label><input type="text" name="technical_effect"></div>
+    <div><button type="submit">Create candidate</button></div>
+  </form>
+</div>
+{% endblock %}

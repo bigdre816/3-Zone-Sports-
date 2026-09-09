@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Disclosure Firewall · Moten{% endblock %}
+{% block content %}
+<h1>Disclosure firewall</h1>
+<div class="sub">No public or partner release outruns the IP decision. Default: hold and file first when unfiled IP is linked.</div>
+
+<div class="card">
+  <h2>Run a preflight</h2>
+  <form class="stack" method="post" action="/disclosures/preflight?actor={{ actor_id }}">
+    <div>
+      <label>Artifact content (text)</label>
+      <textarea name="content" placeholder="Paste the deck / post / brief text…" required></textarea>
+    </div>
+    <div>
+      <label>Channel</label>
+      <input type="text" name="channel" value="partner-deck" required>
+    </div>
+    <div>
+      <label>Classification</label>
+      <select name="classification">
+        <option value="public">public</option>
+        <option value="partner-confidential">partner-confidential</option>
+        <option value="nda">nda</option>
+        <option value="internal">internal</option>
+      </select>
+    </div>
+    <div>
+      <label>Linked unfiled inventions (comma-separated INV IDs)</label>
+      <input type="text" name="linked_unfiled_inventions" placeholder="INV-2026-000001">
+    </div>
+    <label class="checkline"><input type="checkbox" name="contains_credentials" value="1"> contains credentials / rights-override material (→ black)</label>
+    <label class="checkline"><input type="checkbox" name="contains_youth_data" value="1"> contains youth / sensitive data</label>
+    <div><button type="submit">Run preflight</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Preflight decisions</h2>
+  <table>
+    <thead><tr><th>ID</th><th>Channel</th><th>Decision</th><th>Risk</th><th>Reasons</th><th>Released</th></tr></thead>
+    <tbody>
+      {% for d in discs %}
+      <tr>
+        <td class="mono">{{ d.disc_id }}</td>
+        <td>{{ d.channel }}</td>
+        <td>{{ d.decision }}</td>
+        <td><span class="badge risk-{{ d.risk_color }}">{{ d.risk_color }}</span></td>
+        <td><ul class="reasons">{% for r in d.reasons %}<li>{{ r }}</li>{% endfor %}</ul></td>
+        <td>{% if d.released_artifact_sha256 %}<span class="ok">released</span>{% else %}<span class="pill">held</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if incidents %}
+<div class="card">
+  <h2>Security incidents</h2>
+  <table>
+    <thead><tr><th>ID</th><th>Kind</th><th>Detail</th></tr></thead>
+    <tbody>
+      {% for i in incidents %}
+      <tr><td class="mono">{{ i.inc_id }}</td><td><span class="badge risk-black">{{ i.kind }}</span></td><td>{{ i.detail }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

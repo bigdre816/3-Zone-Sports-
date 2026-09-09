@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}{{ inv.inv_id }} · Moten{% endblock %}
+{% block content %}
+<h1>{{ inv.inv_id }} — {{ inv.title }}</h1>
+<div class="sub">
+  <span class="badge state">{{ inv.lifecycle_state }}</span>
+  <span class="badge posture">{{ inv.ip_posture }}</span>
+</div>
+{% if err %}<div class="card" style="border-color:var(--red)"><span class="warn">Blocked (fail-closed):</span> {{ err }}</div>{% endif %}
+
+<div class="card">
+  <h2>Mechanism (latest version)</h2>
+  {% set v = versions[-1] %}
+  <div class="kv">
+    <div class="k">Problem</div><div>{{ v.problem }}</div>
+    <div class="k">Inputs</div><div>{{ v.mechanism.get('inputs') }}</div>
+    <div class="k">Transformation</div><div>{{ v.mechanism.get('transformation') }}</div>
+    <div class="k">Outputs</div><div>{{ v.mechanism.get('outputs') }}</div>
+    <div class="k">Technical effect</div><div>{{ v.technical_effect or '—' }}</div>
+    <div class="k">Alternatives</div><div>{{ v.alternatives }}</div>
+    <div class="k">Version hash</div><div class="mono">{{ v.payload_sha256 }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Version history (immutable)</h2>
+  <table>
+    <thead><tr><th>Rev</th><th>Semver</th><th>Recorded</th><th>Change reason</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for ver in versions %}
+      <tr>
+        <td>{{ ver.revision }}</td>
+        <td>{{ ver.semver_label }}</td>
+        <td><span class="datelabel">internal provenance</span>{{ ver.recorded_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>{{ ver.change_reason or '—' }}</td>
+        <td><span class="pill">{{ ver.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Human contributions &amp; AI assistance</h2>
+  <table>
+    <thead><tr><th>Type</th><th>Actor</th><th>Class / purpose</th><th>Statement / action</th><th>Attested</th></tr></thead>
+    <tbody>
+      {% for c in pkg.contributions %}
+      <tr><td>Human</td><td class="mono">{{ c.person_id }}</td><td>{{ c['class'] }}</td><td>{{ c.statement }}</td><td>{{ 'yes' if c.attested else 'no' }}</td></tr>
+      {% endfor %}
+      {% for a in pkg.ai_interactions %}
+      <tr><td>AI ({{ a.inventor_status_of_ai }})</td><td class="mono">{{ a.tool }}</td><td>{{ a.purpose }}</td><td>{{ a.human_action }}</td><td>—</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="callout" style="margin-top:12px">AI is recorded as a tool only and can never be a named inventor (spec §06).</div>
+</div>
+
+<div class="card">
+  <h2>Evidence export package</h2>
+  <div class="kv">
+    <div class="k">Chain verified</div><div>{% if pkg.chain_verified %}<span class="ok">yes</span>{% else %}<span class="warn">no</span>{% endif %}</div>
+    <div class="k">Manifest hash</div><div class="mono">{{ pkg.manifest_sha256 }}</div>
+    <div class="k">Objects in manifest</div><div>{{ pkg.hash_manifest | length }}</div>
+    <div class="k">Filings</div><div>{{ pkg.filings }}</div>
+  </div>
+  <div class="callout" style="margin-top:12px">
+    Full JSON export: <code>GET /v1/exports/invention/{{ inv.inv_id }}</code> ·
+    <span class="datelabel" style="display:inline">legal effect</span> provenance_only
+  </div>
+</div>
+
+{% if decisions %}
+<div class="card">
+  <h2>Counsel decisions</h2>
+  <table>
+    <thead><tr><th>ID</th><th>Kind</th><th>Outcome</th><th>Reason</th></tr></thead>
+    <tbody>
+      {% for d in decisions %}
+      <tr><td class="mono">{{ d.dec_id }}</td><td>{{ d.kind }}</td><td>{{ d.outcome }}</td><td>{{ d.reason or '—' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Actions</h2>
+  <div class="sub">Acting as <strong>{{ actor.display_name if actor else actor_id }}</strong>. Irreversible actions require a distinct second approver.</div>
+
+  <h3 style="font-size:14px;color:var(--muted)">Record a human contribution</h3>
+  <form class="stack" method="post" action="/inventions/{{ inv.inv_id }}/contribution?actor={{ actor_id }}">
+    <div><label>Person</label>
+      <select name="person_id">
+        {% for p in persons %}<option value="{{ p.person_id }}">{{ p.display_name }}{% if not p.is_natural_person %} (AI tool){% endif %}</option>{% endfor %}
+      </select>
+    </div>
+    <div><label>Class</label>
+      <select name="contribution_class">
+        <option>problem</option><option>constraint</option><option>mechanism</option>
+        <option>selection</option><option>implementation</option><option>verification</option>
+      </select>
+    </div>
+    <div><label>Statement</label><textarea name="statement" required></textarea></div>
+    <label class="checkline"><input type="checkbox" name="attested" value="1"> attested by contributor</label>
+    <div><button type="submit">Add contribution</button></div>
+  </form>
+
+  <h3 style="font-size:14px;color:var(--muted);margin-top:18px">Name inventors (two-person)</h3>
+  <form class="stack" method="post" action="/inventions/{{ inv.inv_id }}/inventors?actor={{ actor_id }}">
+    <div><label>Inventor person IDs (comma-separated, natural persons only)</label><input type="text" name="inventor_person_ids" placeholder="P-2026-000001, P-2026-000005"></div>
+    <div><label>Approver person ID (must differ from you)</label><input type="text" name="approver_person_id" placeholder="P-2026-000001"></div>
+    <div><button type="submit">Name inventors</button></div>
+  </form>
+
+  <h3 style="font-size:14px;color:var(--muted);margin-top:18px">Advance lifecycle</h3>
+  <form class="stack" method="post" action="/inventions/{{ inv.inv_id }}/transition?actor={{ actor_id }}">
+    <div><label>Target state (guards fail closed)</label>
+      <select name="target_state">{% for st in lifecycle %}<option>{{ st }}</option>{% endfor %}</select>
+    </div>
+    <div><label>Approver (required for Trade Secret / Granted / Abandoned)</label><input type="text" name="approver_person_id"></div>
+    <div><button type="submit">Transition</button></div>
+  </form>
+
+  <h3 style="font-size:14px;color:var(--muted);margin-top:18px">Record a counsel decision</h3>
+  <form class="stack" method="post" action="/inventions/{{ inv.inv_id }}/counsel-decision?actor={{ actor_id }}">
+    <div><label>Kind</label><input type="text" name="kind" placeholder="triage / patent-vs-secret / prior-art"></div>
+    <div><label>Outcome</label><input type="text" name="outcome" placeholder="proceed-to-provisional"></div>
+    <div><label>Reason</label><input type="text" name="reason"></div>
+    <div><button type="submit">Record decision</button></div>
+  </form>
+</div>
+{% endblock %}

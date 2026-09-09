@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Filing Calendar · Moten{% endblock %}
+{% block content %}
+<h1>Filing calendar</h1>
+<div class="sub">Generated from the verified USPTO filing date. 6/9/10/11-month escalation; the 12-month deadline is hard and cannot be silently snoozed.</div>
+<div class="card">
+  <form method="post" action="/calendar/escalate?actor={{ actor_id }}" style="margin-bottom:12px">
+    <button type="submit">Escalate all past-due open items (no silent snooze)</button>
+  </form>
+  <table>
+    <thead><tr><th>ID</th><th>Invention</th><th>Clock point</th><th>Due date</th><th>Type</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="mono">{{ r.e.cal_id }}</td>
+        <td class="mono">{{ r.inv_id }}</td>
+        <td>{{ r.e.clock_point }}</td>
+        <td><span class="datelabel">USPTO-filing-derived</span>{{ r.e.due_date }}</td>
+        <td>{% if r.e.is_hard_deadline %}<span class="badge risk-red">hard deadline</span>{% else %}<span class="pill">escalation</span>{% endif %}</td>
+        <td>
+          {% if r.e.status == 'escalated' %}<span class="badge risk-red">{{ r.e.status }}</span>
+          {% elif r.e.status == 'acknowledged' %}<span class="badge risk-green">{{ r.e.status }}</span>
+          {% else %}<span class="pill">{{ r.e.status }}</span>{% endif %}
+        </td>
+        <td>
+          {% if r.e.status == 'open' or r.e.status == 'escalated' %}
+          <form method="post" action="/calendar/{{ r.e.cal_id }}/ack?actor={{ actor_id }}"><button type="submit">Acknowledge</button></form>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

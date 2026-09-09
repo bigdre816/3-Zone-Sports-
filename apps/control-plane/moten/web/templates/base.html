@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Moten Control Plane{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">◆</span>
+      <div>
+        <div class="brand-name">Moten IP &amp; Invention Control Plane</div>
+        <div class="brand-sub">Phase 1 — Days 0–30 · process &amp; evidence only, not legal advice</div>
+      </div>
+    </div>
+    <div class="actor">
+      <label>Acting as</label>
+      <select id="actorSelect">
+        {% for p in persons %}
+          <option value="{{ p.person_id }}" {% if p.person_id == actor_id %}selected{% endif %}>
+            {{ p.display_name }} · {{ p.role_default }}{% if not p.is_natural_person %} (AI tool){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  </header>
+  <nav class="nav">
+    <a href="/?actor={{ actor_id }}">Dashboard</a>
+    <a href="/research?actor={{ actor_id }}">Research Registry</a>
+    <a href="/disclosures?actor={{ actor_id }}">Disclosure Firewall</a>
+    <a href="/calendar?actor={{ actor_id }}">Filing Calendar</a>
+    <a href="/events?actor={{ actor_id }}">Evidence Log</a>
+  </nav>
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    document.getElementById('actorSelect').addEventListener('change', function () {
+      document.cookie = 'actor=' + this.value + '; path=/';
+      const url = new URL(window.location.href);
+      url.searchParams.set('actor', this.value);
+      window.location.href = url.toString();
+    });
+  </script>
+</body>
+</html>
