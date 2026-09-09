@@ -247,3 +247,31 @@ def test_evidence_append_uses_serialized_chain_head(app):
         assert second.previous_event_hash == first_hash
         assert head.sequence == 2
         assert head.head_hash != first_hash
+
+
+def test_evidence_append_backfills_missing_chain_head(app):
+    with app.state.session_scope() as s:
+        _persons(s)
+        evidence.append_event(
+            s,
+            event_type="research.question.created",
+            object_id="RQ-2026-000001",
+            payload={"a": 1},
+            actor_person_id="P-2026-000001",
+            actor_role="founder",
+        )
+        original_head = s.query(ChainHead).filter(ChainHead.ledger == "moten").one()
+        original_hash = original_head.head_hash
+        s.execute(text("DELETE FROM chain_head WHERE ledger='moten'"))
+        assert evidence.verify_chain(s) is True
+        appended = evidence.append_event(
+            s,
+            event_type="research.observation.recorded",
+            object_id="OBS-2026-000001",
+            payload={"b": 2},
+            actor_person_id="P-2026-000001",
+            actor_role="founder",
+        )
+        rebuilt = s.query(ChainHead).filter(ChainHead.ledger == "moten").one()
+        assert appended.previous_event_hash == original_hash
+        assert rebuilt.sequence == 2

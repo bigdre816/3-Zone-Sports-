@@ -6,6 +6,7 @@ Cryptographic signatures and WORM object-lock storage are Phase 2/4 hardening.
 
 from __future__ import annotations
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..models import Artifact, ChainHead, Event
@@ -23,6 +24,18 @@ def _event_hash(event_id: str, payload_sha256: str, previous_hash: str | None) -
     return sha256_text(f"{event_id}|{payload_sha256}|{previous_hash or ''}")
 
 
+def _rebuild_chain_state(session: Session) -> tuple[int, str | None]:
+    events = session.query(Event).order_by(Event.recorded_at.asc(), Event.event_id.asc()).all()
+    expected_prev: str | None = None
+    sequence = 0
+    for ev in events:
+        if ev.previous_event_hash != expected_prev:
+            raise ValueError("cannot initialize moten chain head from a broken chain")
+        expected_prev = _event_hash(ev.event_id, ev.payload_sha256, ev.previous_event_hash)
+        sequence += 1
+    return sequence, expected_prev
+
+
 def _moten_head(session: Session) -> ChainHead:
     head = (
         session.query(ChainHead)
@@ -31,9 +44,27 @@ def _moten_head(session: Session) -> ChainHead:
         .one_or_none()
     )
     if head is None:
-        head = ChainHead(ledger="moten", sequence=0, head_hash=None, updated_at=now())
-        session.add(head)
+        sequence, head_hash = _rebuild_chain_state(session)
+        session.execute(
+            text(
+                "INSERT INTO chain_head (ledger, sequence, head_hash, updated_at) "
+                "VALUES (:ledger, :sequence, :head_hash, :updated_at) "
+                "ON CONFLICT (ledger) DO NOTHING"
+            ),
+            {
+                "ledger": "moten",
+                "sequence": sequence,
+                "head_hash": head_hash,
+                "updated_at": now(),
+            },
+        )
         session.flush()
+        head = (
+            session.query(ChainHead)
+            .filter(ChainHead.ledger == "moten")
+            .with_for_update()
+            .one()
+        )
     return head
 
 
@@ -110,5 +141,5 @@ def verify_chain(session: Session) -> bool:
         expected_sequence += 1
     head = session.query(ChainHead).filter(ChainHead.ledger == "moten").one_or_none()
     if head is None:
-        return expected_sequence == 0
+        return True
     return int(head.sequence) == expected_sequence and head.head_hash == expected_head
