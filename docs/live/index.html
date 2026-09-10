@@ -57,7 +57,8 @@
       <a href="/live/" class="active">Live</a>
       <a href="/schedules/">Schedules</a>
       <a href="/archives/">Archives</a>
-      <a href="/#signin">Member Sign In</a>
+      <a href="https://three-zone-sports.onrender.com/" data-member-link>Member portal</a>
+      <a href="https://three-zone-sports.onrender.com/ops" data-ops-link>Back portal</a>
     </nav>
   </header>
 
@@ -79,7 +80,7 @@
     async function loadLiveGames() {
       const container = document.getElementById('live-container');
       try {
-        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.member.live);
+        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.live);
         const events = data.events || [];
         
         if (events.length === 0) {
@@ -87,30 +88,67 @@
           return;
         }
 
-        container.innerHTML = events.map(event => `
-          <div class="card">
-            <div class="live-badge"><span class="live-dot"></span> LIVE NOW</div>
-            <h3>${event.away_team || 'Away'} vs ${event.home_team || 'Home'}</h3>
-            <p>${event.sport || 'Sports'} · ${event.level || 'Competition'}</p>
-            <p style="font-size: 12px; color: var(--muted);">Score: ${event.home_score || '—'} - ${event.away_score || '—'}</p>
-            <p style="font-size: 12px; color: var(--muted);">Location: ${event.location || 'TBD'}</p>
-            <button style="width: 100%; margin-top: 12px;" onclick="joinGame('${event.event_id}')">Watch Live</button>
-          </div>
-        `).join('');
+        const cards = events.map(event => {
+          const card = document.createElement('div');
+          card.className = 'card';
+
+          const badge = document.createElement('div');
+          badge.className = 'live-badge';
+          const dot = document.createElement('span');
+          dot.className = 'live-dot';
+          badge.append(dot, ` ${event.status === 'live' ? 'LIVE NOW' : event.status === 'green' ? 'READY TO START' : 'UPCOMING'}`);
+
+          const title = document.createElement('h3');
+          title.textContent = event.title || 'Verified game';
+
+          const zone = document.createElement('p');
+          zone.textContent = `${event.zone || 'Zone'} · ${event.category || 'general'}`;
+
+          const status = document.createElement('p');
+          status.style.fontSize = '12px';
+          status.style.color = 'var(--muted)';
+          status.textContent = `Status: ${event.status || 'scheduled'}`;
+
+          const scoreboard = document.createElement('p');
+          scoreboard.style.fontSize = '12px';
+          scoreboard.style.color = 'var(--muted)';
+          scoreboard.textContent = `Scoreboard: ${event.scoreboard && Object.keys(event.scoreboard).length ? JSON.stringify(event.scoreboard) : 'Not posted yet'}`;
+
+          const button = document.createElement('button');
+          button.style.width = '100%';
+          button.style.marginTop = '12px';
+          button.textContent = 'Watch Live';
+          button.addEventListener('click', () => joinGame(event.event_id));
+
+          card.append(badge, title, zone, status, scoreboard, button);
+          return card;
+        });
+        container.replaceChildren(...cards);
       } catch (error) {
-        container.innerHTML = `<div class="error" style="grid-column: 1/-1;">Unable to load live games. ${error.message || 'Please try again.'}</div>`;
+        container.innerHTML = `<div class="unavailable" style="grid-column: 1/-1;">Live games are temporarily unavailable. ${error.message || 'Please check back soon.'}</div>`;
       }
     }
 
-    function joinGame(eventId) {
-      if (!ThreeZoneConfig.BACKEND_URL) {
+    async function joinGame(eventId) {
+      const url = await ThreeZoneConfig.memberAppUrl('/?event=' + encodeURIComponent(eventId));
+      if (!url) {
         alert('Member services are not yet configured.');
         return;
       }
-      window.location.href = ThreeZoneConfig.BACKEND_URL + '/?event=' + eventId;
+      window.location.href = url;
     }
 
-    document.addEventListener('DOMContentLoaded', loadLiveGames);
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.ThreeZoneConfig) {
+        document.querySelectorAll('[data-member-link]').forEach(function (el) {
+          el.href = ThreeZoneConfig.memberOrigin();
+        });
+        document.querySelectorAll('[data-ops-link]').forEach(function (el) {
+          el.href = ThreeZoneConfig.opsUrl();
+        });
+      }
+      loadLiveGames();
+    });
     setInterval(loadLiveGames, 30000);
   </script>
 </body>

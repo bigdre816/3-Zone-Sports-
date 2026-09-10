@@ -1,14 +1,18 @@
-# Render Blueprint for the Three-Zone Sports member app.
-# The public marketing site remains on GitHub Pages.
+# Render Blueprint — Three-Zone Sports member app.
+# Matches the Docker services already created on the Render dashboard.
+#
+# dockerfilePath and dockerContext are relative to rootDir. The dashboard still
+# has Root Directory = three-zone-mvp from the first Blueprint. Prefixing those
+# paths with three-zone-mvp makes Render lstat three-zone-mvp/three-zone-mvp
+# and the build dies before Docker starts.
 services:
   - type: web
     name: three-zone-sports
-    runtime: python
+    runtime: docker
     plan: free
     rootDir: three-zone-mvp
-    pythonVersion: "3.12.8"
-    buildCommand: pip install -r requirements.txt
-    startCommand: python run.py --host 0.0.0.0
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /api/health
     envVars:
       - key: TZ_ENV
@@ -18,7 +22,7 @@ services:
       - key: TZ_WS_HOST
         value: 0.0.0.0
       - key: TZ_ALLOWED_ORIGINS
-        value: https://3zonesports.com,https://www.3zonesports.com
+        value: https://3zonesports.com,https://www.3zonesports.com,https://three-zone-sports.onrender.com
       - key: TZ_PUBLIC_BASE_URL
         value: https://3zonesports.com
       - key: TZ_LIVE_MEDIA_PROVIDER

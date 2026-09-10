@@ -51,7 +51,8 @@
       <a href="/live/">Live</a>
       <a href="/schedules/" class="active">Schedules</a>
       <a href="/archives/">Archives</a>
-      <a href="/#signin">Member Sign In</a>
+      <a href="https://three-zone-sports.onrender.com/" data-member-link>Member portal</a>
+      <a href="https://three-zone-sports.onrender.com/ops" data-ops-link>Back portal</a>
     </nav>
   </header>
 
@@ -73,7 +74,7 @@
     async function loadSchedule() {
       const container = document.getElementById('schedule-container');
       try {
-        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.member.schedules);
+        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.schedules);
         const schedules = data.schedules || [];
         
         if (schedules.length === 0) {
@@ -84,18 +85,18 @@
         let html = '<table><thead><tr><th>Date & Time</th><th>Teams</th><th>Sport</th><th>Level</th><th>Location</th><th>Status</th></tr></thead><tbody>';
         
         schedules.forEach(event => {
-          const date = new Date(event.start_time);
+          const date = new Date((event.start_at || 0) * 1000);
           const dateStr = date.toLocaleDateString();
           const timeStr = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
           
           html += `
             <tr>
               <td><span class="time">${dateStr}<br>${timeStr}</span></td>
-              <td>${event.away_team || 'Away'} vs ${event.home_team || 'Home'}</td>
+              <td>${event.team || 'Team'} vs ${event.opponent || 'Opponent'}</td>
               <td>${event.sport || 'Sports'}</td>
               <td>${event.level || '—'}</td>
               <td>${event.location || 'TBD'}</td>
-              <td><span class="status">${event.status || 'Scheduled'}</span></td>
+              <td><span class="status">${event.home_away || event.status || 'Scheduled'}</span></td>
             </tr>
           `;
         });
@@ -103,11 +104,21 @@
         html += '</tbody></table>';
         container.innerHTML = html;
       } catch (error) {
-        container.innerHTML = `<div class="error">Unable to load schedule. ${error.message || 'Please try again.'}</div>`;
+        container.innerHTML = `<div class="unavailable">Schedules are temporarily unavailable. ${error.message || 'Please check back soon.'}</div>`;
       }
     }
 
-    document.addEventListener('DOMContentLoaded', loadSchedule);
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.ThreeZoneConfig) {
+        document.querySelectorAll('[data-member-link]').forEach(function (el) {
+          el.href = ThreeZoneConfig.memberOrigin();
+        });
+        document.querySelectorAll('[data-ops-link]').forEach(function (el) {
+          el.href = ThreeZoneConfig.opsUrl();
+        });
+      }
+      loadSchedule();
+    });
   </script>
 </body>
 </html>
