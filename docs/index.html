@@ -110,6 +110,44 @@
       font-size: 14px;
     }
 
+    a.btn {
+      display: inline-block;
+      padding: 12px 24px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: var(--bg);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    a.btn:hover { opacity: 0.9; text-decoration: none; }
+    a.btn.secondary, button.secondary {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--text);
+    }
+    .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 28px; }
+    .connect-box {
+      margin: 0 0 32px;
+      padding: 20px 24px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      max-width: 640px;
+    }
+    .connect-copy { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+    .connect-copy.ok { color: var(--success); }
+    .connect-form { display: flex; gap: 8px; flex-wrap: wrap; }
+    .connect-form input {
+      flex: 1 1 16rem;
+      min-width: 0;
+      border: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font: inherit;
+    }
+
     .status-badge {
       font-size: 12px;
       padding: 6px 12px;
@@ -361,7 +399,8 @@
       <a href="/live/" class="nav-link">Live</a>
       <a href="/schedules/" class="nav-link">Schedules</a>
       <a href="/archives/" class="nav-link">Archives</a>
-      <a href="#signin" class="nav-link">Member Sign In</a>
+      <a href="https://three-zone-sports.onrender.com/" class="nav-link" data-member-link>Member portal</a>
+      <a href="https://three-zone-sports.onrender.com/ops" class="nav-link" data-ops-link>Back portal</a>
     </nav>
     <div class="header-actions">
       <div class="status-badge" id="backend-status" title="Backend service status">Checking...</div>
@@ -374,7 +413,18 @@
     <section id="home">
       <p class="eyebrow">Welcome to Three-Zone Sports</p>
       <h1>Watch it. Save it. Clip it. Share it.</h1>
-      <p class="subtitle">Verified live games, team schedules, and school archives for high school and youth sports. Access everything in the Three-Zone app for members.</p>
+      <p class="subtitle">Public site, member portal, and back portal. Sign in when you are ready to watch.</p>
+      <div class="hero-actions">
+        <a class="btn" href="https://three-zone-sports.onrender.com/" data-member-link>Member portal</a>
+        <a class="btn secondary" href="https://three-zone-sports.onrender.com/ops" data-ops-link>Back portal</a>
+      </div>
+      <div class="connect-box" id="connect-box">
+        <p class="connect-copy" id="connect-status">Member portal and back portal open on the Render app. If your URL is different, paste it once.</p>
+        <form id="connect-form" class="connect-form">
+          <input id="connect-url" type="url" placeholder="https://three-zone-sports.onrender.com" autocomplete="off" />
+          <button type="submit">Connect</button>
+        </form>
+      </div>
     </section>
 
     <!-- Featured Sections -->
@@ -437,13 +487,16 @@
       <div class="section-header">
         <div>
           <h2>Member Access</h2>
-          <p>Sign in to watch member-only live games and archives.</p>
+          <p>Sign in on the member portal. Staff use the back portal.</p>
         </div>
       </div>
       <div class="unavailable" style="padding: 40px; text-align: center;">
         <p style="margin: 0 0 20px; font-size: 18px;">Ready to watch?</p>
-        <button id="signin-btn" onclick="handleMemberSignIn()">Sign In or Create Account</button>
-        <p style="margin: 20px 0 0; font-size: 12px; color: var(--muted);">Members get access to live games in their zone, complete game archives, and the Three-Zone community.</p>
+        <div class="hero-actions" style="justify-content: center; margin-bottom: 0;">
+          <a class="btn" href="https://three-zone-sports.onrender.com/" data-member-link>Open member portal</a>
+          <a class="btn secondary" href="https://three-zone-sports.onrender.com/ops" data-ops-link>Open back portal</a>
+        </div>
+        <p style="margin: 20px 0 0; font-size: 12px; color: var(--muted);">Member login: demo-viewer / change-me-viewer-local. Back portal: demo-owner / change-me-owner-local.</p>
       </div>
     </section>
   </main>
@@ -477,16 +530,18 @@
       try {
         const isHealthy = await ThreeZoneConfig.checkHealth();
         if (isHealthy) {
-          badge.textContent = 'Backend Online';
+          badge.textContent = 'Member app live';
           badge.classList.add('ok');
-          badge.title = 'Backend service is running';
+          badge.title = 'Member portal and back portal are answering';
         } else {
-          badge.textContent = 'Backend Offline';
-          badge.title = 'Backend service is not responding';
+          badge.textContent = 'Member app starting';
+          badge.classList.remove('ok');
+          badge.title = 'Public site is up. Open Member portal or Back portal — Render still has to finish deploying.';
         }
       } catch {
-        badge.textContent = 'Backend Offline';
-        badge.title = 'Backend service is not responding';
+        badge.textContent = 'Member app starting';
+        badge.classList.remove('ok');
+        badge.title = 'Public site is up. Open Member portal or Back portal — Render still has to finish deploying.';
       }
     }
 
@@ -548,33 +603,44 @@
       }
     }
 
-    // Member sign in handler
-    async function handleMemberSignIn() {
-      const url = await ThreeZoneConfig.memberAppUrl('/');
-      if (!url) {
-        alert('Member services are not yet configured. Please check back soon.');
-        return;
+    function bindPortals() {
+      const memberUrl = ThreeZoneConfig.memberOrigin();
+      const opsUrl = ThreeZoneConfig.opsUrl();
+      document.querySelectorAll('[data-member-link]').forEach(function (el) { el.href = memberUrl || '#connect-box'; });
+      document.querySelectorAll('[data-ops-link]').forEach(function (el) { el.href = opsUrl || '#connect-box'; });
+      const input = document.getElementById('connect-url');
+      const status = document.getElementById('connect-status');
+      if (input && memberUrl) input.value = memberUrl;
+      if (status) {
+        status.textContent = memberUrl
+          ? 'Member portal and back portal open at ' + memberUrl
+          : 'Paste your Render URL once. That turns on Member portal and Back portal.';
+        status.className = memberUrl ? 'connect-copy ok' : 'connect-copy';
       }
-      window.location.href = url;
     }
 
-    // Watch live handler
+    document.getElementById('connect-form')?.addEventListener('submit', function (event) {
+      event.preventDefault();
+      const raw = document.getElementById('connect-url').value;
+      ThreeZoneConfig.setMemberOrigin(raw);
+      bindPortals();
+      checkBackendStatus();
+    });
+
     async function watchLive(eventId) {
       const url = await ThreeZoneConfig.memberAppUrl('/?event=' + encodeURIComponent(eventId));
       if (!url) {
-        alert('Member services are not yet configured. Please check back soon.');
+        document.getElementById('connect-box').scrollIntoView({ behavior: 'smooth' });
         return;
       }
       window.location.href = url;
     }
 
-    // Initialize on page load
     document.addEventListener('DOMContentLoaded', function() {
+      bindPortals();
       checkBackendStatus();
       loadLiveEvents();
       loadUpcomingEvents();
-
-      // Refresh status every 30 seconds
       setInterval(checkBackendStatus, 30000);
     });
   </script>

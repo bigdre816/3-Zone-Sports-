@@ -189,6 +189,16 @@ class _Handler(BaseHTTPRequestHandler):
         for index, allowed in enumerate(self.cp.config.allowed_origins):
             if origin == allowed:
                 return True, index
+        parsed = urlparse(origin)
+        request_host = (self.headers.get("Host") or "").split(":")[0].lower()
+        origin_host = (parsed.hostname or "").lower()
+        if (
+            origin_host
+            and request_host
+            and origin_host == request_host
+            and parsed.scheme in ("http", "https")
+        ):
+            return True, None
         return False, None
 
     def _base_headers(self, no_store: bool = True) -> None:

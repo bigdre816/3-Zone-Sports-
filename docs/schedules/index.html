@@ -51,7 +51,8 @@
       <a href="/live/">Live</a>
       <a href="/schedules/" class="active">Schedules</a>
       <a href="/archives/">Archives</a>
-      <a href="/#signin">Member Sign In</a>
+      <a href="https://three-zone-sports.onrender.com/" data-member-link>Member portal</a>
+      <a href="https://three-zone-sports.onrender.com/ops" data-ops-link>Back portal</a>
     </nav>
   </header>
 
@@ -107,7 +108,17 @@
       }
     }
 
-    document.addEventListener('DOMContentLoaded', loadSchedule);
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.ThreeZoneConfig) {
+        document.querySelectorAll('[data-member-link]').forEach(function (el) {
+          el.href = ThreeZoneConfig.memberOrigin();
+        });
+        document.querySelectorAll('[data-ops-link]').forEach(function (el) {
+          el.href = ThreeZoneConfig.opsUrl();
+        });
+      }
+      loadSchedule();
+    });
   </script>
 </body>
 </html>
