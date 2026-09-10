@@ -37,6 +37,7 @@ def _rebuild_chain_state(session: Session) -> tuple[int, str | None]:
 
 
 def _moten_head(session: Session) -> ChainHead:
+    """Return the locked Moten chain head, rebuilding it when missing."""
     head = (
         session.query(ChainHead)
         .filter(ChainHead.ledger == "moten")
