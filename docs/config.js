@@ -15,7 +15,9 @@ function resolveBackendOrigin() {
   const runtimeOverride = normalizeOrigin(window.__THREE_ZONE_BACKEND_URL__);
   if (runtimeOverride) return runtimeOverride;
 
-  const meta = document.querySelector('meta[name="three-zone-backend"]');
+  const meta = typeof document !== 'undefined'
+    ? document.querySelector('meta[name="three-zone-backend"]')
+    : null;
   const metaOverride = normalizeOrigin(meta && meta.content);
   if (metaOverride) return metaOverride;
 
@@ -24,7 +26,8 @@ function resolveBackendOrigin() {
   }
 
   const { hostname, protocol } = window.location;
-  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
+  if (hostname === 'localhost' || hostname === '127.0.0.1' ||
+      hostname === '::1' || hostname === '[::1]') {
     return 'http://localhost:8000';
   }
   if (hostname === '3zonesports.com' || hostname === 'www.3zonesports.com') {
@@ -78,11 +81,12 @@ const ThreeZoneConfig = {
    */
   async fetch(endpoint, options = {}) {
     const url = this.BACKEND_URL ? `${this.BACKEND_URL}${endpoint}` : endpoint;
-    
-    const headers = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
+
+    const headers = {...options.headers};
+    if (options.body !== undefined &&
+        !Object.keys(headers).some((name) => name.toLowerCase() === 'content-type')) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     try {
       const response = await fetch(url, {

@@ -104,6 +104,18 @@ class PortalTests(unittest.TestCase):
         try:
             host, port = httpd.server_address
             base = f"http://{host}:{port}"
+            preflight = urllib.request.Request(
+                base + "/api/public/live",
+                method="OPTIONS",
+                headers={
+                    "Origin": "http://localhost",
+                    "Access-Control-Request-Method": "GET",
+                    "Access-Control-Request-Headers": "Content-Type",
+                },
+            )
+            with urllib.request.urlopen(preflight, timeout=5) as response:
+                self.assertEqual(response.status, 204)
+                self.assertEqual(response.headers["Access-Control-Allow-Origin"], "http://localhost")
             for path, key in (
                 ("/api/public/live", "events"),
                 ("/api/public/schedules", "schedules"),
