@@ -140,7 +140,7 @@ def _routes():
         ("POST", re.compile(r"^/api/network/uploads/(?P<job_id>upl_[a-z0-9]+)/cancel$"), "h_net_upload_cancel", "member"),
         ("POST", re.compile(r"^/api/network/uploads/(?P<job_id>upl_[a-z0-9]+)/retry$"), "h_net_upload_retry", "member"),
         ("POST", re.compile(r"^/api/network/webhooks/media$"), "h_net_webhook", "none"),
-        ("POST", re.compile(r"^/api/network/provider/fake/upload/(?P<token>[A-Za-z0-9_-]+)$"), "h_net_fake_upload", "none"),
+        ("POST", re.compile(r"^/api/network/provider/fake/upload/(?P<token>[A-Za-z0-9_-]+)$"), "h_net_fake_upload", "member"),
         ("POST", re.compile(r"^/api/network/posts$"), "h_net_post_create", "member"),
         ("GET", re.compile(r"^/api/network/posts/(?P<post_id>pst_[a-z0-9]+)$"), "h_net_post_get", "optional"),
         ("POST", re.compile(r"^/api/network/posts/(?P<post_id>pst_[a-z0-9]+)$"), "h_net_post_update", "member"),
@@ -507,6 +507,7 @@ class _Handler(BaseHTTPRequestHandler):
         self._auth_cookie_response(result)
 
     def h_auth_register(self, p, b, u):
+        self.network.check_register_rate(self.client_address[0] if self.client_address else "unknown")
         body = b or {}
         result = self.cp.register_viewer(
             body.get("username", ""), body.get("password", ""), body.get("display_name", ""),
@@ -912,6 +913,7 @@ class _Handler(BaseHTTPRequestHandler):
         })
 
     def h_owner_staff(self, p, b, u):
+        self.network.check_staff_rate(u.get("user_id") if u else "unknown")
         body = b or {}
         self._send_json(201, self.cp.issue_staff(
             u,
@@ -1007,7 +1009,7 @@ class _Handler(BaseHTTPRequestHandler):
         ))
 
     def h_net_fake_upload(self, p, b, u):
-        self._send_json(200, self.network.complete_fake_upload(p["token"], b or {}))
+        self._send_json(200, self.network.complete_fake_upload(p["token"], b or {}, user=u))
 
     def h_net_post_create(self, p, b, u):
         self._send_json(201, {"post": self.network.create_post(u, b or {})})

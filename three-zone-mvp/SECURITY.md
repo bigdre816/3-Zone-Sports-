@@ -45,6 +45,11 @@ tokens are additionally scoped to a single `event_id` and `source`.
 - `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   `Referrer-Policy: no-referrer`, `Cache-Control: no-store` on API and media.
 - Bounded request bodies; disallowed cross-origin requests rejected before work.
+- Login and register share one per-IP auth rate limit (8/min). Owner staff
+  issuance is rate-limited per owner. Demo fake-upload completion requires a
+  member session and the caller's own upload job — a stolen token is not enough.
+- Session cookie is HTTP-only and `SameSite=Strict`. API JSON never includes
+  `password_hash` or seed secrets.
 
 ## Production launch gates
 

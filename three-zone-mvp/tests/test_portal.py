@@ -448,6 +448,7 @@ class AuthHttpTests(unittest.TestCase):
         status, done, _ = self._json(
             "POST", f"/api/network/provider/fake/upload/{token}",
             {"filename": "sideline.jpg", "byte_size": 12},
+            cookie=cookie,
         )
         self.assertEqual(status, 200, done)
         status, published, _ = self._json("POST", "/api/network/posts", {
@@ -518,6 +519,103 @@ class AuthHttpTests(unittest.TestCase):
         })
         self.assertEqual(status, 400)
         self.assertEqual(reserved["code"], "bad_username")
+
+    def _assert_no_secrets(self, payload):
+        blob = str(payload).lower()
+        for needle in ("password_hash", "change-me-owner", "token_secret", "pbkdf2"):
+            self.assertNotIn(needle, blob)
+
+    def test_navigate_member_and_ops_without_breaking_security(self):
+        status, body, headers = self._json("POST", "/api/auth/register", {
+            "username": "nav-fan",
+            "password": "password123",
+            "display_name": "Nav Fan",
+        })
+        self.assertEqual(status, 200, body)
+        cookie = self._cookie(headers)
+        self.assertIn("HttpOnly", headers.get("Set-Cookie") or "")
+        self.assertIn("SameSite=Strict", headers.get("Set-Cookie") or "")
+        self._assert_no_secrets(body)
+
+        member_gets = (
+            "/api/member/me",
+            "/api/member/live",
+            "/api/member/schedules",
+            "/api/member/archives",
+            "/api/member/feed",
+            "/api/member/notifications",
+            "/api/member/settings",
+            "/api/member/saved",
+            "/api/network/me/profile",
+            "/api/network/feed",
+            "/api/network/inbox",
+        )
+        for path in member_gets:
+            st, payload, _ = self._json("GET", path, cookie=cookie)
+            self.assertEqual(st, 200, (path, payload))
+            self._assert_no_secrets(payload)
+
+        status, upload, _ = self._json("POST", "/api/network/uploads", {"kind": "photo"}, cookie=cookie)
+        self.assertEqual(status, 201, upload)
+        token = upload["upload_url"].rsplit("/", 1)[-1]
+        status, anon, _ = self._json(
+            "POST", f"/api/network/provider/fake/upload/{token}",
+            {"filename": "sideline.jpg", "byte_size": 12},
+        )
+        self.assertEqual(status, 401, anon)
+        status, other, oheaders = self._json("POST", "/api/auth/register", {
+            "username": "nav-other",
+            "password": "password123",
+            "display_name": "Nav Other",
+        })
+        self.assertEqual(status, 200, other)
+        ocookie = self._cookie(oheaders)
+        status, stolen, _ = self._json(
+            "POST", f"/api/network/provider/fake/upload/{token}",
+            {"filename": "sideline.jpg", "byte_size": 12},
+            cookie=ocookie,
+        )
+        self.assertEqual(status, 403, stolen)
+        self.assertEqual(stolen["code"], "upload_forbidden")
+        status, done, _ = self._json(
+            "POST", f"/api/network/provider/fake/upload/{token}",
+            {"filename": "sideline.jpg", "byte_size": 12},
+            cookie=cookie,
+        )
+        self.assertEqual(status, 200, done)
+        status, published, _ = self._json("POST", "/api/network/posts", {
+            "upload_job_id": upload["upload_job_id"],
+            "caption": "Nav upload still works",
+            "sport": "basketball",
+            "visibility": "public",
+        }, cookie=cookie)
+        self.assertEqual(status, 201, published)
+
+        for path in ("/api/member/me", "/api/network/uploads", "/api/owner/staff", "/api/owner/inventory"):
+            method = "POST" if path.endswith("/uploads") or path.endswith("/staff") else "GET"
+            st, payload, _ = self._json(method, path, {} if method == "POST" else None)
+            self.assertIn(st, (401, 400), (path, st, payload))
+
+        status, owner, oph = self._json("POST", "/api/auth/login", {
+            "username": "demo-owner",
+            "password": self.DEMO_SEED_PASSWORDS["demo-owner"],
+        })
+        self.assertEqual(status, 200, owner)
+        oc = self._cookie(oph)
+        self._assert_no_secrets(owner)
+        for path in ("/api/me", "/api/events", "/api/analytics", "/api/audit", "/api/owner/inventory"):
+            st, payload, _ = self._json("GET", path, cookie=oc)
+            self.assertEqual(st, 200, (path, payload))
+            self._assert_no_secrets(payload)
+
+        status, forbidden, _ = self._json("POST", "/api/owner/staff", {
+            "username": "nav-staff",
+            "password": "password123",
+            "display_name": "Nope",
+            "role": "owner",
+        }, cookie=cookie)
+        self.assertEqual(status, 403, forbidden)
+        self.assertEqual(forbidden["code"], "owner_required")
 
 
 if __name__ == "__main__":

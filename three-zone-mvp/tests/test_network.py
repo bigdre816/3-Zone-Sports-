@@ -60,6 +60,20 @@ class IdentityUnificationTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status, 429)
         self.net.check_login_rate("203.0.113.10")
 
+    def test_register_shares_auth_rate_bucket(self):
+        for _ in range(8):
+            self.net.check_register_rate("198.51.100.7")
+        with self.assertRaises(RateLimitError):
+            self.net.check_login_rate("198.51.100.7")
+
+    def test_staff_rate_limit_is_per_owner(self):
+        for _ in range(10):
+            self.net.check_staff_rate("demo-owner")
+        with self.assertRaises(RateLimitError) as ctx:
+            self.net.check_staff_rate("demo-owner")
+        self.assertEqual(ctx.exception.code, "rate_limited")
+        self.net.check_staff_rate("other-owner")
+
 
 class ProfileTests(unittest.TestCase):
     def setUp(self):
@@ -87,6 +101,16 @@ class UploadAndWebhookTests(unittest.TestCase):
     def setUp(self):
         self.cp, self.portal, self.net, self.provider = build_net()
         self.member = self.cp.get_user("demo-viewer")
+
+    def test_http_fake_complete_requires_owning_member(self):
+        other = self.cp.register_viewer("other-uploader", "password123", "Other")["user"]
+        contract = self.net.create_upload(self.member, {"kind": "photo"})
+        token = contract["upload_url"].rsplit("/", 1)[-1]
+        with self.assertRaises(ForbiddenError) as ctx:
+            self.net.complete_fake_upload(token, {"filename": "x.jpg"}, user=other)
+        self.assertEqual(ctx.exception.code, "upload_forbidden")
+        done = self.net.complete_fake_upload(token, {"filename": "x.jpg"}, user=self.member)
+        self.assertTrue(done.get("ok") or done.get("status") or done)
 
     def test_direct_upload_contract_has_no_provider_token(self):
         contract = self.net.create_upload(self.member, {"kind": "game", "idempotency_key": "g1"})

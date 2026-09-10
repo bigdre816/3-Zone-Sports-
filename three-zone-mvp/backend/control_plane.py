@@ -240,6 +240,8 @@ SITE_ROUTES = [
      "purpose": "Follow a profile"},
     {"method": "POST", "path": "/api/network/uploads", "tier": "member",
      "purpose": "Authorize a one-time direct upload (no provider token)"},
+    {"method": "POST", "path": "/api/network/provider/fake/upload/{token}", "tier": "member",
+     "purpose": "Complete a demo upload; caller must own the job"},
     {"method": "POST", "path": "/api/network/webhooks/media", "tier": "service",
      "purpose": "Idempotent media-provider webhook"},
     {"method": "POST", "path": "/api/network/posts", "tier": "member",

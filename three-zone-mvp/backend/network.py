@@ -134,8 +134,17 @@ class NetworkService(HuddleExtensions):
             (_id("ntf"), profile_id, kind, actor_profile_id, subject_type, subject_id, _now(), None),
         )
 
+    def check_auth_rate(self, client_key: str) -> None:
+        self.limiter.check(f"auth:{client_key or 'unknown'}", 8)
+
     def check_login_rate(self, client_key: str) -> None:
-        self.limiter.check(f"login:{client_key or 'unknown'}", 8)
+        self.check_auth_rate(client_key)
+
+    def check_register_rate(self, client_key: str) -> None:
+        self.check_auth_rate(client_key)
+
+    def check_staff_rate(self, actor_id: str) -> None:
+        self.limiter.check(f"staff:{actor_id or 'unknown'}", 10)
 
     def _parse_tag_list(self, value) -> list[str]:
         if value is None:
@@ -646,7 +655,10 @@ class NetworkService(HuddleExtensions):
         )
         return self.create_upload(user, {"kind": job["intended_type"], "retry": True})
 
-    def complete_fake_upload(self, token: str, meta: dict | None = None) -> dict:
+    def complete_fake_upload(self, token: str, meta: dict | None = None, user=None) -> dict:
+        if user is not None:
+            self._require_fake_upload_owner(user, token)
+            self.limiter.check(f"fake_complete:{user.get('user_id') or 'unknown'}", 30)
         payload = None
         if hasattr(self.provider, "uploads") and token in getattr(self.provider, "uploads", {}):
             payload = self.provider.complete_upload(token, meta or {})
@@ -657,6 +669,19 @@ class NetworkService(HuddleExtensions):
         return self.apply_webhook(
             {"X-Network-Webhook-Secret": self.cp.config.fake_webhook_secret}, payload,
         )
+
+    def _require_fake_upload_owner(self, user, token: str) -> None:
+        job = self.db.query_one("SELECT * FROM upload_jobs WHERE upload_token=?", (token,))
+        if not job:
+            suffix = f"/api/network/provider/fake/upload/{token}"
+            job = self.db.query_one("SELECT * FROM upload_jobs WHERE upload_url=?", (suffix,))
+        if not job:
+            raise ForbiddenError("unknown fake upload token", "unknown_upload")
+        if self._staff(user):
+            return
+        profile = self.ensure_profile(user)
+        if job["owner_profile_id"] != profile["profile_id"]:
+            raise ForbiddenError("not your upload", "upload_forbidden")
 
     def apply_webhook(self, headers: dict, body: dict, raw_body: bytes | None = None) -> dict:
         body = body or {}
