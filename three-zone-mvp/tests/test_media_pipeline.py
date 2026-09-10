@@ -596,6 +596,15 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg.media_provider, "demo")
         self.assertEqual(cfg.lease_ttl, 60)
 
+    def test_27_port_env_is_used_on_render(self):
+        os.environ.pop("TZ_HTTP_PORT", None)
+        os.environ["PORT"] = "10000"
+        try:
+            cfg = Config.from_env()
+            self.assertEqual(cfg.http_port, 10000)
+        finally:
+            os.environ.pop("PORT", None)
+
     def test_27b_cloudflare_env_alias_is_not_public(self):
         os.environ["CLOUDFLARE"] = "cf-token-alias-value"
         try:
