@@ -172,14 +172,14 @@ class _Handler(BaseHTTPRequestHandler):
             "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
         )
 
-    def _origin_allowed(self) -> tuple[bool, str | None]:
+    def _origin_allowed(self) -> tuple[bool, int | None]:
         origin = self.headers.get("Origin")
         if origin is None:
             return True, None
-        for allowed in self.cp.config.allowed_origins:
+        for index, allowed in enumerate(self.cp.config.allowed_origins):
             if origin == allowed:
-                return True, allowed
-        return False, origin
+                return True, index
+        return False, None
 
     def _base_headers(self, no_store: bool = True) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -188,9 +188,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", self._csp())
         if no_store:
             self.send_header("Cache-Control", "no-store")
-        ok, origin = self._origin_allowed()
-        if origin is not None and ok:
-            self.send_header("Access-Control-Allow-Origin", origin)
+        ok, origin_index = self._origin_allowed()
+        if origin_index is not None and ok:
+            self.send_header("Access-Control-Allow-Origin", self.cp.config.allowed_origins[origin_index])
             self.send_header("Access-Control-Allow-Credentials", "true")
             self.send_header("Vary", "Origin")
 
@@ -278,10 +278,10 @@ class _Handler(BaseHTTPRequestHandler):
 
     # -- dispatch ----------------------------------------------------------
     def do_OPTIONS(self):
-        ok, origin = self._origin_allowed()
+        ok, origin_index = self._origin_allowed()
         self.send_response(HTTPStatus.NO_CONTENT)
         self._base_headers(no_store=True)
-        if origin is not None and ok:
+        if origin_index is not None and ok:
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers",
                              "Authorization, Content-Type, X-Media-Service-Key, X-Webhook-Secret, "
