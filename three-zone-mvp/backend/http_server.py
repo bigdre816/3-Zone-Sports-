@@ -182,11 +182,24 @@ class _Handler(BaseHTTPRequestHandler):
             "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
         )
 
-    def _origin_allowed(self) -> bool:
+    def _origin_allowed(self) -> tuple[bool, int | None]:
         origin = self.headers.get("Origin")
         if origin is None:
-            return True
-        return any(origin == allowed for allowed in self.cp.config.allowed_origins)
+            return True, None
+        for index, allowed in enumerate(self.cp.config.allowed_origins):
+            if origin == allowed:
+                return True, index
+        parsed = urlparse(origin)
+        request_host = (self.headers.get("Host") or "").split(":")[0].lower()
+        origin_host = (parsed.hostname or "").lower()
+        if (
+            origin_host
+            and request_host
+            and origin_host == request_host
+            and parsed.scheme in ("http", "https")
+        ):
+            return True, None
+        return False, None
 
     def _base_headers(self, no_store: bool = True) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -195,14 +208,11 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", self._csp())
         if no_store:
             self.send_header("Cache-Control", "no-store")
-        origin = self.headers.get("Origin")
-        if origin is not None:
-            for allowed in self.cp.config.allowed_origins:
-                if origin == allowed:
-                    self.send_header("Access-Control-Allow-Origin", allowed)
-                    self.send_header("Access-Control-Allow-Credentials", "true")
-                    self.send_header("Vary", "Origin")
-                    break
+        ok, origin_index = self._origin_allowed()
+        if origin_index is not None and ok:
+            self.send_header("Access-Control-Allow-Origin", self.cp.config.allowed_origins[origin_index])
+            self.send_header("Access-Control-Allow-Credentials", "true")
+            self.send_header("Vary", "Origin")
 
     @staticmethod
     def _safe_header_value(value: str) -> str:
@@ -316,11 +326,10 @@ class _Handler(BaseHTTPRequestHandler):
 
     # -- dispatch ----------------------------------------------------------
     def do_OPTIONS(self):
-        ok = self._origin_allowed()
-        origin = self.headers.get("Origin")
+        ok, origin_index = self._origin_allowed()
         self.send_response(HTTPStatus.NO_CONTENT)
         self._base_headers(no_store=True)
-        if origin is not None and ok:
+        if origin_index is not None and ok:
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers",
                              "Authorization, Content-Type, X-Media-Service-Key, X-Webhook-Secret, "
@@ -340,7 +349,8 @@ class _Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
 
         # Reject disallowed cross-origin requests before doing any work.
-        if not self._origin_allowed():
+        ok, _ = self._origin_allowed()
+        if not ok:
             self._send_json(403, {"error": "origin not allowed", "code": "forbidden_origin"})
             return
 

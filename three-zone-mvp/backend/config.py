@@ -73,6 +73,12 @@ def _cloudflare_credentials() -> tuple[str, str, str, str]:
     return account, token, customer, webhook
 
 
+def cloudflare_live_credentials_complete() -> bool:
+    """True when Stream live-rail secrets are all present (values never logged)."""
+    account, token, customer, webhook = _cloudflare_credentials()
+    return bool(account and token and customer and webhook)
+
+
 @dataclass
 class Config:
     """Resolved configuration for one running instance."""
@@ -181,7 +187,12 @@ class Config:
         env = os.environ.get("TZ_ENV", "development").strip().lower()
         http_host = http_host or os.environ.get("TZ_HTTP_HOST", "127.0.0.1")
         ws_host = ws_host or os.environ.get("TZ_WS_HOST", "127.0.0.1")
-        http_port = int(http_port or os.environ.get("TZ_HTTP_PORT", "8000"))
+        http_port = int(
+            http_port
+            or os.environ.get("TZ_HTTP_PORT")
+            or os.environ.get("PORT")
+            or "8000"
+        )
         ws_port = int(ws_port or os.environ.get("TZ_WS_PORT", "8765"))
         default_origin = f"http://127.0.0.1:{http_port}" if http_host in ("0.0.0.0", "::") else f"http://{http_host}:{http_port}"
         allowed = _split_origins(os.environ.get("TZ_ALLOWED_ORIGINS", default_origin))
