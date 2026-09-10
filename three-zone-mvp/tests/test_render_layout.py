@@ -33,6 +33,9 @@ class WorkspaceLayoutTests(unittest.TestCase):
         self.assertIn("dockerContext: .", text)
         self.assertNotIn("dockerfilePath: three-zone-mvp/", text)
         self.assertNotIn("dockerContext: three-zone-mvp", text)
+        self.assertIn("mountPath: /data", text)
+        self.assertIn("TZ_ENV", text)
+        self.assertIn("demo", text)
 
     def test_member_app_is_not_nested_under_itself(self):
         self.assertFalse(
