@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import os
+import sys
+
 import pytest
 from fastapi.testclient import TestClient
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from moten.app import create_app
 from moten.database import make_engine

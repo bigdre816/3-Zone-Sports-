@@ -51,6 +51,8 @@ def _routes():
         ("POST", re.compile(rf"^/api/member/events/{_EVENT_RE}/playback$"), "h_member_playback", "member"),
         ("POST", re.compile(r"^/api/member/archive/(?P<archive_id>[A-Za-z0-9_-]+)/playback$"), "h_archive_playback", "member"),
         ("POST", re.compile(r"^/api/admin/schedules/upload$"), "h_schedule_upload", "operator"),
+        ("GET", re.compile(r"^/api/cameras$"), "h_cameras_list", "operator"),
+        ("POST", re.compile(r"^/api/cameras$"), "h_cameras_add", "operator"),
         ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)$"), "h_audit_detail", "operator"),
         ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)/xrpl$"), "h_audit_detail", "operator"),
         ("POST", re.compile(r"^/internal/treasure/verify$"), "h_treasure_verify", "operator"),
@@ -500,6 +502,12 @@ class _Handler(BaseHTTPRequestHandler):
     def h_schedule_upload(self, p, b, u):
         content = (b or {}).get("csv", "").encode()
         self._send_json(200, self.portal.upload_schedule(u, (b or {}).get("filename", "upload.csv"), content))
+
+    def h_cameras_list(self, p, b, u):
+        self._send_json(200, {"cameras": self.cp.list_cameras(u)})
+
+    def h_cameras_add(self, p, b, u):
+        self._send_json(201, {"camera": self.cp.register_camera(u, b or {})})
 
     def h_treasure_verify(self, p, b, u):
         self._send_json(200, self.portal.verify_treasure((b or {}).get("subject_ref", "demo-viewer")))

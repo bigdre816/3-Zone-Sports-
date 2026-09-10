@@ -70,6 +70,14 @@ class Artifact(Base):
     change_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ChainHead(Base):
+    __tablename__ = "chain_head"
+    ledger: Mapped[str] = mapped_column(String, primary_key=True)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    head_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 class Event(Base):
     """Append-only canonical event log (spec §03 envelope, §16 hash chain)."""
 
