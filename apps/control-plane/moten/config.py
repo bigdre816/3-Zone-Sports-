@@ -22,5 +22,9 @@ def database_url() -> str:
     return f"sqlite:///{db_path}"
 
 
+def ingest_shared_secret() -> str:
+    return os.environ.get("MOTEN_INGEST_SHARED_SECRET", "").strip()
+
+
 # Central clock source label recorded on every event (spec §03 envelope).
 CLOCK_SOURCE = os.environ.get("MOTEN_CLOCK_SOURCE", "trusted-time-service")

@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: moten-control-plane
+    runtime: python
+    pythonVersion: 3.12
+    buildCommand: pip install -r requirements.txt
+    startCommand: python manage.py serve
+    healthCheckPath: /health
+    envVars:
+      - key: MOTEN_DB_URL
+        fromDatabase:
+          name: moten-postgres
+          property: connectionString
+      - key: MOTEN_DB_POOL_SIZE
+        value: 5
+      - key: MOTEN_DB_MAX_OVERFLOW
+        value: 5
+      - key: MOTEN_DB_POOL_RECYCLE_SECONDS
+        value: 1800
+      - key: MOTEN_INGEST_SHARED_SECRET
+        sync: false
+      - key: PORT
+        value: 8100
+
+databases:
+  - name: moten-postgres
+    databaseName: moten_prod
+    user: moten

@@ -210,7 +210,7 @@ class Hub:
 
 
 async def ws_main(config: Config) -> None:
-    db = Database(config.database_path)
+    db = Database(config.database_locator)
     cp = ControlPlane(db, config)
     hub = Hub(cp)
 
