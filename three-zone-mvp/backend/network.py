@@ -19,6 +19,7 @@ from .control_plane import (
 )
 from .db import dumps, loads
 from .media_provider import ProviderError
+from .huddle import HuddleExtensions
 
 
 class RateLimitError(ControlError):
@@ -88,7 +89,7 @@ class RateLimiter:
         self._hits[key] = bucket
 
 
-class NetworkService:
+class NetworkService(HuddleExtensions):
     def __init__(self, cp, portal, provider, photo_storage=None):
         self.cp = cp
         self.portal = portal
@@ -435,7 +436,9 @@ class NetworkService:
                 clip = dict(self._row("clips", "clip_id", post["clip_id"]))
             except NotFoundError:
                 return False
-            return self.can_see_clip(viewer, clip)
+            if clip["publication_status"] == "removed":
+                return self._staff(viewer)
+            return self._visibility_allows(viewer, clip["creator_profile_id"], clip["visibility"])
         if post.get("event_id"):
             decision = self._event_access(viewer, post["event_id"])
             if decision and not decision["allow"]:
@@ -903,8 +906,14 @@ class NetworkService:
                 "SELECT 1 FROM saves WHERE profile_id=? AND subject_type='post' AND subject_id=?",
                 (actor["profile_id"], post["post_id"]),
             ))
+        content_state = (
+            "restricted" if post["publication_status"] == "restricted"
+            else "removed" if post["publication_status"] == "removed"
+            else "ok"
+        )
         card = {
             "post_id": post["post_id"],
+            "type": "game_clip" if post.get("clip_id") else "post",
             "author": self.public_profile(author, viewer),
             "caption": post["caption"],
             "sport": post["sport"],
@@ -921,28 +930,62 @@ class NetworkService:
             "published_at": post["published_at"],
             "provenance": None,
             "watch_full_game": None,
-            "content_state": (
-                "restricted" if post["publication_status"] == "restricted"
-                else "removed" if post["publication_status"] == "removed"
-                else "ok"
-            ),
+            "content_state": content_state,
+            "source": None,
+            "media": None,
+            "engagement": {
+                "likes": likes,
+                "comments": comments,
+                "shares": 0,
+                "liked_by_me": reacted,
+                "saved_by_me": saved,
+            },
         }
         card.update(self._post_tags(post["post_id"]))
         if post["clip_id"]:
             clip = dict(self._row("clips", "clip_id", post["clip_id"]))
+            available = self.clip_media_available(viewer, clip)
             card["provenance"] = self.clip_provenance(viewer, clip)
             card["watch_full_game"] = card["provenance"].get("watch_full_game")
-            card["derived_media_asset_id"] = clip.get("derived_media_asset_id")
-            card["source_media_asset_id"] = clip.get("source_media_asset_id")
-            card["media_asset_id"] = card["media_asset_id"] or clip.get("derived_media_asset_id")
+            card["derived_media_asset_id"] = clip.get("derived_media_asset_id") if available else None
+            card["source_media_asset_id"] = clip.get("source_media_asset_id") if available else None
+            card["media_asset_id"] = (card["media_asset_id"] or clip.get("derived_media_asset_id")) if available else None
+            card["source"] = {
+                "event_id": card["provenance"].get("event_id"),
+                "rights_version": card["provenance"].get("rights_version"),
+                "start_ms": int((clip.get("start_seconds") or 0) * 1000),
+                "end_ms": int((clip.get("end_seconds") or 0) * 1000),
+            }
+            if available and clip.get("derived_media_asset_id"):
+                card["media"] = {
+                    "kind": "clip",
+                    "clip_id": clip["clip_id"],
+                    "poster_url": None,
+                    "playback_url": f"/api/network/media/{clip['derived_media_asset_id']}",
+                    "duration_seconds": max(0, (clip.get("end_seconds") or 0) - (clip.get("start_seconds") or 0)),
+                }
+            if not available:
+                card["content_state"] = "unavailable"
+                card["watch_full_game"] = {
+                    "game_id": clip.get("source_game_id"),
+                    "authorized": False,
+                    "label": "This moment is no longer available.",
+                }
         elif post["media_asset_id"]:
             card["provenance"] = {"label": "Member Upload", "source_type": "member_upload"}
+            card["media"] = {
+                "kind": "photo",
+                "playback_url": f"/api/network/media/{post['media_asset_id']}",
+            }
         return card
 
     def feed(self, viewer, mode: str = "for_you", sport: str | None = None,
              cursor: str | None = None, limit: int = 20) -> dict:
+        requested_mode = mode or "for_you"
+        if requested_mode in ("zone", "in_your_zone"):
+            mode = "local"
         if mode not in ("for_you", "following", "local"):
-            raise ValidationError("mode must be for_you, following, or local", "bad_feed_mode")
+            raise ValidationError("mode must be for_you, following, local, or zone", "bad_feed_mode")
         if sport and sport not in SPORTS:
             raise ValidationError("unsupported sport", "bad_sport")
         limit = max(1, min(int(limit or 20), 50))
@@ -952,6 +995,9 @@ class NetworkService:
         )
         actor = self.ensure_profile(viewer) if viewer else None
         following = set()
+        friend_ids = set()
+        team_ids = set()
+        live_event_ids = set()
         if actor:
             following = {
                 r["followed_profile_id"]
@@ -960,18 +1006,18 @@ class NetworkService:
                     (actor["profile_id"],),
                 )
             }
-        items = []
+            friend_ids = self._friend_ids(actor["profile_id"])
+            team_ids = self._followed_team_ids(actor["profile_id"])
+            live_event_ids = {
+                e["event_id"] for e in self.portal.live(viewer) if e.get("status") == "live"
+            }
+        candidates = []
         seen = set()
         for row in rows:
             post = dict(row)
             if post["post_id"] in seen:
                 continue
             if sport and post["sport"] != sport:
-                continue
-            if decoded and (
-                post["published_at"] > decoded[0]
-                or (post["published_at"] == decoded[0] and post["post_id"] >= decoded[1])
-            ):
                 continue
             if mode == "following":
                 if not actor or post["author_profile_id"] not in following:
@@ -987,19 +1033,31 @@ class NetworkService:
             if not self.can_see_post(viewer, post):
                 continue
             seen.add(post["post_id"])
-            items.append(self._serialize_post(viewer, post))
-            if len(items) >= limit:
+            score = self._feed_score(viewer, actor, post, following, friend_ids, team_ids, live_event_ids)
+            candidates.append((score, post))
+        if mode == "for_you":
+            candidates.sort(key=lambda item: (-item[0], -(item[1].get("published_at") or 0), item[1]["post_id"]))
+        ranked = []
+        skip = bool(decoded)
+        for score, post in candidates:
+            if skip:
+                if post["post_id"] == decoded[1]:
+                    skip = False
+                continue
+            ranked.append(self._serialize_post(viewer, post))
+            if len(ranked) >= limit:
                 break
         next_cursor = None
-        if items and len(items) == limit:
-            last = items[-1]
+        if ranked and len(ranked) == limit:
+            last = ranked[-1]
             next_cursor = encode_cursor(last["published_at"], last["post_id"])
         return {
-            "mode": mode,
+            "mode": requested_mode,
             "sport": sport,
-            "ranking": "published_at DESC, post_id DESC",
-            "items": items,
+            "ranking": "sports-relevance" if mode == "for_you" else "published_at DESC, post_id DESC",
+            "items": ranked,
             "cursor": next_cursor,
+            "next_cursor": next_cursor,
         }
 
     def profile_collection(self, viewer, handle: str, tab: str) -> dict:
@@ -1204,10 +1262,13 @@ class NetworkService:
             raise ValidationError("start and end must be numbers", "bad_clip_bounds")
         duration = float(duration or 0)
         max_len = float(max_len or self.cp.config.max_game_clip_seconds)
+        min_len = float(getattr(self.cp.config, "min_game_clip_seconds", 5) or 0)
         if not (0 <= start < end <= duration):
             raise ValidationError("clip must satisfy 0 <= start < end <= source duration", "bad_clip_bounds")
         if end - start > max_len:
             raise ValidationError(f"clip cannot exceed {int(max_len)} seconds", "clip_too_long")
+        if min_len and end - start < min_len:
+            raise ValidationError(f"clip must be at least {int(min_len)} seconds", "clip_too_short")
         return start, end
 
     def create_clip_definition(self, user, data: dict) -> dict:
@@ -1332,13 +1393,34 @@ class NetworkService:
                 "published_at=COALESCE(published_at, ?), updated_at=? WHERE clip_id=?",
                 (caption, visibility, _now(), _now(), clip_id),
             )
-            return self.post_view(user, clip["post_id"])
-        return self.create_post(user, {
-            "clip_id": clip_id, "caption": caption, "sport": data.get("sport") or clip["sport"],
-            "visibility": visibility, "tagged_profile_ids": data.get("tagged_profile_ids"),
-            "tagged_handles": data.get("tagged_handles"),
-            "tagged_team_ids": data.get("tagged_team_ids"),
+            result = self.post_view(user, clip["post_id"])
+        else:
+            result = self.create_post(user, {
+                "clip_id": clip_id, "caption": caption, "sport": data.get("sport") or clip["sport"],
+                "visibility": visibility, "tagged_profile_ids": data.get("tagged_profile_ids"),
+                "tagged_handles": data.get("tagged_handles"),
+                "tagged_team_ids": data.get("tagged_team_ids"),
+            })
+        event_id = None
+        if clip.get("source_game_id"):
+            game = self.db.query_one("SELECT event_id FROM games WHERE game_id=?", (clip["source_game_id"],))
+            event_id = game["event_id"] if game else None
+        self._moten_handoff("clip-published", clip_id, {
+            "schema": "three-zone.moten.clip-published.v1",
+            "source_system": "three-zone-mvp",
+            "handoff_type": "clip-published",
+            "event_type": "threezone.clip.published",
+            "object_id": clip_id,
+            "object_version": 1,
+            "event_id": event_id,
+            "source_rights_version": clip.get("source_rights_version"),
+            "creator_member_id": user["user_id"],
+            "start_ms": int((clip.get("start_seconds") or 0) * 1000),
+            "end_ms": int((clip.get("end_seconds") or 0) * 1000),
+            "destination": "huddle",
+            "publication_decision": "allowed",
         })
+        return result
 
     def clip_view(self, viewer, clip_id: str) -> dict:
         clip = self.require_clip(viewer, clip_id)
@@ -1440,7 +1522,8 @@ class NetworkService:
         likes, _ = self._counts(subject_type, subject_id)
         return {"ok": True, "liked": False, "like_count": likes}
 
-    def add_comment(self, user, subject_type: str, subject_id: str, body: str) -> dict:
+    def add_comment(self, user, subject_type: str, subject_id: str, body: str,
+                    parent_comment_id: str | None = None) -> dict:
         self.limiter.check(f"comment:{user['user_id']}", 30)
         post = self._require_subject(user, subject_type, subject_id)
         if subject_type == "post" and not post.get("comments_enabled", 1):
@@ -1449,10 +1532,16 @@ class NetworkService:
         text = _safe_text(body, 500)
         if not text:
             raise ValidationError("comment cannot be empty", "empty_comment")
+        parent_id = parent_comment_id or None
+        if parent_id:
+            parent = dict(self._row("comments", "comment_id", parent_id, "comment not found", "comment_not_found"))
+            if parent["subject_type"] != subject_type or parent["subject_id"] != subject_id:
+                raise ValidationError("parent comment does not belong to this post", "bad_parent")
         comment_id = _id("cmt")
         self.db.execute(
-            "INSERT INTO comments VALUES (?,?,?,?,?,?,?)",
-            (comment_id, subject_type, subject_id, actor["profile_id"], text, _now(), None),
+            "INSERT INTO comments(comment_id,subject_type,subject_id,author_profile_id,body,created_at,deleted_at,parent_comment_id) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (comment_id, subject_type, subject_id, actor["profile_id"], text, _now(), None, parent_id),
         )
         self._audit("COMMENT_CREATED", comment_id, "member", user["user_id"],
                     {"subject_type": subject_type, "subject_id": subject_id})
@@ -1489,6 +1578,7 @@ class NetworkService:
             "author": self.public_profile(author),
             "body": row["body"],
             "created_at": row["created_at"],
+            "parent_comment_id": row["parent_comment_id"] if "parent_comment_id" in row.keys() else None,
         }
 
     def save_item(self, user, subject_type: str, subject_id: str) -> dict:

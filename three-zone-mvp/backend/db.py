@@ -472,8 +472,90 @@ CREATE TABLE IF NOT EXISTS comments (
     author_profile_id TEXT NOT NULL,
     body TEXT NOT NULL,
     created_at REAL NOT NULL,
-    deleted_at REAL
+    deleted_at REAL,
+    parent_comment_id TEXT
 );
+CREATE TABLE IF NOT EXISTS member_settings (
+    profile_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE,
+    show_watching_to_friends INTEGER NOT NULL DEFAULT 0,
+    updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS team_follows (
+    profile_id TEXT NOT NULL,
+    team_id TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (profile_id, team_id)
+);
+CREATE TABLE IF NOT EXISTS school_follows (
+    profile_id TEXT NOT NULL,
+    school_id TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (profile_id, school_id)
+);
+CREATE TABLE IF NOT EXISTS friendships (
+    friendship_id TEXT PRIMARY KEY,
+    member_a_id TEXT NOT NULL,
+    member_b_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    accepted_at REAL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_friendships_pair ON friendships(member_a_id, member_b_id);
+CREATE TABLE IF NOT EXISTS member_blocks (
+    blocker_profile_id TEXT NOT NULL,
+    blocked_profile_id TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (blocker_profile_id, blocked_profile_id)
+);
+CREATE TABLE IF NOT EXISTS detected_moments (
+    moment_id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    start_ms INTEGER NOT NULL,
+    end_ms INTEGER NOT NULL,
+    moment_type TEXT NOT NULL DEFAULT 'play',
+    label TEXT NOT NULL DEFAULT '',
+    confidence REAL NOT NULL DEFAULT 0.5,
+    signals TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'candidate',
+    rights_version INTEGER,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_moments_event ON detected_moments(event_id, start_ms);
+CREATE TABLE IF NOT EXISTS moment_signals (
+    signal_id TEXT PRIMARY KEY,
+    moment_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    value REAL,
+    payload TEXT NOT NULL DEFAULT '{}',
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS watch_parties (
+    party_id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    host_profile_id TEXT NOT NULL,
+    visibility TEXT NOT NULL DEFAULT 'friends',
+    join_code TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS watch_party_members (
+    party_id TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    joined_at REAL NOT NULL,
+    left_at REAL,
+    PRIMARY KEY (party_id, profile_id)
+);
+CREATE TABLE IF NOT EXISTS watch_party_messages (
+    message_id TEXT PRIMARY KEY,
+    party_id TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_party_messages ON watch_party_messages(party_id, created_at);
 CREATE TABLE IF NOT EXISTS saves (
     profile_id TEXT NOT NULL,
     subject_type TEXT NOT NULL,
@@ -701,6 +783,9 @@ class Database:
             "ON upload_jobs(owner_profile_id, idempotency_key) "
             "WHERE idempotency_key IS NOT NULL"
         )
+        comment_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(comments)").fetchall()}
+        if comment_cols and "parent_comment_id" not in comment_cols:
+            self._conn.execute("ALTER TABLE comments ADD COLUMN parent_comment_id TEXT")
         self._conn.commit()
 
     def _init_postgres_schema(self) -> None:
@@ -720,6 +805,10 @@ class Database:
             "ON upload_jobs(owner_profile_id, idempotency_key) "
             "WHERE idempotency_key IS NOT NULL"
         )
+        try:
+            self._conn.execute("ALTER TABLE comments ADD COLUMN parent_comment_id TEXT")
+        except Exception:
+            pass
         self._conn.commit()
 
     def _dedupe_open_view_sessions(self) -> None:

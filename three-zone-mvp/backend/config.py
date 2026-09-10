@@ -130,7 +130,8 @@ class Config:
     cloudflare_api_token: str = ""
     cloudflare_webhook_secret: str = ""
     max_post_video_seconds: int = 90
-    max_game_clip_seconds: int = 90
+    max_game_clip_seconds: int = 60
+    min_game_clip_seconds: int = 5
     max_game_bytes: int = 8 * 1024 * 1024 * 1024
     max_photo_bytes: int = 8 * 1024 * 1024
     public_app_url: str = ""
@@ -261,7 +262,8 @@ class Config:
             cloudflare_api_token=cf_token,
             cloudflare_webhook_secret=cf_webhook,
             max_post_video_seconds=int(os.environ.get("TZ_MAX_POST_VIDEO_SECONDS", "90")),
-            max_game_clip_seconds=int(os.environ.get("TZ_MAX_GAME_CLIP_SECONDS", "90")),
+            max_game_clip_seconds=int(os.environ.get("TZ_MAX_GAME_CLIP_SECONDS", "60")),
+            min_game_clip_seconds=int(os.environ.get("TZ_MIN_GAME_CLIP_SECONDS", "5")),
             max_game_bytes=int(os.environ.get("TZ_MAX_GAME_BYTES", str(8 * 1024 * 1024 * 1024))),
             max_photo_bytes=int(os.environ.get("TZ_MAX_PHOTO_BYTES", str(8 * 1024 * 1024))),
             public_app_url=os.environ.get("TZ_PUBLIC_APP_URL", ""),
@@ -401,6 +403,7 @@ class Config:
             "photo_storage": self.photo_storage,
             "max_post_video_seconds": self.max_post_video_seconds,
             "max_game_clip_seconds": self.max_game_clip_seconds,
+            "min_game_clip_seconds": self.min_game_clip_seconds,
             "sports": ["basketball", "football", "soccer", "baseball", "volleyball", "other"],
-            "feed_ranking": "published_at DESC, post_id DESC (chronological; not machine learning)",
+            "feed_ranking": "sports-relevance (follow, friend, zone, live, recency; not machine learning)",
         }

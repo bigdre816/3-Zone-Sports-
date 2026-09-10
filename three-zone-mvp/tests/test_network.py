@@ -192,6 +192,11 @@ class GameStudioTests(unittest.TestCase):
                 "source_game_id": game["game_id"], "start_seconds": 0, "end_seconds": 120,
             })
         self.assertEqual(ctx.exception.code, "clip_too_long")
+        with self.assertRaises(ValidationError) as short:
+            self.net.create_clip_definition(self.member, {
+                "source_game_id": game["game_id"], "start_seconds": 0, "end_seconds": 3,
+            })
+        self.assertEqual(short.exception.code, "clip_too_short")
 
     def test_game_clip_provenance_and_member_upload_label(self):
         game = self._ready_game()

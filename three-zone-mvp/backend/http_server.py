@@ -8,6 +8,7 @@ browser may send the HTTP-only lease cookie to the media route.
 
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
@@ -51,6 +52,32 @@ def _routes():
         ("GET", re.compile(r"^/api/member/schedules$"), "h_member_schedules", "member"),
         ("GET", re.compile(r"^/api/member/archives$"), "h_member_archives", "member"),
         ("GET", re.compile(r"^/api/member/search$"), "h_member_search", "member"),
+        ("GET", re.compile(r"^/api/member/feed$"), "h_member_feed", "optional"),
+        ("GET", re.compile(r"^/api/member/notifications$"), "h_member_notifications", "member"),
+        ("POST", re.compile(r"^/api/member/notifications/(?P<notification_id>ntf_[a-z0-9]+)/read$"), "h_member_notification_read", "member"),
+        ("GET", re.compile(r"^/api/member/settings$"), "h_member_settings", "member"),
+        ("POST", re.compile(r"^/api/member/settings$"), "h_member_settings_update", "member"),
+        ("GET", re.compile(r"^/api/member/friends/activity$"), "h_member_friends_activity", "member"),
+        ("POST", re.compile(r"^/api/member/friends/(?P<handle>[a-z][a-z0-9_]{2,31})/request$"), "h_member_friend_request", "member"),
+        ("POST", re.compile(r"^/api/member/friends/(?P<handle>[a-z][a-z0-9_]{2,31})/accept$"), "h_member_friend_accept", "member"),
+        ("POST", re.compile(r"^/api/member/friends/(?P<handle>[a-z][a-z0-9_]{2,31})/unfriend$"), "h_member_unfriend", "member"),
+        ("POST", re.compile(r"^/api/member/blocks/(?P<handle>[a-z][a-z0-9_]{2,31})$"), "h_member_block", "member"),
+        ("POST", re.compile(r"^/api/member/blocks/(?P<handle>[a-z][a-z0-9_]{2,31})/delete$"), "h_member_unblock", "member"),
+        ("POST", re.compile(r"^/api/member/follows/teams/(?P<team_id>[A-Za-z0-9_-]+)$"), "h_member_follow_team", "member"),
+        ("POST", re.compile(r"^/api/member/follows/teams/(?P<team_id>[A-Za-z0-9_-]+)/delete$"), "h_member_unfollow_team", "member"),
+        ("GET", re.compile(r"^/api/member/studio/sources$"), "h_member_studio_sources", "member"),
+        ("GET", re.compile(rf"^/api/member/events/{_EVENT_RE}/moments$"), "h_member_event_moments", "member"),
+        ("GET", re.compile(rf"^/api/member/events/{_EVENT_RE}/timeline$"), "h_member_event_timeline", "member"),
+        ("POST", re.compile(r"^/api/member/watch-parties$"), "h_member_party_create", "member"),
+        ("GET", re.compile(r"^/api/member/watch-parties/(?P<party_id>party_[a-z0-9]+)$"), "h_member_party_get", "member"),
+        ("POST", re.compile(r"^/api/member/watch-parties/(?P<party_id>party_[a-z0-9]+)/join$"), "h_member_party_join", "member"),
+        ("POST", re.compile(r"^/api/member/watch-parties/(?P<party_id>party_[a-z0-9]+)/messages$"), "h_member_party_message", "member"),
+        ("POST", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/share$"), "h_member_post_share", "member"),
+        ("POST", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/like$"), "h_member_post_like", "member"),
+        ("PUT", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/like$"), "h_member_post_like", "member"),
+        ("POST", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/unlike$"), "h_member_post_unlike", "member"),
+        ("DELETE", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/like$"), "h_member_post_unlike", "member"),
+        ("GET", re.compile(r"^/api/member/saved$"), "h_member_saved", "member"),
         ("POST", re.compile(rf"^/api/member/events/{_EVENT_RE}/playback$"), "h_member_playback", "member"),
         ("POST", re.compile(r"^/api/member/archive/(?P<archive_id>[A-Za-z0-9_-]+)/playback$"), "h_archive_playback", "member"),
         ("POST", re.compile(r"^/api/admin/schedules/upload$"), "h_schedule_upload", "operator"),
@@ -331,7 +358,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.NO_CONTENT)
         self._base_headers(no_store=True)
         if origin_index is not None and ok:
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
             self.send_header("Access-Control-Allow-Headers",
                              "Authorization, Content-Type, X-Media-Service-Key, X-Webhook-Secret, "
                              "Webhook-Signature, X-Network-Webhook-Secret, "
@@ -346,6 +373,12 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self._dispatch("POST")
 
+    def do_PUT(self):
+        self._dispatch("PUT")
+
+    def do_DELETE(self):
+        self._dispatch("DELETE")
+
     def _dispatch(self, method: str):
         path = self.path.split("?", 1)[0]
 
@@ -357,9 +390,13 @@ class _Handler(BaseHTTPRequestHandler):
 
         if method == "GET" and path in ("/", "/index.html"):
             return self._serve_static("index.html")
+        if method == "GET" and path.startswith("/moment/"):
+            return self.h_moment_page({"clip_id": path.split("/moment/", 1)[-1]}, {}, self._optional_user())
+        if method == "GET" and path.startswith("/post/"):
+            return self.h_post_page({"post_id": path.split("/post/", 1)[-1]}, {}, self._optional_user())
         if method == "GET" and path in ("/ops", "/ops.html", "/ops/"):
             return self._serve_static("ops.html")
-        if method == "GET" and path in ("/app.js", "/portal.js", "/styles.css", "/ops.css"):
+        if method == "GET" and path in ("/app.js", "/portal.js", "/api.js", "/styles.css", "/ops.css"):
             return self._serve_static(path.lstrip("/"))
         if method == "GET" and path.startswith("/vendor/") and ".." not in path:
             return self._serve_static(path.lstrip("/"))
@@ -380,13 +417,16 @@ class _Handler(BaseHTTPRequestHandler):
                 continue
             params = match.groupdict()
             body = {}
-            if method == "POST":
+            if method in ("POST", "PUT", "DELETE"):
                 limit = None
                 if func == "h_cf_webhook":
                     limit = self.cp.config.webhook_max_body_bytes
-                body = self._read_body(limit)
-                if body is None:
-                    return  # error already sent
+                if method != "DELETE" or int(self.headers.get("Content-Length") or 0) > 0:
+                    body = self._read_body(limit)
+                    if body is None:
+                        return  # error already sent
+                else:
+                    body = {}
             try:
                 user = None
                 if auth == "optional":
@@ -487,9 +527,146 @@ class _Handler(BaseHTTPRequestHandler):
 
     def h_member_me(self, p, b, u):
         profile = self.network.get_own_profile(u)
-        self._send_json(200, {"member": {
-            "member_id": u["user_id"], "display_name": u["display_name"], "role": u["role"],
-        }, "profile": profile})
+        settings = self.network.get_settings(u)
+        notes = self.network.list_notifications(u)
+        first = (u["display_name"] or "Member").split()[0]
+        self._send_json(200, {
+            "member": {
+                "member_id": u["user_id"],
+                "display_name": u["display_name"],
+                "username": profile.get("handle"),
+                "avatar_url": profile.get("avatar"),
+                "home_zone": profile.get("market"),
+                "role": u["role"],
+                "roles": [u["role"]],
+                "greeting_name": first,
+            },
+            "profile": profile,
+            "settings": settings,
+            "unread_notifications": notes["unread_count"],
+        })
+
+    def h_member_feed(self, p, b, u):
+        q = self._qs()
+        mode = q.get("view") or q.get("mode") or "for_you"
+        self._send_json(200, self.network.feed(
+            u, mode, q.get("sport") or None, q.get("cursor"),
+            int(q.get("limit") or 20),
+        ))
+
+    def h_member_notifications(self, p, b, u):
+        self._send_json(200, self.network.list_notifications(u))
+
+    def h_member_notification_read(self, p, b, u):
+        self._send_json(200, self.network.mark_notification_read(u, p["notification_id"]))
+
+    def h_member_settings(self, p, b, u):
+        self._send_json(200, self.network.get_settings(u))
+
+    def h_member_settings_update(self, p, b, u):
+        self._send_json(200, self.network.update_settings(u, b or {}))
+
+    def h_member_friends_activity(self, p, b, u):
+        self._send_json(200, self.network.friends_activity(u))
+
+    def h_member_friend_request(self, p, b, u):
+        self._send_json(200, self.network.request_friend(u, p["handle"]))
+
+    def h_member_friend_accept(self, p, b, u):
+        self._send_json(200, self.network.accept_friend(u, p["handle"]))
+
+    def h_member_unfriend(self, p, b, u):
+        self._send_json(200, self.network.unfriend(u, p["handle"]))
+
+    def h_member_block(self, p, b, u):
+        self._send_json(200, self.network.block_member(u, p["handle"]))
+
+    def h_member_unblock(self, p, b, u):
+        self._send_json(200, self.network.unblock_member(u, p["handle"]))
+
+    def h_member_follow_team(self, p, b, u):
+        self._send_json(200, self.network.follow_team(u, p["team_id"]))
+
+    def h_member_unfollow_team(self, p, b, u):
+        self._send_json(200, self.network.unfollow_team(u, p["team_id"]))
+
+    def h_member_studio_sources(self, p, b, u):
+        self._send_json(200, self.network.studio_sources(u))
+
+    def h_member_event_moments(self, p, b, u):
+        self._send_json(200, self.network.list_event_moments(u, p["event_id"]))
+
+    def h_member_event_timeline(self, p, b, u):
+        self._send_json(200, self.network.event_timeline(u, p["event_id"]))
+
+    def h_member_party_create(self, p, b, u):
+        self._send_json(201, self.network.create_watch_party(u, b or {}))
+
+    def h_member_party_get(self, p, b, u):
+        self._send_json(200, self.network.watch_party_view(u, p["party_id"]))
+
+    def h_member_party_join(self, p, b, u):
+        self._send_json(200, self.network.join_watch_party(u, p["party_id"]))
+
+    def h_member_party_message(self, p, b, u):
+        self._send_json(201, self.network.post_watch_party_message(u, p["party_id"], b or {}))
+
+    def h_member_post_share(self, p, b, u):
+        dest = (b or {}).get("destination") or "copy_link"
+        self._send_json(200, self.network.copy_link_share(u, p["post_id"], dest))
+
+    def h_member_post_like(self, p, b, u):
+        self._send_json(200, self.network.react(u, "post", p["post_id"], "like"))
+
+    def h_member_post_unlike(self, p, b, u):
+        self._send_json(200, self.network.unreact(u, "post", p["post_id"], "like"))
+
+    def h_member_saved(self, p, b, u):
+        profile = self.network.ensure_profile(u)
+        self._send_json(200, self.network.profile_collection(u, profile["handle"], "saved"))
+
+    def h_moment_page(self, p, b, u):
+        clip_id = p.get("clip_id") or ""
+        if not clip_id.startswith("clp_"):
+            self._send_json(404, {"error": "not found", "code": "not_found"})
+            return
+        try:
+            data = self.network.public_moment(u, clip_id)
+        except Exception as exc:
+            from .control_plane import ControlError
+            if isinstance(exc, ControlError):
+                self._send_json(exc.status, {"error": str(exc), "code": exc.code})
+                return
+            raise
+        title = html.escape(str(data.get("caption") or "Three-Zone moment"))
+        message = html.escape(str(data.get("message") or title))
+        media_url = data.get("media_url") or ""
+        media = (
+            f"<video src='{html.escape(str(media_url), quote=True)}' controls playsinline></video>"
+            if media_url else f"<p class='sub'>{message}</p>"
+        )
+        rights_label = html.escape(str((data.get("source") or {}).get("rights_version") or "—"))
+        page = (
+            "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'/>"
+            "<meta name='viewport' content='width=device-width, initial-scale=1'/>"
+            f"<title>{title}</title><link rel='stylesheet' href='/styles.css'/></head>"
+            f"<body class='moment-page'><header><a class='brand' href='/'>THREEZONE.</a></header>"
+            f"<main><p class='eyebrow'>MOMENT</p><h1>{title}</h1>{media}"
+            f"<p class='sub'>Source linked. Rights version {rights_label}</p>"
+            "<p class='sub'>This page is the canonical Three-Zone origin for the clip.</p></main></body></html>"
+        )
+        self._send_bytes(200, "text/html; charset=utf-8", page.encode("utf-8"))
+
+    def h_post_page(self, p, b, u):
+        try:
+            post = self.network.post_view(u, p["post_id"])
+        except Exception as exc:
+            from .control_plane import ControlError
+            if isinstance(exc, ControlError):
+                self._send_json(exc.status, {"error": str(exc), "code": exc.code})
+                return
+            raise
+        self._send_json(200, {"post": post})
 
     def h_member_live(self, p, b, u):
         self._send_json(200, {"events": self.portal.live(u)})
@@ -502,7 +679,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def h_member_search(self, p, b, u):
         term = self._qs().get("q", "")
-        self._send_json(200, {"results": self.portal.search(u, term.replace("+", " "))})
+        self._send_json(200, {"results": self.network.enrich_search(u, term.replace("+", " "))})
 
     def _lease_response(self, result: dict, event_id: str) -> None:
         token = result.pop("lease_token")
@@ -569,11 +746,19 @@ class _Handler(BaseHTTPRequestHandler):
         self._send_json(200, {"event": self.cp.transition(p["event_id"], u, target)})
 
     def h_score(self, p, b, u):
-        self._send_json(200, {"event": self.cp.update_score(p["event_id"], u, (b or {}).get("scoreboard", {}))})
+        body = b or {}
+        scoreboard = body.get("scoreboard", body)
+        prior_row = self.cp.get_event_row(p["event_id"])
+        previous = prior_row["scoreboard"]
+        event = self.cp.update_score(p["event_id"], u, scoreboard if isinstance(scoreboard, dict) else {})
+        self.network.ingest_score_moment(p["event_id"], scoreboard if isinstance(scoreboard, dict) else {}, previous)
+        self._send_json(200, {"event": event})
 
     def h_revoke(self, p, b, u):
         reason = (b or {}).get("reason", "")
-        self._send_json(200, {"event": self.cp.revoke_rights(p["event_id"], u, reason)})
+        event = self.cp.revoke_rights(p["event_id"], u, reason)
+        self.network.restrict_derived_from_event(p["event_id"], u)
+        self._send_json(200, {"event": event})
 
     def h_restore(self, p, b, u):
         self._send_json(200, {"event": self.cp.restore_rights(p["event_id"], u)})
@@ -818,8 +1003,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def h_net_feed(self, p, b, u):
         q = self._qs()
+        mode = q.get("view") or q.get("mode") or "for_you"
         self._send_json(200, self.network.feed(
-            u, q.get("mode", "for_you"), q.get("sport") or None, q.get("cursor"),
+            u, mode, q.get("sport") or None, q.get("cursor"),
             int(q.get("limit") or 20),
         ))
 
@@ -874,6 +1060,7 @@ class _Handler(BaseHTTPRequestHandler):
         b = b or {}
         self._send_json(201, {"comment": self.network.add_comment(
             u, b.get("subject_type"), b.get("subject_id"), b.get("body", ""),
+            b.get("parent_comment_id"),
         )})
 
     def h_net_comment_delete(self, p, b, u):
@@ -958,6 +1145,7 @@ def make_http_server(config, cp: ControlPlane, media_dir: str,
     photo_storage = photo_storage or build_photo_storage(config)
     network = NetworkService(cp, portal, provider, photo_storage)
     moten = MotenIntakeService(cp)
+    network.moten = moten
     handler = type("BoundHandler", (_Handler,), {
         "cp": cp, "portal": portal, "network": network, "moten": moten, "media_dir": media_dir,
     })

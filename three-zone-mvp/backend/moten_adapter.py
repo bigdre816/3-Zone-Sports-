@@ -114,6 +114,16 @@ class MotenIntakeService:
         }
         return self._enqueue("settlement", event_id, payload)
 
+    def enqueue_runtime(self, handoff_type: str, source_object_id: str, payload: dict) -> dict:
+        """Queue an evidence handoff from the member runtime (non-blocking)."""
+        payload = dict(payload or {})
+        payload.setdefault("schema", f"three-zone.moten.{handoff_type}.v1")
+        payload.setdefault("source_system", "three-zone-mvp")
+        payload.setdefault("source_service", "three-zone-api")
+        payload.setdefault("handoff_type", handoff_type)
+        payload.setdefault("occurred_at", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+        return self._enqueue(handoff_type, source_object_id, payload)
+
     def _audit_rows(self, event_id: str, limit: int) -> list[dict]:
         rows = self.db.query(
             "SELECT * FROM audit WHERE event_id=? ORDER BY id DESC LIMIT ?",
