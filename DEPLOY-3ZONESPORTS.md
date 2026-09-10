@@ -14,7 +14,9 @@ The public site is already on GitHub Pages (`docs/`). Member portal and Back por
 
 Use **3-Zone-Sports-** only. Ignore or delete **3-Zone-Api**.
 
-Render must build the **root** `Dockerfile` from branch **`main`**. That image boots in demo mode, listens on Render’s `PORT`, and allows `https://3zonesports.com`.
+Render must build the **`three-zone-mvp`** image from branch **`main`**. That image boots in demo mode, listens on Render’s `PORT`, and allows `https://3zonesports.com`.
+
+Dockerfile path and Docker context are **relative to Root Directory**. If Root Directory is `three-zone-mvp`, the Dockerfile path must be `./Dockerfile` and the context must be `.`. Do not set either one to `three-zone-mvp` — that makes Render look for `three-zone-mvp/three-zone-mvp` and the build exits before Docker starts.
 
 Do not use `TZ_ENV=production` on this rail. Production mode refuses the demo logins and the service never becomes Live.
 
@@ -45,7 +47,7 @@ If Render gave you a different `onrender.com` URL, paste it once in the Connect 
 
 ## If it is still down
 
-- Service settings must be **Docker**, Dockerfile path `./Dockerfile`, health check `/api/health`.
+- Service settings must be **Docker**, Root Directory `three-zone-mvp`, Dockerfile path `./Dockerfile`, Docker context `.`, health check `/api/health`.
 - `TZ_ENV` must be `demo`.
 - `TZ_ALLOWED_ORIGINS` must include `https://3zonesports.com` and `https://www.3zonesports.com`.
 - GitHub Pages must stay on `/docs`. The repo-root `index.html` is not the public sports site.
