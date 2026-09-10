@@ -117,9 +117,10 @@ const ThreeZoneConfig = {
     });
     const contentType = response.headers.get('Content-Type') || '';
     const text = await response.text();
-    const data = contentType.includes('application/json')
-      ? JSON.parse(text || '{}')
-      : null;
+    let data = null;
+    if (contentType.includes('application/json')) {
+      try { data = JSON.parse(text || '{}'); } catch (_) { data = null; }
+    }
     if (!response.ok) {
       const message = (data && data.error) || text || `HTTP ${response.status}`;
       throw { status: response.status, message, code: data && data.code };
