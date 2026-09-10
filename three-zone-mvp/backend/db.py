@@ -1,17 +1,25 @@
-"""SQLite storage for the control plane.
+"""Database storage for the control plane.
 
-WAL mode is enabled so the HTTP process and the separate WebSocket process can
-read concurrently while a single writer commits. All JSON columns store text;
-callers use the helpers here to (de)serialise.
+SQLite remains the default local store. Production may point ``TZ_DATABASE_URL``
+at PostgreSQL; the compatibility wrapper keeps the existing raw-SQL callers
+working without rewriting the service layer.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
+
+try:  # pragma: no cover - imported in PostgreSQL environments only
+    import psycopg
+    from psycopg.rows import dict_row
+except ImportError:  # pragma: no cover - SQLite-only test/dev environments
+    psycopg = None
+    dict_row = None
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -91,6 +99,20 @@ CREATE TABLE IF NOT EXISTS audit_verification_outbox (
     created_at  REAL NOT NULL,
     delivered_at REAL
 );
+CREATE TABLE IF NOT EXISTS moten_outbox (
+    job_id TEXT PRIMARY KEY,
+    handoff_type TEXT NOT NULL,
+    source_object_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    response_status INTEGER,
+    response_body TEXT,
+    last_error TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    delivered_at REAL
+);
 
 CREATE TABLE IF NOT EXISTS socket_outbox (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,6 +133,7 @@ CREATE TABLE IF NOT EXISTS socket_metrics (
 CREATE INDEX IF NOT EXISTS idx_rights_event ON rights(event_id, version);
 CREATE INDEX IF NOT EXISTS idx_outbox_undelivered ON socket_outbox(delivered, id);
 CREATE INDEX IF NOT EXISTS idx_audit_verify_pending ON audit_verification_outbox(delivered_at, id);
+CREATE INDEX IF NOT EXISTS idx_moten_outbox_status ON moten_outbox(status, created_at);
 
 -- Members-portal V1 domains. These tables supplement the original control
 -- plane tables; original events and rights remain the PDP source of truth.
@@ -151,6 +174,42 @@ CREATE TABLE IF NOT EXISTS archive_objects (
     archive_id TEXT PRIMARY KEY, event_id TEXT NOT NULL, school_id TEXT NOT NULL, team_id TEXT NOT NULL,
     season TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, thumbnail TEXT, status TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS camera_sources (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    transport TEXT NOT NULL CHECK (transport IN ('rtsp', 'onvif')),
+    endpoint TEXT NOT NULL,
+    username_secret_ref TEXT,
+    password_secret_ref TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'pending',
+    rights_policy_id TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS camera_sources_endpoint_uq
+    ON camera_sources(endpoint);
+CREATE TABLE IF NOT EXISTS camera_secrets (
+    secret_ref TEXT PRIMARY KEY,
+    secret_value TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS camera_archive_objects (
+    id TEXT PRIMARY KEY,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    storage_key TEXT NOT NULL UNIQUE,
+    sha256 TEXT NOT NULL,
+    recorded_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS camera_archive_verification_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    object_id TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    delivered_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_camera_archive_verify_pending
+    ON camera_archive_verification_outbox(delivered_at, id);
 CREATE TABLE IF NOT EXISTS lease_records (
     lease_id TEXT PRIMARY KEY, event_id TEXT NOT NULL, member_id TEXT NOT NULL, session_id TEXT NOT NULL,
     rights_version INTEGER NOT NULL, permitted_use TEXT NOT NULL, status TEXT NOT NULL,
@@ -489,65 +548,208 @@ CREATE INDEX IF NOT EXISTS idx_shares_recipient ON media_shares(recipient_profil
 CREATE INDEX IF NOT EXISTS idx_moderation_open ON moderation_cases(policy_decision, created_at);
 """
 
+_REPLACE_TABLE_COLUMNS = {
+    "users": [
+        "user_id", "display_name", "role", "account_state", "subscription",
+        "zones", "packages", "destinations", "password_hash", "properties",
+    ],
+    "lease_records": [
+        "lease_id", "event_id", "member_id", "session_id", "rights_version",
+        "permitted_use", "status", "issued_at", "hard_expiry", "close_reason",
+    ],
+}
+_REPLACE_CONFLICT_COLUMNS = {
+    "users": ["user_id"],
+    "lease_records": ["lease_id"],
+}
+_INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
+if psycopg is not None:  # pragma: no branch
+    _INTEGRITY_ERRORS = _INTEGRITY_ERRORS + (psycopg.IntegrityError,)
+
+
+def _postgres_schema() -> str:
+    schema = SCHEMA.replace("AUTOINCREMENT", "")
+    schema = re.sub(r"\bREAL\b", "DOUBLE PRECISION", schema)
+    schema = re.sub(r"INTEGER PRIMARY KEY\s+CHECK\s*\(id = 1\)", "INTEGER PRIMARY KEY CHECK (id = 1)", schema)
+    schema = re.sub(r"INTEGER PRIMARY KEY\b", "BIGSERIAL PRIMARY KEY", schema)
+    return schema
+
+
+def _split_sql_script(script: str) -> list[str]:
+    parts: list[str] = []
+    current: list[str] = []
+    for line in script.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("--"):
+            continue
+        current.append(line)
+        if stripped.endswith(";"):
+            stmt = "\n".join(current).strip()
+            if stmt:
+                parts.append(stmt.rstrip(";"))
+            current = []
+    tail = "\n".join(current).strip()
+    if tail:
+        parts.append(tail.rstrip(";"))
+    return parts
+
 
 class Database:
-    """Thin thread-safe wrapper around a single SQLite connection."""
+    """Thin thread-safe wrapper around a single SQLite or PostgreSQL connection."""
 
     def __init__(self, path: str):
         self.path = path
-        if path != ":memory:":
-            parent = os.path.dirname(os.path.abspath(path))
-            os.makedirs(parent, exist_ok=True)
         self._lock = threading.RLock()
-        self._conn = sqlite3.connect(path, check_same_thread=False, timeout=10)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL;")
-        self._conn.execute("PRAGMA busy_timeout=5000;")
-        self._conn.execute("PRAGMA foreign_keys=ON;")
+        self._is_postgres = path.startswith(("postgres://", "postgresql://"))
+        if self._is_postgres:
+            if psycopg is None:
+                raise RuntimeError("psycopg is required when TZ_DATABASE_URL points at PostgreSQL")
+            self._conn = psycopg.connect(self._normalize_pg_url(path), row_factory=dict_row)
+        else:
+            if path != ":memory:":
+                parent = os.path.dirname(os.path.abspath(path))
+                os.makedirs(parent, exist_ok=True)
+            self._conn = sqlite3.connect(path, check_same_thread=False, timeout=10)
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA journal_mode=WAL;")
+            self._conn.execute("PRAGMA busy_timeout=5000;")
+            self._conn.execute("PRAGMA foreign_keys=ON;")
         self.init_schema()
+
+    @staticmethod
+    def _normalize_pg_url(url: str) -> str:
+        return "postgresql://" + url[len("postgres://"):] if url.startswith("postgres://") else url
+
+    def _prepare_sql(self, sql: str) -> str:
+        if not self._is_postgres:
+            return sql
+        text = sql.replace("?", "%s")
+        upper = text.lstrip().upper()
+        if upper.startswith("INSERT OR IGNORE INTO "):
+            text = re.sub(r"(?is)^\s*INSERT OR IGNORE INTO\s+", "INSERT INTO ", text, count=1)
+            if " ON CONFLICT " not in text.upper():
+                text = f"{text} ON CONFLICT DO NOTHING"
+        elif upper.startswith("INSERT OR REPLACE INTO "):
+            text = self._replace_upsert_sql(text)
+        return text
+
+    def _replace_upsert_sql(self, sql: str) -> str:
+        match = re.match(
+            r"(?is)^\s*INSERT OR REPLACE INTO\s+([a-z_][a-z0-9_]*)(\s*\(([^)]*)\))?\s+VALUES\s*\((.*)\)\s*$",
+            sql.strip(),
+        )
+        if not match:
+            raise RuntimeError(f"unsupported PostgreSQL upsert SQL: {sql}")
+        table = match.group(1)
+        raw_cols = match.group(3)
+        values = match.group(4).strip()
+        cols = [c.strip() for c in raw_cols.split(",")] if raw_cols else _REPLACE_TABLE_COLUMNS.get(table)
+        if not cols:
+            raise RuntimeError(f"missing PostgreSQL upsert column map for {table}")
+        conflict_cols = _REPLACE_CONFLICT_COLUMNS.get(table)
+        if not conflict_cols:
+            raise RuntimeError(f"missing PostgreSQL upsert conflict map for {table}")
+        updates = ", ".join(f"{col}=EXCLUDED.{col}" for col in cols if col not in conflict_cols)
+        return (
+            f"INSERT INTO {table}({','.join(cols)}) VALUES ({values}) "
+            f"ON CONFLICT ({','.join(conflict_cols)}) DO UPDATE SET {updates}"
+        )
 
     def init_schema(self) -> None:
         with self._lock:
-            self._conn.executescript(SCHEMA)
-            self._conn.execute(
-                "INSERT OR IGNORE INTO socket_metrics(id, connections, per_event, updated_at)"
-                " VALUES (1, 0, '{}', 0)"
+            if self._is_postgres:
+                self._init_postgres_schema()
+            else:
+                self._init_sqlite_schema()
+
+    def _init_sqlite_schema(self) -> None:
+        self._conn.executescript(SCHEMA)
+        self._conn.execute(
+            "INSERT OR IGNORE INTO socket_metrics(id, connections, per_event, updated_at)"
+            " VALUES (1, 0, '{}', 0)"
+        )
+        user_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(users)").fetchall()}
+        if "password_hash" not in user_cols:
+            self._conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
+        if "properties" not in user_cols:
+            self._conn.execute("ALTER TABLE users ADD COLUMN properties TEXT NOT NULL DEFAULT '[]'")
+        event_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(events)").fetchall()}
+        event_alters = {
+            "media_provider": "TEXT NOT NULL DEFAULT 'demo'",
+            "provider_input_id": "TEXT",
+            "provider_video_id": "TEXT",
+            "provider_replay_video_id": "TEXT",
+            "provider_state": "TEXT NOT NULL DEFAULT ''",
+            "provider_last_webhook_at": "REAL",
+            "provider_last_error": "TEXT",
+            "replay_pending": "INTEGER NOT NULL DEFAULT 0",
+            "property_id": "TEXT",
+        }
+        for name, decl in event_alters.items():
+            if name not in event_cols:
+                self._conn.execute(f"ALTER TABLE events ADD COLUMN {name} {decl}")
+        self._dedupe_open_view_sessions()
+        self._conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_view_sessions_one_open "
+            "ON view_sessions(event_id, user_id) WHERE state='open'"
+        )
+        job_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(upload_jobs)").fetchall()}
+        if job_cols and "upload_url" not in job_cols:
+            self._conn.execute("ALTER TABLE upload_jobs ADD COLUMN upload_url TEXT")
+        self._conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_upload_jobs_owner_idem "
+            "ON upload_jobs(owner_profile_id, idempotency_key) "
+            "WHERE idempotency_key IS NOT NULL"
+        )
+        self._conn.commit()
+
+    def _init_postgres_schema(self) -> None:
+        for stmt in _split_sql_script(_postgres_schema()):
+            self._conn.execute(stmt)
+        self._conn.execute(
+            "INSERT INTO socket_metrics(id, connections, per_event, updated_at)"
+            " VALUES (1, 0, '{}', 0) ON CONFLICT DO NOTHING"
+        )
+        self._dedupe_open_view_sessions()
+        self._conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_view_sessions_one_open "
+            "ON view_sessions(event_id, user_id) WHERE state='open'"
+        )
+        self._conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_upload_jobs_owner_idem "
+            "ON upload_jobs(owner_profile_id, idempotency_key) "
+            "WHERE idempotency_key IS NOT NULL"
+        )
+        self._conn.commit()
+
+    def _dedupe_open_view_sessions(self) -> None:
+        """Close duplicate open sessions so the unique partial index can be created."""
+        dupes = self._conn.execute(
+            self._prepare_sql(
+                "SELECT event_id, user_id FROM view_sessions WHERE state='open' "
+                "GROUP BY event_id, user_id HAVING COUNT(*) > 1"
             )
-            user_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(users)").fetchall()}
-            if "password_hash" not in user_cols:
-                self._conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
-            if "properties" not in user_cols:
-                self._conn.execute("ALTER TABLE users ADD COLUMN properties TEXT NOT NULL DEFAULT '[]'")
-            event_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(events)").fetchall()}
-            event_alters = {
-                "media_provider": "TEXT NOT NULL DEFAULT 'demo'",
-                "provider_input_id": "TEXT",
-                "provider_video_id": "TEXT",
-                "provider_replay_video_id": "TEXT",
-                "provider_state": "TEXT NOT NULL DEFAULT ''",
-                "provider_last_webhook_at": "REAL",
-                "provider_last_error": "TEXT",
-                "replay_pending": "INTEGER NOT NULL DEFAULT 0",
-                "property_id": "TEXT",
-            }
-            for name, decl in event_alters.items():
-                if name not in event_cols:
-                    self._conn.execute(f"ALTER TABLE events ADD COLUMN {name} {decl}")
-            self._dedupe_open_view_sessions()
-            # Created after dedupe so existing pilot DBs with raced duplicates can migrate.
-            self._conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_view_sessions_one_open "
-                "ON view_sessions(event_id, user_id) WHERE state='open'"
-            )
-            job_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(upload_jobs)").fetchall()}
-            if job_cols and "upload_url" not in job_cols:
-                self._conn.execute("ALTER TABLE upload_jobs ADD COLUMN upload_url TEXT")
-            self._conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_upload_jobs_owner_idem "
-                "ON upload_jobs(owner_profile_id, idempotency_key) "
-                "WHERE idempotency_key IS NOT NULL"
-            )
-            self._conn.commit()
+        ).fetchall()
+        for dup in dupes:
+            event_id = dup["event_id"] if isinstance(dup, dict) else dup[0]
+            user_id = dup["user_id"] if isinstance(dup, dict) else dup[1]
+            rows = self._conn.execute(
+                self._prepare_sql(
+                    "SELECT session_id FROM view_sessions "
+                    "WHERE event_id=? AND user_id=? AND state='open' ORDER BY started_at ASC, session_id ASC"
+                ),
+                (event_id, user_id),
+            ).fetchall()
+            # Keep the earliest open session; close the rest as duplicates.
+            for row in rows[1:]:
+                session_id = row["session_id"] if isinstance(row, dict) else row[0]
+                self._conn.execute(
+                    self._prepare_sql(
+                        "UPDATE view_sessions SET state='closed', close_reason='duplicate_open', "
+                        "ended_at=? WHERE session_id=? AND state='open'"
+                    ),
+                    (time.time(), session_id),
+                )
 
     def _dedupe_open_view_sessions(self) -> None:
         """Close duplicate open sessions so the unique partial index can be created."""
@@ -570,9 +772,9 @@ class Database:
                 )
 
     # --- primitives -------------------------------------------------------
-    def query(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
+    def query(self, sql: str, params: tuple = ()):
         with self._lock:
-            return list(self._conn.execute(sql, params).fetchall())
+            return list(self._conn.execute(self._prepare_sql(sql), params).fetchall())
 
     def query_one(self, sql: str, params: tuple = ()):
         rows = self.query(sql, params)
@@ -580,13 +782,24 @@ class Database:
 
     def execute(self, sql: str, params: tuple = ()) -> int:
         with self._lock:
-            cur = self._conn.execute(sql, params)
+            prepared = self._prepare_sql(sql)
+            wants_id = self._is_postgres and prepared.lstrip().upper().startswith("INSERT INTO AUDIT(")
+            cur = self._conn.execute(
+                prepared + (" RETURNING id" if wants_id and "RETURNING" not in prepared.upper() else ""),
+                params,
+            )
+            if wants_id:
+                row = cur.fetchone()
+                self._conn.commit()
+                if isinstance(row, dict):
+                    return int(row["id"])
+                return int(row[0])
             self._conn.commit()
-            return cur.lastrowid
+            return getattr(cur, "lastrowid", 0) or 0
 
     def executemany(self, sql: str, seq) -> None:
         with self._lock:
-            self._conn.executemany(sql, seq)
+            self._conn.executemany(self._prepare_sql(sql), seq)
             self._conn.commit()
 
     def write_transaction(self, fn):
@@ -621,3 +834,6 @@ def loads(text: str | None, default=None):
         return json.loads(text)
     except (ValueError, TypeError):
         return default
+
+
+IntegrityError = _INTEGRITY_ERRORS

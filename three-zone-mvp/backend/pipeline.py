@@ -10,11 +10,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import sqlite3
 import uuid
 
 from . import tokens
-from .db import dumps, loads
+from .db import IntegrityError, dumps, loads
 from .merkle import hash_canonical, merkle_proof, merkle_root, verify_proof
 from .xrpl_adapter import XrplAdapter
 
@@ -195,7 +194,7 @@ class PipelineMixin:
                 "INSERT INTO webhook_inbox(input_id,event_type,ts,received_at) VALUES (?,?,?,?)",
                 (parsed.input_id, parsed.event_type, parsed.timestamp, stamp),
             )
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             return {"ok": True, "duplicate": True}
 
         row = self.db.query_one(
@@ -320,7 +319,7 @@ class PipelineMixin:
                      lease_id, rights_id, rights_version,
                      stamp, None, 0, stamp, 0, "open", None, None, None, property_id),
                 )
-            except sqlite3.IntegrityError:
+            except IntegrityError:
                 # Unique partial index lost the race against another writer/process.
                 raced = conn.execute(
                     "SELECT * FROM view_sessions WHERE event_id=? AND user_id=? AND state='open'",

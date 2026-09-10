@@ -14,7 +14,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.config import Config
+from backend.config import Config, cloudflare_live_credentials_complete
 from backend.control_plane import (
     AuthError, ConflictError, ControlPlane, ForbiddenError, NotFoundError,
 )
@@ -596,6 +596,15 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg.media_provider, "demo")
         self.assertEqual(cfg.lease_ttl, 60)
 
+    def test_27_port_env_is_used_on_render(self):
+        os.environ.pop("TZ_HTTP_PORT", None)
+        os.environ["PORT"] = "10000"
+        try:
+            cfg = Config.from_env()
+            self.assertEqual(cfg.http_port, 10000)
+        finally:
+            os.environ.pop("PORT", None)
+
     def test_27b_cloudflare_env_alias_is_not_public(self):
         os.environ["CLOUDFLARE"] = "cf-token-alias-value"
         try:
@@ -604,6 +613,38 @@ class ConfigTests(unittest.TestCase):
             self.assertNotIn("cf-token-alias-value", str(cfg.public_config()))
         finally:
             os.environ.pop("CLOUDFLARE", None)
+
+    def test_27b2_live_credentials_complete_requires_all_fields(self):
+        keys = [
+            "TZ_CLOUDFLARE_ACCOUNT_ID", "TZ_CLOUDFLARE_API_TOKEN",
+            "TZ_CLOUDFLARE_CUSTOMER_CODE", "TZ_CLOUDFLARE_WEBHOOK_SECRET",
+            "CLOUDFLARE",
+        ]
+        saved = {k: os.environ.get(k) for k in keys}
+        try:
+            for k in keys:
+                os.environ.pop(k, None)
+            self.assertFalse(cloudflare_live_credentials_complete())
+            os.environ["TZ_CLOUDFLARE_ACCOUNT_ID"] = "a" * 32
+            os.environ["TZ_CLOUDFLARE_API_TOKEN"] = "tok"
+            os.environ["TZ_CLOUDFLARE_CUSTOMER_CODE"] = "cust"
+            self.assertFalse(cloudflare_live_credentials_complete())
+            os.environ["TZ_CLOUDFLARE_WEBHOOK_SECRET"] = "whsec"
+            self.assertTrue(cloudflare_live_credentials_complete())
+            for k in keys:
+                os.environ.pop(k, None)
+            os.environ["CLOUDFLARE"] = json.dumps({
+                "account_id": "a" * 32,
+                "api_token": "tok",
+                "customer_code": "cust",
+                "webhook_secret": "whsec",
+            })
+            self.assertTrue(cloudflare_live_credentials_complete())
+        finally:
+            for k in keys:
+                os.environ.pop(k, None)
+                if saved[k] is not None:
+                    os.environ[k] = saved[k]
 
     def test_27c_live_and_ugc_providers_are_independent(self):
         from backend.media_provider import FakeProvider, build_provider

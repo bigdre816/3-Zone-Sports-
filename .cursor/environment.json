@@ -1,17 +1,27 @@
 {
-  "name": "Three-Zone Sports Access",
-  "install": "python3 -m pip install -r three-zone-mvp/requirements.txt",
+  "name": "The-system (Three-Zone + Moten)",
+  "install": "if [ -x .cursor/scripts/cloud-agent-install.sh ]; then bash .cursor/scripts/cloud-agent-install.sh; else if [ -f three-zone-mvp/requirements.txt ]; then python3 -m pip install --break-system-packages -r three-zone-mvp/requirements.txt; fi; if [ -f apps/control-plane/requirements.txt ]; then python3 -m pip install --break-system-packages -r apps/control-plane/requirements.txt; fi; fi",
+  "start": "if [ -x .cursor/scripts/cloud-agent-start.sh ]; then bash .cursor/scripts/cloud-agent-start.sh; else set -e; if [ -f three-zone-mvp/run.py ]; then curl -sf --max-time 2 http://127.0.0.1:8000/api/health >/dev/null || (cd three-zone-mvp && TZ_HTTP_HOST=0.0.0.0 TZ_WS_HOST=0.0.0.0 TZ_ALLOWED_ORIGINS=http://127.0.0.1:8000,http://localhost:8000 python3 run.py --http-port 8000 --ws-port 8765 --host 0.0.0.0 >>/tmp/cloud-agent-apps.log 2>&1 &); for i in $(seq 1 60); do curl -sf --max-time 2 http://127.0.0.1:8000/api/health && break; sleep 0.5; done; curl -sf --max-time 2 http://127.0.0.1:8000/api/health; fi; if [ -f apps/control-plane/manage.py ]; then curl -sf --max-time 2 http://127.0.0.1:8100/healthz >/dev/null || (cd apps/control-plane && HOST=0.0.0.0 PORT=8100 python3 manage.py serve >>/tmp/cloud-agent-apps.log 2>&1 &); for i in $(seq 1 60); do curl -sf --max-time 2 http://127.0.0.1:8100/healthz && break; sleep 0.5; done; curl -sf --max-time 2 http://127.0.0.1:8100/healthz; fi; fi",
+  "chromeExecutablePath": "/usr/bin/google-chrome-stable",
   "terminals": [
     {
-      "name": "web",
-      "command": "python3 .cursor/serve.py",
-      "description": "Three-Zone Sports Access member site at / and control plane at /ops"
+      "name": "app-logs",
+      "command": "touch /tmp/cloud-agent-apps.log; tail -F /tmp/cloud-agent-apps.log",
+      "description": "App server logs. Three-Zone Sports Access (main): http://127.0.0.1:8000/ and /ops (health GET /api/health). Moten Phase 1: http://127.0.0.1:8100/ (health GET /healthz)."
     }
   ],
   "ports": [
     {
-      "name": "web",
+      "name": "three-zone-http",
       "port": 8000
+    },
+    {
+      "name": "three-zone-ws",
+      "port": 8765
+    },
+    {
+      "name": "moten-control-plane",
+      "port": 8100
     }
   ],
   "mcpServerAllowlist": [

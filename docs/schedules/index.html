@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Three-Zone Sports - Game schedules. Team calendars and event details." />
+  <title>Schedules · Three-Zone Sports</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%236ea8ff' width='100' height='100'/><text x='50' y='70' font-size='60' font-weight='bold' text-anchor='middle' fill='%230f141a'>3</text></svg>" />
+  <style>
+    :root {
+      --bg: #0f141a;
+      --panel: #171e27;
+      --line: #2a3544;
+      --text: #e8edf3;
+      --muted: #9aa7b6;
+      --accent: #6ea8ff;
+      --accent2: #74e0c0;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, sans-serif; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 18px 6%; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 100; }
+    .brand { display: flex; gap: 8px; font-weight: 700; font-size: 20px; color: var(--text); }
+    .brand small { color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: 650; }
+    nav { display: flex; gap: 32px; }
+    nav a { font-size: 14px; color: var(--text); text-decoration: none; }
+    nav a:hover { color: var(--accent); }
+    nav a.active { color: var(--accent2); }
+    main { max-width: 1200px; margin: 0 auto; padding: 56px 6% 72px; }
+    .eyebrow { color: var(--accent); font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 12px; }
+    h1 { font-size: clamp(32px, 5vw, 48px); line-height: 1.05; margin: 0 0 16px; }
+    .subtitle { color: var(--muted); font-size: 18px; margin: 0 0 48px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }
+    th { padding: 12px; text-align: left; color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; border-bottom: 1px solid var(--line); }
+    td { padding: 16px 12px; border-bottom: 1px solid var(--line); }
+    tr:hover { background: rgba(110, 168, 255, 0.05); }
+    .time { color: var(--accent); font-weight: 500; }
+    .status { font-size: 12px; padding: 4px 8px; border-radius: 4px; background: rgba(110, 168, 255, 0.1); color: var(--accent); }
+    .loading, .error, .unavailable { padding: 32px; text-align: center; color: var(--muted); }
+    .error { background: rgba(255, 127, 134, 0.1); border: 1px solid #ff7f86; border-radius: 8px; color: #ff7f86; }
+    .unavailable { background: var(--panel); border: 1px dashed var(--line); border-radius: 8px; }
+    footer { padding: 40px 6%; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; text-align: center; }
+    footer a { color: var(--accent); }
+    @media (max-width: 900px) { nav { gap: 16px; font-size: 12px; } table { font-size: 12px; } td, th { padding: 8px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/" class="brand">Three-Zone<small>Sports Access</small></a>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/live/">Live</a>
+      <a href="/schedules/" class="active">Schedules</a>
+      <a href="/archives/">Archives</a>
+      <a href="https://three-zone-sports.onrender.com/" data-member-link>Member portal</a>
+      <a href="https://three-zone-sports.onrender.com/ops" data-ops-link>Back portal</a>
+    </nav>
+  </header>
+
+  <main>
+    <p class="eyebrow">Game Schedule</p>
+    <h1>Upcoming Games</h1>
+    <p class="subtitle">Team calendars and event details for all verified games. Schools, teams, dates, and venues all connected to the same event record.</p>
+    <div id="schedule-container">
+      <div class="loading">Loading schedule...</div>
+    </div>
+  </main>
+
+  <footer>
+    <p>Three-Zone Sports Access · <a href="/">3zonesports.com</a></p>
+  </footer>
+
+  <script src="/config.js"></script>
+  <script>
+    async function loadSchedule() {
+      const container = document.getElementById('schedule-container');
+      try {
+        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.schedules);
+        const schedules = data.schedules || [];
+        
+        if (schedules.length === 0) {
+          container.innerHTML = '<div class="unavailable">No upcoming games scheduled.</div>';
+          return;
+        }
+
+        let html = '<table><thead><tr><th>Date & Time</th><th>Teams</th><th>Sport</th><th>Level</th><th>Location</th><th>Status</th></tr></thead><tbody>';
+        
+        schedules.forEach(event => {
+          const date = new Date((event.start_at || 0) * 1000);
+          const dateStr = date.toLocaleDateString();
+          const timeStr = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+          
+          html += `
+            <tr>
+              <td><span class="time">${dateStr}<br>${timeStr}</span></td>
+              <td>${event.team || 'Team'} vs ${event.opponent || 'Opponent'}</td>
+              <td>${event.sport || 'Sports'}</td>
+              <td>${event.level || '—'}</td>
+              <td>${event.location || 'TBD'}</td>
+              <td><span class="status">${event.home_away || event.status || 'Scheduled'}</span></td>
+            </tr>
+          `;
+        });
+        
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      } catch (error) {
+        container.innerHTML = `<div class="unavailable">Schedules are temporarily unavailable. ${error.message || 'Please check back soon.'}</div>`;
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.ThreeZoneConfig) {
+        document.querySelectorAll('[data-member-link]').forEach(function (el) {
+          el.href = ThreeZoneConfig.memberOrigin();
+        });
+        document.querySelectorAll('[data-ops-link]').forEach(function (el) {
+          el.href = ThreeZoneConfig.opsUrl();
+        });
+      }
+      loadSchedule();
+    });
+  </script>
+</body>
+</html>

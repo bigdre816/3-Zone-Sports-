@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Research Registry · Moten{% endblock %}
+{% block content %}
+<h1>Longitudinal Research Registry</h1>
+<div class="sub">A question with longitudinal intent is never edited in place; a changed question is a new version with a comparability assessment.</div>
+{% for q in questions %}
+<div class="card">
+  <h2>{{ q.rq.rq_id }} · <span class="pill">{{ q.rq.longitudinal_intent }}</span></h2>
+  <table>
+    <thead><tr><th>Version</th><th>Exact wording</th><th>First use</th><th>Comparability</th></tr></thead>
+    <tbody>
+      {% for v in q.versions %}
+      <tr>
+        <td>{{ v.semver_label }}</td>
+        <td>{{ v.exact_wording }}</td>
+        <td><span class="datelabel">first-use date</span>{{ v.first_use_date or '—' }}</td>
+        <td>{{ v.comparability_assessment or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endfor %}
+{% endblock %}
