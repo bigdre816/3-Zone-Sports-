@@ -73,10 +73,67 @@
 
   <script src="/config.js"></script>
   <script>
+    function archiveBackendCandidates() {
+      const seen = new Set();
+      const out = [];
+      const add = value => {
+        const item = String(value || '').replace(/\/+$/, '');
+        if (!item || seen.has(item)) return;
+        seen.add(item);
+        out.push(item);
+      };
+      try { add(window.localStorage.getItem('threezone_backend_url')); } catch (_) {}
+      if (window.ThreeZoneConfig && ThreeZoneConfig.BACKEND_URL) add(ThreeZoneConfig.BACKEND_URL);
+      if (window.location.hostname === 'localhost') add('http://localhost:8000');
+      const host = window.location.hostname.replace(/^www\./, '');
+      if (host === '3zonesports.com') {
+        add('https://app.3zonesports.com');
+        add('https://api.3zonesports.com');
+        add('https://three-zone-sports-api.onrender.com');
+      }
+      return out;
+    }
+
+    async function archiveFetch() {
+      const endpoint = '/api/public/archives';
+      if (window.ThreeZoneConfig && typeof ThreeZoneConfig.fetch === 'function') {
+        try {
+          return await ThreeZoneConfig.fetch((ThreeZoneConfig.endpoints && ThreeZoneConfig.endpoints.public
+            && ThreeZoneConfig.endpoints.public.archives) || endpoint);
+        } catch (_) {}
+      }
+      for (const baseUrl of archiveBackendCandidates()) {
+        try {
+          const health = await fetch(baseUrl + '/api/health', { credentials: 'include' });
+          if (!health.ok) continue;
+          const response = await fetch(baseUrl + endpoint, { credentials: 'include' });
+          if (!response.ok) continue;
+          const data = await response.json();
+          try { window.localStorage.setItem('threezone_backend_url', baseUrl); } catch (_) {}
+          return { data, baseUrl };
+        } catch (_) {}
+      }
+      throw new Error('Member services are not yet configured.');
+    }
+
+    async function archiveMemberUrl(archiveId) {
+      if (window.ThreeZoneConfig && typeof ThreeZoneConfig.memberAppUrl === 'function') {
+        try {
+          const url = await ThreeZoneConfig.memberAppUrl('/?archive=' + encodeURIComponent(archiveId));
+          if (url) return url;
+        } catch (_) {}
+      }
+      for (const baseUrl of archiveBackendCandidates()) {
+        return baseUrl + '/?archive=' + encodeURIComponent(archiveId);
+      }
+      return '';
+    }
+
     async function loadArchives() {
       const container = document.getElementById('archives-container');
       try {
-        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.archives);
+        const result = await archiveFetch();
+        const data = result.data || result;
         const archives = data.archives || [];
         
         if (archives.length === 0) {
@@ -102,7 +159,7 @@
     }
 
     async function watchArchive(archiveId) {
-      const url = await ThreeZoneConfig.memberAppUrl('/?archive=' + encodeURIComponent(archiveId));
+      const url = await archiveMemberUrl(archiveId);
       if (!url) {
         alert('Member services are not yet configured.');
         return;
