@@ -1,0 +1,33 @@
+# Render Blueprint — Three-Zone Sports member app.
+# Matches the Docker services already created on the Render dashboard.
+services:
+  - type: web
+    name: three-zone-sports
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: TZ_ENV
+        value: demo
+      - key: TZ_HTTP_HOST
+        value: 0.0.0.0
+      - key: TZ_WS_HOST
+        value: 0.0.0.0
+      - key: TZ_ALLOWED_ORIGINS
+        value: https://3zonesports.com,https://www.3zonesports.com
+      - key: TZ_PUBLIC_BASE_URL
+        value: https://3zonesports.com
+      - key: TZ_LIVE_MEDIA_PROVIDER
+        value: demo
+      - key: TZ_UGC_MEDIA_PROVIDER
+        value: fake
+      - key: TZ_PHOTO_STORAGE
+        value: fake
+      - key: TZ_XRPL_MODE
+        value: demo
+      - key: TZ_TOKEN_SECRET
+        generateValue: true
+      - key: TZ_MEDIA_SERVICE_KEY
+        generateValue: true
