@@ -73,6 +73,11 @@
 
   <script src="/config.js"></script>
   <script>
+    function archiveConfig() {
+      if (typeof ThreeZoneConfig !== 'undefined') return ThreeZoneConfig;
+      return window.ThreeZoneConfig || null;
+    }
+
     function archiveBackendCandidates() {
       const seen = new Set();
       const out = [];
@@ -83,7 +88,8 @@
         out.push(item);
       };
       try { add(window.localStorage.getItem('threezone_backend_url')); } catch (_) {}
-      if (window.ThreeZoneConfig && ThreeZoneConfig.BACKEND_URL) add(ThreeZoneConfig.BACKEND_URL);
+      const config = archiveConfig();
+      if (config && config.BACKEND_URL) add(config.BACKEND_URL);
       if (window.location.hostname === 'localhost') add('http://localhost:8000');
       const host = window.location.hostname.replace(/^www\./, '');
       if (host === '3zonesports.com') {
@@ -96,10 +102,11 @@
 
     async function archiveFetch() {
       const endpoint = '/api/public/archives';
-      if (window.ThreeZoneConfig && typeof ThreeZoneConfig.fetch === 'function') {
+      const config = archiveConfig();
+      if (config && typeof config.fetch === 'function') {
         try {
-          return await ThreeZoneConfig.fetch((ThreeZoneConfig.endpoints && ThreeZoneConfig.endpoints.public
-            && ThreeZoneConfig.endpoints.public.archives) || endpoint);
+          return await config.fetch((config.endpoints && config.endpoints.public
+            && config.endpoints.public.archives) || endpoint);
         } catch (_) {}
       }
       for (const baseUrl of archiveBackendCandidates()) {
@@ -117,9 +124,10 @@
     }
 
     async function archiveMemberUrl(archiveId) {
-      if (window.ThreeZoneConfig && typeof ThreeZoneConfig.memberAppUrl === 'function') {
+      const config = archiveConfig();
+      if (config && typeof config.memberAppUrl === 'function') {
         try {
-          const url = await ThreeZoneConfig.memberAppUrl('/?archive=' + encodeURIComponent(archiveId));
+          const url = await config.memberAppUrl('/?archive=' + encodeURIComponent(archiveId));
           if (url) return url;
         } catch (_) {}
       }

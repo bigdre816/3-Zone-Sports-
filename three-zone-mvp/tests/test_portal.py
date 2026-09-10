@@ -281,8 +281,11 @@ class PortalTests(unittest.TestCase):
         self.assertIn("Schedules are temporarily unavailable.", schedules_html)
         self.assertIn("Archives are temporarily unavailable.", archives_html)
         self.assertIn("function archiveBackendCandidates()", archives_html)
+        self.assertIn("function archiveConfig()", archives_html)
         self.assertIn("const endpoint = '/api/public/archives';", archives_html)
         self.assertIn("return baseUrl + '/?archive=' + encodeURIComponent(archiveId);", archives_html)
+        self.assertNotIn("window.ThreeZoneConfig && typeof ThreeZoneConfig.fetch === 'function'", archives_html)
+        self.assertNotIn("window.ThreeZoneConfig && typeof ThreeZoneConfig.memberAppUrl === 'function'", archives_html)
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with open(os.path.join(root, "backend", "static", "portal.js"), encoding="utf-8") as handle:
             portal_js = handle.read()
