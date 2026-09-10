@@ -181,41 +181,6 @@ class Config:
     def ugc_provider_name(self) -> str:
         return self.ugc_media_provider if self.ugc_media_provider in ("fake", "cloudflare") else "fake"
 
-    def __post_init__(self) -> None:
-        """Keep live/UGC provider names and Cloudflare credential aliases in sync."""
-        name = (self.media_provider or "demo").strip().lower()
-        live = (self.live_media_provider or "").strip().lower()
-        ugc = (self.ugc_media_provider or "").strip().lower()
-        if name == "fake":
-            self.live_media_provider = live if live in ("demo", "cloudflare") else "demo"
-            self.ugc_media_provider = "fake"
-        elif name == "cloudflare":
-            self.live_media_provider = "cloudflare"
-            self.ugc_media_provider = ugc if ugc in ("fake", "cloudflare") else "cloudflare"
-        else:
-            self.live_media_provider = live if live in ("demo", "cloudflare") else "demo"
-            self.ugc_media_provider = ugc if ugc in ("fake", "cloudflare") else "fake"
-        # Events.media_provider is the live rail. Never persist the UGC name.
-        self.media_provider = self.live_media_provider
-        if not self.cf_account_id and self.cloudflare_account_id:
-            self.cf_account_id = self.cloudflare_account_id
-        if not self.cf_api_token and self.cloudflare_api_token:
-            self.cf_api_token = self.cloudflare_api_token
-        if not self.cf_webhook_secret and self.cloudflare_webhook_secret:
-            self.cf_webhook_secret = self.cloudflare_webhook_secret
-        if not self.cloudflare_account_id:
-            self.cloudflare_account_id = self.cf_account_id
-        if not self.cloudflare_api_token:
-            self.cloudflare_api_token = self.cf_api_token
-        if not self.cloudflare_webhook_secret:
-            self.cloudflare_webhook_secret = self.cf_webhook_secret
-
-    def live_provider_name(self) -> str:
-        return self.live_media_provider if self.live_media_provider in ("demo", "cloudflare") else "demo"
-
-    def ugc_provider_name(self) -> str:
-        return self.ugc_media_provider if self.ugc_media_provider in ("fake", "cloudflare") else "fake"
-
     @classmethod
     def from_env(cls, http_port: int | None = None, ws_port: int | None = None,
                  http_host: str | None = None, ws_host: str | None = None) -> "Config":

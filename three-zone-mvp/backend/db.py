@@ -751,26 +751,6 @@ class Database:
                     (time.time(), session_id),
                 )
 
-    def _dedupe_open_view_sessions(self) -> None:
-        """Close duplicate open sessions so the unique partial index can be created."""
-        dupes = self._conn.execute(
-            "SELECT event_id, user_id FROM view_sessions WHERE state='open' "
-            "GROUP BY event_id, user_id HAVING COUNT(*) > 1"
-        ).fetchall()
-        for event_id, user_id in dupes:
-            rows = self._conn.execute(
-                "SELECT session_id FROM view_sessions "
-                "WHERE event_id=? AND user_id=? AND state='open' ORDER BY started_at ASC, session_id ASC",
-                (event_id, user_id),
-            ).fetchall()
-            # Keep the earliest open session; close the rest as duplicates.
-            for row in rows[1:]:
-                self._conn.execute(
-                    "UPDATE view_sessions SET state='closed', close_reason='duplicate_open', "
-                    "ended_at=? WHERE session_id=? AND state='open'",
-                    (time.time(), row[0]),
-                )
-
     # --- primitives -------------------------------------------------------
     def query(self, sql: str, params: tuple = ()):
         with self._lock:

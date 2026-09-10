@@ -436,11 +436,6 @@ class _Handler(BaseHTTPRequestHandler):
         from .live_readiness import readiness
         self._send_json(200, readiness(self.cp.config))
 
-    def h_live_readiness(self, p, b, u):
-        # Operator/owner only. Never returns secret values — only presence/validity flags.
-        from .live_readiness import readiness
-        self._send_json(200, readiness(self.cp.config))
-
     def h_config(self, p, b, u):
         self._send_json(200, self.cp.config.public_config())
 
