@@ -74,6 +74,7 @@ def _routes():
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/rights/revoke$"), "h_revoke", "operator"),
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/rights/restore$"), "h_restore", "operator"),
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/ingest-token$"), "h_ingest_token", "operator"),
+        ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/camera/attach$"), "h_camera_attach", "operator"),
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/ingest/heartbeat$"), "h_heartbeat", "none"),
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/media/provision$"), "h_media_provision", "operator"),
         ("POST", re.compile(rf"^/api/events/{_EVENT_RE}/media/rotate-key$"), "h_media_rotate", "operator"),
@@ -169,7 +170,7 @@ class _Handler(BaseHTTPRequestHandler):
         cfg = self.cp.config
         scheme = "wss" if cfg.is_production else "ws"
         ws_origin = f"{scheme}://{cfg.ws_host}:{cfg.ws_port}"
-        media_src = "'self'"
+        media_src = "'self' blob: mediastream:"
         connect_src = f"'self' {ws_origin}"
         host = cfg.cloudflare_playback_host
         if host:
@@ -356,7 +357,7 @@ class _Handler(BaseHTTPRequestHandler):
 
         if method == "GET" and path in ("/", "/index.html"):
             return self._serve_static("index.html")
-        if method == "GET" and path in ("/ops", "/ops.html"):
+        if method == "GET" and path in ("/ops", "/ops.html", "/ops/"):
             return self._serve_static("ops.html")
         if method == "GET" and path in ("/app.js", "/portal.js", "/styles.css", "/ops.css"):
             return self._serve_static(path.lstrip("/"))
@@ -579,6 +580,14 @@ class _Handler(BaseHTTPRequestHandler):
     def h_ingest_token(self, p, b, u):
         source = (b or {}).get("source", "primary")
         self._send_json(201, self.cp.issue_ingest_token(p["event_id"], u, source))
+
+    def h_camera_attach(self, p, b, u):
+        body = b or {}
+        self._send_json(200, self.cp.attach_station_camera(
+            p["event_id"], u,
+            go_live=bool(body.get("go_live", False)),
+            source=body.get("source", "primary"),
+        ))
 
     def h_heartbeat(self, p, b, u):
         b = b or {}

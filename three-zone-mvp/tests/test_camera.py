@@ -84,6 +84,73 @@ class CameraTests(unittest.TestCase):
         self.assertIsNotNone(outbox)
         self.assertIsNone(outbox["delivered_at"])
 
+    def test_station_camera_marks_production_ready_and_goes_live(self):
+        created = self.cp.create_event(self.operator, {
+            "title": "Gym cam",
+            "zone": "midwest",
+            "category": "basketball",
+        })
+        event_id = created["event_id"]
+        self.assertEqual(created["status"], "scheduled")
+        attached = self.cp.attach_station_camera(event_id, self.operator, go_live=False)
+        self.assertTrue(attached["production_ready"])
+        self.assertEqual(attached["camera"], "station")
+        live = self.cp.attach_station_camera(event_id, self.operator, go_live=True)
+        self.assertEqual(live["event"]["status"], "live")
+
+    def test_station_camera_http_and_ops_slash_exist(self):
+        import json
+        import threading
+        import urllib.request
+
+        from backend.config import DEMO_SEED_PASSWORDS
+        from backend.http_server import make_http_server
+
+        cfg = Config(env="demo", http_host="127.0.0.1", http_port=0,
+                     allowed_origins=["http://127.0.0.1"])
+        httpd = make_http_server(cfg, self.cp, "/tmp")
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            base = f"http://{host}:{port}"
+            with urllib.request.urlopen(base + "/ops/", timeout=5) as resp:
+                ops = resp.read().decode()
+            self.assertIn("Start camera", ops)
+            self.assertIn("Go live with this camera", ops)
+            login = urllib.request.Request(
+                base + "/api/auth/login",
+                data=json.dumps({
+                    "username": "demo-owner",
+                    "password": DEMO_SEED_PASSWORDS["demo-owner"],
+                }).encode(),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(login, timeout=5) as resp:
+                token = json.loads(resp.read())["session_token"]
+            created = urllib.request.Request(
+                base + "/api/events",
+                data=json.dumps({"title": "Cam night", "zone": "midwest", "category": "basketball"}).encode(),
+                method="POST",
+                headers={"Content-Type": "application/json", "Authorization": "Bearer " + token},
+            )
+            with urllib.request.urlopen(created, timeout=5) as resp:
+                event_id = json.loads(resp.read())["event"]["event_id"]
+            attach = urllib.request.Request(
+                base + f"/api/events/{event_id}/camera/attach",
+                data=json.dumps({"go_live": True, "source": "primary"}).encode(),
+                method="POST",
+                headers={"Content-Type": "application/json", "Authorization": "Bearer " + token},
+            )
+            with urllib.request.urlopen(attach, timeout=5) as resp:
+                payload = json.loads(resp.read())
+            self.assertEqual(payload["event"]["status"], "live")
+            self.assertTrue(payload["production_ready"])
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
 
 if __name__ == "__main__":
     unittest.main()

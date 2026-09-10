@@ -88,7 +88,8 @@ function attachPortalMedia(url, mediaType) {
 }
 
 function connectEventSocket(eventId) {
-  if (!player.config || !sessionStorage.getItem("tz_session")) return;
+  if (!player.config || !player.config.ws_enabled || !player.config.ws_url_base) return;
+  if (!sessionStorage.getItem("tz_session")) return;
   if (player.ws) { try { player.ws.close(); } catch (_) {} }
   const url = player.config.ws_url_base + eventId;
   let ws;
@@ -144,6 +145,10 @@ function applyRoute() {
     setView(name);
     if (name === "feed") loadFeed();
     if (name === "live" || name === "watch") loadCatalog();
+    if ((location.hash || "").replace(/^#/, "") === "archives") {
+      const archives = $("#archives");
+      if (archives) archives.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     if (name === "inbox") loadInbox();
     if (name === "profile") loadProfileTab();
     return;
@@ -380,7 +385,7 @@ async function loadPortal() {
 async function submitAuth(path, body) {
   const result = await api("POST", path, body);
   if (result.session_token) sessionStorage.setItem("tz_session", result.session_token);
-  if (result.home === "/ops") { location.href = "/ops"; return; }
+  if (result.home === "/ops" && !pendingPlayback()) { location.href = "/ops"; return; }
   await loadPortal();
 }
 
@@ -456,7 +461,8 @@ window.addEventListener("hashchange", applyRoute);
 window.addEventListener("pagehide", () => stopPortalMedia("pagehide"));
 $$("#section-nav a").forEach(link => link.onclick = event => {
   event.preventDefault();
-  location.hash = link.dataset.view;
+  const href = (link.getAttribute("href") || "").replace(/^#/, "");
+  location.hash = href || link.dataset.view;
 });
 $$("[data-mode]").forEach(btn => btn.onclick = () => {
   state.mode = btn.dataset.mode;
@@ -622,7 +628,8 @@ async function openSearchItem(item) {
     return;
   }
   if (item.kind === "game" && item.status === "archive") {
-    location.hash = "watch";
+    location.hash = "archives";
+    await playMedia(`/api/member/events/${item.id}/playback`, item.name, "Authorized archive playback");
     return;
   }
   location.hash = item.kind === "game" ? "live" : "watch";

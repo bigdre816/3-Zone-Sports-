@@ -127,6 +127,8 @@ class PortalTests(unittest.TestCase):
         with open(os.path.join(root, "backend", "static", "app.js"), encoding="utf-8") as handle:
             app_js = handle.read()
         self.assertIn("async function revokeRights()", app_js)
+        self.assertIn("async function goLiveWithCamera()", app_js)
+        self.assertIn("/api/events/${state.selected}/camera/attach", app_js)
         self.assertIn("async function loadInventory()", app_js)
         self.assertIn("async function loadMastery()", app_js)
         self.assertIn('querySelectorAll("#app [data-pane]")', app_js)
@@ -153,6 +155,8 @@ class PortalTests(unittest.TestCase):
         with open(os.path.join(static, "portal.js"), encoding="utf-8") as handle:
             js = handle.read()
         self.assertIn("Watch live", js)
+        self.assertIn("pendingPlayback()", js)
+        self.assertIn("location.hash = href || link.dataset.view", js)
         self.assertIn("Watch archive", js)
         self.assertIn("/api/member/archive/", js)
         self.assertIn("search-results", js)
@@ -344,6 +348,9 @@ class PortalTests(unittest.TestCase):
         self.assertIn("const card = document.createElement('div');", live_html)
         self.assertIn("container.replaceChildren(...cards);", live_html)
         self.assertNotIn("container.innerHTML = events.map", live_html)
+        self.assertIn("See schedule", live_html)
+        self.assertNotIn("alert('Member services are not yet configured.')", live_html)
+        self.assertNotIn("alert('Member services are not yet configured.')", archives_html)
         self.assertIn("Schedules are temporarily unavailable.", schedules_html)
         self.assertIn("Archives are temporarily unavailable.", archives_html)
         self.assertIn("function archiveBackendCandidates()", archives_html)

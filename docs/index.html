@@ -566,7 +566,7 @@
                 <span class="status-dot live"></span>
                 <strong>${event.status === 'live' ? 'LIVE NOW' : event.status === 'green' ? 'READY' : 'UPCOMING'}</strong>
               </div>
-              <button style="width: 100%; margin-top: 12px;" onclick="watchLive('${event.event_id}')">Watch Live</button>
+              <button style="width: 100%; margin-top: 12px;" onclick="${event.status === 'live' ? `watchLive('${event.event_id}')` : `location.href='/schedules/'`}">${event.status === 'live' ? 'Watch Live' : 'See schedule'}</button>
             </div>
           </div>
         `).join('');
@@ -588,7 +588,7 @@
         }
 
         container.innerHTML = schedules.slice(0, 3).map(event => `
-          <div class="card">
+          <a href="/schedules/" class="card">
             <h3>${event.team || 'Team'} vs ${event.opponent || 'Opponent'}</h3>
             <p>${new Date((event.start_at || 0) * 1000).toLocaleDateString()} at ${new Date((event.start_at || 0) * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
             <p style="color: var(--muted); font-size: 12px;">${event.location || 'Location TBD'}</p>
@@ -596,7 +596,7 @@
               <span class="status-dot"></span>
               ${event.home_away || event.status || 'Scheduled'}
             </div>
-          </div>
+          </a>
         `).join('');
       } catch (error) {
         container.innerHTML = `<div class="unavailable" style="grid-column: 1/-1;"><p>Schedules are temporarily unavailable.</p><p>${error.message || 'Please check back soon.'}</p></div>`;

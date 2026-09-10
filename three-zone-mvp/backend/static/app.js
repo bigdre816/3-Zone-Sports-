@@ -15,6 +15,9 @@ const state = {
   heartbeatTimer: null,
   leaseTimer: null,
   heartbeatSeq: 0,
+  cameraStream: null,
+  cameraPulse: null,
+  cameraFileUrl: null,
 };
 
 const OPERATOR_ROLES = ["operator", "owner", "admin"];
@@ -85,6 +88,7 @@ async function login(event) {
 }
 
 function logout() {
+  stopCamera();
   stopMedia("logout");
   state.session = null;
   state.user = null;
@@ -419,6 +423,9 @@ async function createEvent(form) {
     toast("Created " + res.event.title, "ok");
     form.reset();
     await loadEvents();
+    state.selected = res.event.event_id;
+    showPane("controls");
+    renderOperatorControls(state.selected);
   } catch (e) {
     toast("Create failed: " + (e.code || e.message), "bad");
   }
@@ -464,12 +471,113 @@ async function issueIngest() {
   const source = $("#ingest-source").value;
   try {
     const res = await api("POST", `/api/events/${state.selected}/ingest-token`, { source });
-    const cmd = `python scripts/ingest_heartbeat.py \\\n  --event ${res.event_id} --source ${res.source} \\\n  --token ${res.ingest_token} --once`;
     const out = $("#ingest-out");
-    out.textContent = `Scoped to event=${res.event_id} source=${res.source} (expires_in=${res.expires_in}s)\n\n${cmd}`;
+    out.textContent = `Encoder token for ${res.event_id} (${res.source}, ${res.expires_in}s). Prefer Start camera on this page. Advanced: python scripts/ingest_heartbeat.py --event ${res.event_id} --source ${res.source} --token ${res.ingest_token} --once`;
     out.classList.remove("hidden");
     toast("Ingest token issued", "ok");
   } catch (e) { toast("Ingest token failed: " + (e.code || e.message), "bad"); }
+}
+
+function stopCameraPulse() {
+  if (state.cameraPulse) {
+    clearInterval(state.cameraPulse);
+    state.cameraPulse = null;
+  }
+}
+
+function stopCamera() {
+  stopCameraPulse();
+  if (state.cameraStream) {
+    state.cameraStream.getTracks().forEach((track) => track.stop());
+    state.cameraStream = null;
+  }
+  if (state.cameraFileUrl) {
+    URL.revokeObjectURL(state.cameraFileUrl);
+    state.cameraFileUrl = null;
+  }
+  const video = $("#camera-preview");
+  if (video) {
+    video.srcObject = null;
+    video.removeAttribute("src");
+    video.classList.remove("on");
+    video.load();
+  }
+  const status = $("#camera-status");
+  if (status) status.textContent = "Camera stopped. Hook it again to go live.";
+}
+
+function startCameraPulse() {
+  stopCameraPulse();
+  const beat = async () => {
+    if (!state.selected) return;
+    try {
+      await api("POST", `/api/events/${state.selected}/camera/attach`, { go_live: false });
+    } catch (_) {}
+  };
+  beat();
+  state.cameraPulse = setInterval(beat, 5000);
+}
+
+async function startCamera() {
+  if (!state.selected) return toast("Select an event first", "bad");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $("#camera-status").textContent = "This browser cannot open a camera. Pick a video file instead.";
+    return;
+  }
+  try {
+    stopCamera();
+    state.cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: true,
+    });
+    const video = $("#camera-preview");
+    video.srcObject = state.cameraStream;
+    video.classList.add("on");
+    $("#camera-status").textContent = "Camera is on this station. Tap Go live with this camera.";
+    startCameraPulse();
+    toast("Camera attached", "ok");
+  } catch (e) {
+    $("#camera-status").textContent = "Could not open camera. Allow camera access, or pick a video file.";
+    toast("Camera blocked: " + (e.message || e), "bad");
+  }
+}
+
+function useCameraFile(input) {
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  if (!state.selected) return toast("Select an event first", "bad");
+  stopCamera();
+  state.cameraFileUrl = URL.createObjectURL(file);
+  const video = $("#camera-preview");
+  video.srcObject = null;
+  video.src = state.cameraFileUrl;
+  video.classList.add("on");
+  video.play().catch(() => {});
+  $("#camera-status").textContent = "Video file attached as this station camera. Tap Go live with this camera.";
+  startCameraPulse();
+  toast("Video file attached", "ok");
+}
+
+async function goLiveWithCamera() {
+  if (!state.selected) return toast("Select an event first", "bad");
+  if (!state.cameraStream && !state.cameraFileUrl) {
+    await startCamera();
+    if (!state.cameraStream && !state.cameraFileUrl) return;
+  }
+  try {
+    const res = await api("POST", `/api/events/${state.selected}/camera/attach`, {
+      go_live: true,
+      source: $("#ingest-source") ? $("#ingest-source").value : "primary",
+    });
+    const title = res.event && res.event.title ? res.event.title : state.selected;
+    toast("Live: " + title, "ok");
+    $("#camera-status").textContent = "This camera is live. Keep this page open so the heartbeat stays fresh.";
+    await loadEvents();
+    renderOperatorControls(state.selected);
+    startCameraPulse();
+  } catch (e) {
+    toast("Go live failed: " + (e.code || e.message), "bad");
+  }
 }
 
 async function provisionMedia() {
@@ -750,6 +858,14 @@ async function init() {
   $("#revoke-btn").addEventListener("click", revokeRights);
   $("#restore-btn").addEventListener("click", restoreRights);
   $("#ingest-btn").addEventListener("click", issueIngest);
+  const startCam = $("#start-camera-btn");
+  if (startCam) startCam.addEventListener("click", startCamera);
+  const goLiveCam = $("#go-live-camera-btn");
+  if (goLiveCam) goLiveCam.addEventListener("click", goLiveWithCamera);
+  const stopCam = $("#stop-camera-btn");
+  if (stopCam) stopCam.addEventListener("click", stopCamera);
+  const camFile = $("#camera-file");
+  if (camFile) camFile.addEventListener("change", () => useCameraFile(camFile));
   const provisionBtn = $("#provision-btn");
   if (provisionBtn) provisionBtn.addEventListener("click", provisionMedia);
   const rotateBtn = $("#rotate-key-btn");

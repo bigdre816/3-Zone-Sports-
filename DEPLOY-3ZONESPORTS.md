@@ -43,6 +43,27 @@ Back portal (`/ops`):
 
 If Render gave you a different `onrender.com` URL, paste it once in the Connect box on https://3zonesports.com/ and tap Connect.
 
+## Click through when Live
+
+Public site: Home → Live → Schedules → Archives → Member portal.
+
+Member portal (`demo-viewer`): Live, Schedules, Archives, Feed, Inbox, Profile.
+
+Back portal (`demo-owner`): Catalog → open a game → Event controls.
+
+## Hook up the camera
+
+1. Open https://three-zone-sports.onrender.com/ops
+2. Sign in as `demo-owner`
+3. Open **Event controls** (create a game or pick one from Catalog)
+4. Tap **Start camera** and allow camera access
+5. Tap **Go live with this camera**
+6. Keep that tab open
+7. On a phone or another tab, sign in as `demo-viewer` and tap **Watch live**
+
+On the demo rail, viewers play the rights-checked demo game file. The camera on `/ops` is the live station: it keeps the game in **live** without a Python command. When Cloudflare Stream credentials are set later, Provision still issues the RTMPS key for a hardware encoder.
+
+
 ## If it is still down
 
 - Service settings must be **Docker**, Dockerfile path `./Dockerfile`, health check `/api/health`.

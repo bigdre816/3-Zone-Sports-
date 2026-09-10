@@ -117,8 +117,13 @@
           const button = document.createElement('button');
           button.style.width = '100%';
           button.style.marginTop = '12px';
-          button.textContent = 'Watch Live';
-          button.addEventListener('click', () => joinGame(event.event_id));
+          if (event.status === 'live') {
+            button.textContent = 'Watch Live';
+            button.addEventListener('click', () => joinGame(event.event_id));
+          } else {
+            button.textContent = 'See schedule';
+            button.addEventListener('click', () => { window.location.href = '/schedules/'; });
+          }
 
           card.append(badge, title, zone, status, scoreboard, button);
           return card;
@@ -131,11 +136,7 @@
 
     async function joinGame(eventId) {
       const url = await ThreeZoneConfig.memberAppUrl('/?event=' + encodeURIComponent(eventId));
-      if (!url) {
-        alert('Member services are not yet configured.');
-        return;
-      }
-      window.location.href = url;
+      window.location.href = url || ThreeZoneConfig.memberOrigin();
     }
 
     document.addEventListener('DOMContentLoaded', function () {
