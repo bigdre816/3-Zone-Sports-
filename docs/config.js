@@ -5,7 +5,11 @@
  * live on another origin, so this file resolves a working backend URL at runtime.
  */
 
+const DEFAULT_MEMBER_ORIGIN = 'https://three-zone-sports.onrender.com';
+
 const ThreeZoneConfig = {
+  DEFAULT_MEMBER_ORIGIN,
+
   BACKEND_URL: (() => {
     if (typeof window !== 'undefined' && window.__THREE_ZONE_BACKEND_URL__) {
       return String(window.__THREE_ZONE_BACKEND_URL__).replace(/\/+$/, '');
@@ -15,8 +19,8 @@ const ThreeZoneConfig = {
         const saved = window.localStorage.getItem('threezone_backend_url');
         if (saved) return saved.replace(/\/+$/, '');
       } catch (_) {}
-      if (window.location.hostname === 'localhost') {
-        return 'http://localhost:8000';
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return 'http://' + window.location.hostname + ':8000';
       }
     }
     return '';
@@ -65,21 +69,37 @@ const ThreeZoneConfig = {
     if (typeof window !== 'undefined') {
       add(window.location.origin);
       const host = window.location.hostname.replace(/^www\./, '');
-      if (host === '3zonesports.com') {
+      if (host === '3zonesports.com' || host === 'localhost' || host === '127.0.0.1') {
         add('https://app.3zonesports.com');
         add('https://api.3zonesports.com');
+        add(DEFAULT_MEMBER_ORIGIN);
         add('https://three-zone-sports-api.onrender.com');
       }
     }
+    add(DEFAULT_MEMBER_ORIGIN);
+    add('https://three-zone-sports-api.onrender.com');
     return out;
   },
 
+  _timeoutSignal(ms) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    return { signal: controller.signal, cancel: () => clearTimeout(timer) };
+  },
+
   async _probeBackend(baseUrl) {
-    const url = `${baseUrl}${this.endpoints.health}`;
-    const response = await fetch(url, { credentials: 'include' });
-    if (!response.ok) return false;
-    const data = await response.json().catch(() => ({}));
-    return data && data.status === 'ok';
+    const { signal, cancel } = this._timeoutSignal(4000);
+    try {
+      const url = `${baseUrl}${this.endpoints.health}`;
+      const response = await fetch(url, { credentials: 'include', signal });
+      if (!response.ok) return false;
+      const data = await response.json().catch(() => ({}));
+      return data && data.status === 'ok';
+    } catch (_) {
+      return false;
+    } finally {
+      cancel();
+    }
   },
 
   async _resolveBackendUrlOnce() {
@@ -92,8 +112,6 @@ const ThreeZoneConfig = {
         }
       } catch (_) {}
     }
-    this.BACKEND_URL = '';
-    try { window.localStorage.removeItem('threezone_backend_url'); } catch (_) {}
     return '';
   },
 
@@ -135,7 +153,14 @@ const ThreeZoneConfig = {
   },
 
   async fetch(endpoint, options = {}) {
-    const baseUrl = await this.resolveBackendUrl();
+    const preferred = this.memberOrigin();
+    let baseUrl = '';
+    if (preferred && await this._probeBackend(preferred)) {
+      baseUrl = preferred;
+      this.BACKEND_URL = preferred;
+    } else {
+      baseUrl = await this.resolveBackendUrl();
+    }
     if (!baseUrl) {
       throw {
         status: 503,
@@ -158,13 +183,47 @@ const ThreeZoneConfig = {
     }
   },
 
+  memberOrigin() {
+    if (typeof window !== 'undefined' && window.__THREE_ZONE_BACKEND_URL__) {
+      return String(window.__THREE_ZONE_BACKEND_URL__).replace(/\/+$/, '');
+    }
+    try {
+      const saved = window.localStorage.getItem('threezone_backend_url');
+      if (saved) return saved.replace(/\/+$/, '');
+    } catch (_) {}
+    if (this.BACKEND_URL) return String(this.BACKEND_URL).replace(/\/+$/, '');
+    if (typeof window !== 'undefined') {
+      const host = String(window.location.hostname || '').replace(/^www\./, '');
+      if (host === 'localhost' || host === '127.0.0.1') {
+        return 'http://' + window.location.hostname + ':8000';
+      }
+    }
+    return DEFAULT_MEMBER_ORIGIN;
+  },
+
+  opsUrl() {
+    const origin = this.memberOrigin();
+    return origin ? `${origin}/ops` : '';
+  },
+
+  setMemberOrigin(raw) {
+    const url = String(raw || '').trim().replace(/\/+$/, '');
+    if (!url) return '';
+    this.BACKEND_URL = url;
+    try { window.localStorage.setItem('threezone_backend_url', url); } catch (_) {}
+    this._backendUrlPromise = null;
+    return url;
+  },
+
   async memberAppUrl(path = '/') {
-    const baseUrl = await this.resolveBackendUrl();
+    const baseUrl = this.memberOrigin() || await this.resolveBackendUrl();
     return baseUrl ? `${baseUrl}${path}` : '';
   },
 
   async checkHealth() {
     try {
+      const preferred = this.memberOrigin();
+      if (preferred && await this._probeBackend(preferred)) return true;
       const baseUrl = await this.resolveBackendUrl();
       if (!baseUrl) return false;
       const result = await this._requestJson(`${baseUrl}${this.endpoints.health}`);

@@ -16,7 +16,7 @@ services:
       - key: TZ_WS_HOST
         value: 0.0.0.0
       - key: TZ_ALLOWED_ORIGINS
-        value: https://3zonesports.com,https://www.3zonesports.com
+        value: https://3zonesports.com,https://www.3zonesports.com,https://three-zone-sports.onrender.com
       - key: TZ_PUBLIC_BASE_URL
         value: https://3zonesports.com
       - key: TZ_LIVE_MEDIA_PROVIDER
