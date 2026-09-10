@@ -33,6 +33,20 @@ const MEMBER_VIEWS = new Set(["feed", "live", "watch", "inbox", "profile"]);
 const HASH_ALIAS = { schedules: "watch", archives: "watch" };
 const state = { profile: null, signedIn: false, mode: "for_you", sport: "", kind: "photo", tab: "posts" };
 
+function pendingPlayback() {
+  const params = new URLSearchParams(location.search || "");
+  const eventId = params.get("event");
+  const archiveId = params.get("archive");
+  if (archiveId) return { kind: "archive", id: archiveId };
+  if (eventId) return { kind: "event", id: eventId };
+  return null;
+}
+
+function clearPendingPlayback() {
+  const next = (location.hash || "") || "#live";
+  history.replaceState(null, "", location.pathname + next);
+}
+
 const player = {
   config: null,
   hls: null,
@@ -349,6 +363,17 @@ async function loadPortal() {
   const me = await api("GET", "/api/member/me");
   showSignedIn(me.member, me.profile);
   await Promise.all([loadFeed(), loadCatalog()]);
+  const pending = pendingPlayback();
+  if (pending) {
+    clearPendingPlayback();
+    if (pending.kind === "archive") {
+      location.hash = "watch";
+      await playMedia(`/api/member/archive/${pending.id}/playback`, "Archive playback", "Authorized archive playback");
+    } else {
+      location.hash = "live";
+      await playMedia(`/api/member/events/${pending.id}/playback`, "Live playback", "Authorized playback lease issued");
+    }
+  }
   applyRoute();
 }
 

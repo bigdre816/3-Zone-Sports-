@@ -73,10 +73,75 @@
 
   <script src="/config.js"></script>
   <script>
+    function archiveConfig() {
+      if (typeof ThreeZoneConfig !== 'undefined') return ThreeZoneConfig;
+      return window.ThreeZoneConfig || null;
+    }
+
+    function archiveBackendCandidates() {
+      const seen = new Set();
+      const out = [];
+      const add = value => {
+        const item = String(value || '').replace(/\/+$/, '');
+        if (!item || seen.has(item)) return;
+        seen.add(item);
+        out.push(item);
+      };
+      try { add(window.localStorage.getItem('threezone_backend_url')); } catch (_) {}
+      const config = archiveConfig();
+      if (config && config.BACKEND_URL) add(config.BACKEND_URL);
+      if (window.location.hostname === 'localhost') add('http://localhost:8000');
+      const host = window.location.hostname.replace(/^www\./, '');
+      if (host === '3zonesports.com') {
+        add('https://app.3zonesports.com');
+        add('https://api.3zonesports.com');
+        add('https://three-zone-sports-api.onrender.com');
+      }
+      return out;
+    }
+
+    async function archiveFetch() {
+      const endpoint = '/api/public/archives';
+      const config = archiveConfig();
+      if (config && typeof config.fetch === 'function') {
+        try {
+          return await config.fetch((config.endpoints && config.endpoints.public
+            && config.endpoints.public.archives) || endpoint);
+        } catch (_) {}
+      }
+      for (const baseUrl of archiveBackendCandidates()) {
+        try {
+          const health = await fetch(baseUrl + '/api/health', { credentials: 'include' });
+          if (!health.ok) continue;
+          const response = await fetch(baseUrl + endpoint, { credentials: 'include' });
+          if (!response.ok) continue;
+          const data = await response.json();
+          try { window.localStorage.setItem('threezone_backend_url', baseUrl); } catch (_) {}
+          return { data, baseUrl };
+        } catch (_) {}
+      }
+      throw new Error('Member services are not yet configured.');
+    }
+
+    async function archiveMemberUrl(archiveId) {
+      const config = archiveConfig();
+      if (config && typeof config.memberAppUrl === 'function') {
+        try {
+          const url = await config.memberAppUrl('/?archive=' + encodeURIComponent(archiveId));
+          if (url) return url;
+        } catch (_) {}
+      }
+      for (const baseUrl of archiveBackendCandidates()) {
+        return baseUrl + '/?archive=' + encodeURIComponent(archiveId);
+      }
+      return '';
+    }
+
     async function loadArchives() {
       const container = document.getElementById('archives-container');
       try {
-        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.member.archives);
+        const result = await archiveFetch();
+        const data = result.data || result;
         const archives = data.archives || [];
         
         if (archives.length === 0) {
@@ -88,25 +153,26 @@
           <div class="card">
             <div class="card-img">Video Archive</div>
             <div class="card-content">
-              <h3>${archive.away_team || 'Away'} vs ${archive.home_team || 'Home'}</h3>
-              <p>${archive.sport || 'Sports'} · ${archive.level || 'Competition'}</p>
-              <p>Final: ${archive.home_score || '—'} - ${archive.away_score || '—'}</p>
-              <div class="card-date">${new Date(archive.end_time).toLocaleDateString()}</div>
+              <h3>${archive.title || 'Archived game'}</h3>
+              <p>${archive.school || 'School'} · ${archive.team || 'Team'}</p>
+              <p>${archive.sport || 'Sports'} · ${archive.level || 'Competition'} · ${archive.kind || 'Archive'}</p>
+              <div class="card-date">${archive.season || 'Season unavailable'}</div>
               <button onclick="watchArchive('${archive.archive_id}')">Watch Replay</button>
             </div>
           </div>
         `).join('');
       } catch (error) {
-        container.innerHTML = `<div class="error" style="grid-column: 1/-1;">Unable to load archives. ${error.message || 'Please try again.'}</div>`;
+        container.innerHTML = `<div class="unavailable" style="grid-column: 1/-1;">Archives are temporarily unavailable. ${error.message || 'Please check back soon.'}</div>`;
       }
     }
 
-    function watchArchive(archiveId) {
-      if (!ThreeZoneConfig.BACKEND_URL) {
+    async function watchArchive(archiveId) {
+      const url = await archiveMemberUrl(archiveId);
+      if (!url) {
         alert('Member services are not yet configured.');
         return;
       }
-      window.location.href = ThreeZoneConfig.BACKEND_URL + '/?archive=' + archiveId;
+      window.location.href = url;
     }
 
     document.addEventListener('DOMContentLoaded', loadArchives);

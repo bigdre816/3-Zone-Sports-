@@ -494,7 +494,7 @@
     async function loadLiveEvents() {
       const container = document.getElementById('live-events');
       try {
-        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.member.live);
+        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.live);
         const events = data.events || [];
         
         if (events.length === 0) {
@@ -504,19 +504,19 @@
 
         container.innerHTML = events.slice(0, 3).map(event => `
           <div class="card">
-            <h3>${event.away_team || 'Team A'} vs ${event.home_team || 'Team B'}</h3>
-            <p>${event.sport || 'Sports'} • ${event.level || 'High School'}</p>
+            <h3>${event.title || 'Verified game'}</h3>
+            <p>${event.zone || 'Zone'} • ${event.category || 'general'}</p>
             <div style="margin-top: auto;">
               <div class="status">
                 <span class="status-dot live"></span>
-                <strong>LIVE NOW</strong>
+                <strong>${event.status === 'live' ? 'LIVE NOW' : event.status === 'green' ? 'READY' : 'UPCOMING'}</strong>
               </div>
               <button style="width: 100%; margin-top: 12px;" onclick="watchLive('${event.event_id}')">Watch Live</button>
             </div>
           </div>
         `).join('');
       } catch (error) {
-        container.innerHTML = `<div class="error" style="grid-column: 1/-1;">Unable to load live events. ${error.message || 'Please try again later.'}</div>`;
+        container.innerHTML = `<div class="unavailable" style="grid-column: 1/-1;"><p>Live events are temporarily unavailable.</p><p>${error.message || 'Please check back soon.'}</p></div>`;
       }
     }
 
@@ -524,7 +524,7 @@
     async function loadUpcomingEvents() {
       const container = document.getElementById('upcoming-events');
       try {
-        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.member.schedules);
+        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.schedules);
         const schedules = data.schedules || [];
         
         if (schedules.length === 0) {
@@ -534,36 +534,38 @@
 
         container.innerHTML = schedules.slice(0, 3).map(event => `
           <div class="card">
-            <h3>${event.away_team || 'Team A'} vs ${event.home_team || 'Team B'}</h3>
-            <p>${new Date(event.start_time).toLocaleDateString()} at ${new Date(event.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+            <h3>${event.team || 'Team'} vs ${event.opponent || 'Opponent'}</h3>
+            <p>${new Date((event.start_at || 0) * 1000).toLocaleDateString()} at ${new Date((event.start_at || 0) * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
             <p style="color: var(--muted); font-size: 12px;">${event.location || 'Location TBD'}</p>
             <div class="status">
               <span class="status-dot"></span>
-              ${event.status === 'scheduled' ? 'Scheduled' : event.status}
+              ${event.home_away || event.status || 'Scheduled'}
             </div>
           </div>
         `).join('');
       } catch (error) {
-        container.innerHTML = `<div class="error" style="grid-column: 1/-1;">Unable to load schedule. ${error.message || 'Please try again later.'}</div>`;
+        container.innerHTML = `<div class="unavailable" style="grid-column: 1/-1;"><p>Schedules are temporarily unavailable.</p><p>${error.message || 'Please check back soon.'}</p></div>`;
       }
     }
 
     // Member sign in handler
-    function handleMemberSignIn() {
-      if (!ThreeZoneConfig.BACKEND_URL) {
+    async function handleMemberSignIn() {
+      const url = await ThreeZoneConfig.memberAppUrl('/');
+      if (!url) {
         alert('Member services are not yet configured. Please check back soon.');
         return;
       }
-      window.location.href = ThreeZoneConfig.BACKEND_URL + '/';
+      window.location.href = url;
     }
 
     // Watch live handler
-    function watchLive(eventId) {
-      if (!ThreeZoneConfig.BACKEND_URL) {
+    async function watchLive(eventId) {
+      const url = await ThreeZoneConfig.memberAppUrl('/?event=' + encodeURIComponent(eventId));
+      if (!url) {
         alert('Member services are not yet configured. Please check back soon.');
         return;
       }
-      window.location.href = ThreeZoneConfig.BACKEND_URL + '/?event=' + eventId;
+      window.location.href = url;
     }
 
     // Initialize on page load
