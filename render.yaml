@@ -1,15 +1,12 @@
 # Render Blueprint — Three-Zone Sports member app.
-# Public marketing site stays on GitHub Pages (https://3zonesports.com).
-# This service is sign-in, live, schedules, archives, and /ops.
+# Matches the Docker services already created on the Render dashboard.
 services:
   - type: web
     name: three-zone-sports
-    runtime: python
+    runtime: docker
     plan: free
-    rootDir: three-zone-mvp
-    pythonVersion: "3.12.8"
-    buildCommand: pip install -r requirements.txt
-    startCommand: python run.py --host 0.0.0.0
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /api/health
     envVars:
       - key: TZ_ENV

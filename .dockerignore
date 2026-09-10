@@ -1,0 +1,15 @@
+.git
+.github
+.cursor
+**/.venv
+**/__pycache__
+**/*.pyc
+**/*.sqlite3
+apps
+docs
+moten_audit
+tests
+index.html
+timezone-clock.html
+*.md
+!three-zone-mvp/THREE_ZONE_MASTERY.md

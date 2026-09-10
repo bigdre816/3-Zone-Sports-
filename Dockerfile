@@ -6,14 +6,14 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY requirements.txt ./
+COPY three-zone-mvp/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY backend ./backend
-COPY scripts ./scripts
-COPY run.py ./run.py
-COPY THREE_ZONE_MASTERY.md ./THREE_ZONE_MASTERY.md
-COPY docker-entrypoint.sh /docker-entrypoint.sh
+COPY three-zone-mvp/backend ./backend
+COPY three-zone-mvp/scripts ./scripts
+COPY three-zone-mvp/run.py ./run.py
+COPY three-zone-mvp/THREE_ZONE_MASTERY.md ./THREE_ZONE_MASTERY.md
+COPY three-zone-mvp/docker-entrypoint.sh /docker-entrypoint.sh
 
 RUN chmod +x /docker-entrypoint.sh && mkdir -p /data /app/data
 
