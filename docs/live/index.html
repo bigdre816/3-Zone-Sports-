@@ -87,16 +87,42 @@
           return;
         }
 
-        container.innerHTML = events.map(event => `
-          <div class="card">
-            <div class="live-badge"><span class="live-dot"></span> ${event.status === 'live' ? 'LIVE NOW' : event.status === 'green' ? 'READY TO START' : 'UPCOMING'}</div>
-            <h3>${event.title || 'Verified game'}</h3>
-            <p>${event.zone || 'Zone'} · ${event.category || 'general'}</p>
-            <p style="font-size: 12px; color: var(--muted);">Status: ${event.status || 'scheduled'}</p>
-            <p style="font-size: 12px; color: var(--muted);">Scoreboard: ${event.scoreboard && Object.keys(event.scoreboard).length ? JSON.stringify(event.scoreboard) : 'Not posted yet'}</p>
-            <button style="width: 100%; margin-top: 12px;" onclick="joinGame('${event.event_id}')">Watch Live</button>
-          </div>
-        `).join('');
+        const cards = events.map(event => {
+          const card = document.createElement('div');
+          card.className = 'card';
+
+          const badge = document.createElement('div');
+          badge.className = 'live-badge';
+          const dot = document.createElement('span');
+          dot.className = 'live-dot';
+          badge.append(dot, ` ${event.status === 'live' ? 'LIVE NOW' : event.status === 'green' ? 'READY TO START' : 'UPCOMING'}`);
+
+          const title = document.createElement('h3');
+          title.textContent = event.title || 'Verified game';
+
+          const zone = document.createElement('p');
+          zone.textContent = `${event.zone || 'Zone'} · ${event.category || 'general'}`;
+
+          const status = document.createElement('p');
+          status.style.fontSize = '12px';
+          status.style.color = 'var(--muted)';
+          status.textContent = `Status: ${event.status || 'scheduled'}`;
+
+          const scoreboard = document.createElement('p');
+          scoreboard.style.fontSize = '12px';
+          scoreboard.style.color = 'var(--muted)';
+          scoreboard.textContent = `Scoreboard: ${event.scoreboard && Object.keys(event.scoreboard).length ? JSON.stringify(event.scoreboard) : 'Not posted yet'}`;
+
+          const button = document.createElement('button');
+          button.style.width = '100%';
+          button.style.marginTop = '12px';
+          button.textContent = 'Watch Live';
+          button.addEventListener('click', () => joinGame(event.event_id));
+
+          card.append(badge, title, zone, status, scoreboard, button);
+          return card;
+        });
+        container.replaceChildren(...cards);
       } catch (error) {
         container.innerHTML = `<div class="unavailable" style="grid-column: 1/-1;">Live games are temporarily unavailable. ${error.message || 'Please check back soon.'}</div>`;
       }
