@@ -140,6 +140,97 @@ class PortalService:
                         ("arc-central-wrestling", "evt_mw_wrestling", "school_lincoln", "team_lincoln_bball",
                          "2026", "Full Game", "Central Wrestling — Full Game", "", "ARCHIVED"))
 
+    @staticmethod
+    def _public_event(event):
+        """Return only the catalog fields safe for unsigned visitors."""
+        scoreboard = event.get("scoreboard") or {}
+        public_scoreboard = {
+            key: scoreboard[key]
+            for key in ("home", "away", "period", "clock")
+            if key in scoreboard
+        }
+        return {
+            "event_id": event["event_id"],
+            "title": event["title"],
+            "zone": event["zone"],
+            "sport": event["category"],
+            "category": event["category"],
+            "status": event["status"],
+            "scheduled_start": event["scheduled_start"],
+            "start_time": event["scheduled_start"],
+            "scoreboard": public_scoreboard,
+            "home_score": public_scoreboard.get("home"),
+            "away_score": public_scoreboard.get("away"),
+            "replay_available": bool(event.get("replay_available")),
+            "replay_pending": bool(event.get("replay_pending")),
+        }
+
+    @staticmethod
+    def _public_schedule(row):
+        team = row["team"]
+        opponent = row["opponent"]
+        home_away = row["home_away"]
+        home_team = team if home_away == "HOME" else opponent
+        away_team = opponent if home_away == "HOME" else team
+        return {
+            "schedule_id": row["schedule_id"],
+            "schedule_event_id": row["schedule_event_id"],
+            "season": row["season"],
+            "school": row["school"],
+            "team": team,
+            "opponent": opponent,
+            "home_team": home_team,
+            "away_team": away_team,
+            "sport": row["sport"],
+            "level": row["level"],
+            "start_at": row["start_at"],
+            "start_time": row["start_at"],
+            "location": row["location"],
+            "home_away": home_away,
+            "status": "scheduled",
+        }
+
+    def _public_archive(self, row):
+        event = self.db.query_one(
+            "SELECT scheduled_start,scoreboard,replay_available FROM events WHERE event_id=?",
+            (row["event_id"],),
+        )
+        scoreboard = loads(event["scoreboard"], {}) if event else {}
+        return {
+            "archive_id": row["archive_id"],
+            "event_id": row["event_id"],
+            "season": row["season"],
+            "kind": row["kind"],
+            "title": row["title"],
+            "school": row["school"],
+            "team": row["team"],
+            "sport": row["sport"],
+            "level": row["level"],
+            "status": "archived",
+            "start_time": event["scheduled_start"] if event else None,
+            "end_time": event["scheduled_start"] if event else None,
+            "home_score": scoreboard.get("home"),
+            "away_score": scoreboard.get("away"),
+            "replay_available": bool(event["replay_available"]) if event else False,
+        }
+
+    def public_live(self):
+        self._ensure_catalog()
+        events = self.cp.list_events({"zones": ["*"]})
+        return [
+            self._public_event(event)
+            for event in events
+            if event["status"] == "live"
+        ]
+
+    def public_schedules(self):
+        self._ensure_catalog()
+        return [self._public_schedule(row) for row in self.schedules(None)]
+
+    def public_archives(self):
+        self._ensure_catalog()
+        return [self._public_archive(row) for row in self.archives(None)]
+
     def live(self, user):
         self._ensure_catalog()
         events = self.cp.list_events(user)

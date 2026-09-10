@@ -79,7 +79,7 @@
     async function loadLiveGames() {
       const container = document.getElementById('live-container');
       try {
-        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.member.live);
+        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.live);
         const events = data.events || [];
         
         if (events.length === 0) {
@@ -90,8 +90,8 @@
         container.innerHTML = events.map(event => `
           <div class="card">
             <div class="live-badge"><span class="live-dot"></span> LIVE NOW</div>
-            <h3>${event.away_team || 'Away'} vs ${event.home_team || 'Home'}</h3>
-            <p>${event.sport || 'Sports'} · ${event.level || 'Competition'}</p>
+            <h3>${event.title || `${event.away_team || 'Away'} vs ${event.home_team || 'Home'}`}</h3>
+            <p>${event.sport || event.category || 'Sports'} · ${event.level || 'Competition'}</p>
             <p style="font-size: 12px; color: var(--muted);">Score: ${event.home_score || '—'} - ${event.away_score || '—'}</p>
             <p style="font-size: 12px; color: var(--muted);">Location: ${event.location || 'TBD'}</p>
             <button style="width: 100%; margin-top: 12px;" onclick="joinGame('${event.event_id}')">Watch Live</button>

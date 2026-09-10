@@ -73,7 +73,7 @@
     async function loadSchedule() {
       const container = document.getElementById('schedule-container');
       try {
-        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.member.schedules);
+        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.schedules);
         const schedules = data.schedules || [];
         
         if (schedules.length === 0) {

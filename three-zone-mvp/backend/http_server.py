@@ -37,6 +37,9 @@ def _routes():
         ("GET", re.compile(r"^/api/health$"), "h_health", "none"),
         ("GET", re.compile(r"^/api/ops/live-readiness$"), "h_live_readiness", "operator"),
         ("GET", re.compile(r"^/api/config$"), "h_config", "none"),
+        ("GET", re.compile(r"^/api/public/live$"), "h_public_live", "none"),
+        ("GET", re.compile(r"^/api/public/schedules$"), "h_public_schedules", "none"),
+        ("GET", re.compile(r"^/api/public/archives$"), "h_public_archives", "none"),
         ("POST", re.compile(r"^/api/auth/demo-login$"), "h_login", "none"),
         ("POST", re.compile(r"^/api/auth/login$"), "h_auth_login", "none"),
         ("POST", re.compile(r"^/api/auth/register$"), "h_auth_register", "none"),
@@ -425,6 +428,15 @@ class _Handler(BaseHTTPRequestHandler):
 
     def h_config(self, p, b, u):
         self._send_json(200, self.cp.config.public_config())
+
+    def h_public_live(self, p, b, u):
+        self._send_json(200, {"events": self.portal.public_live()})
+
+    def h_public_schedules(self, p, b, u):
+        self._send_json(200, {"schedules": self.portal.public_schedules()})
+
+    def h_public_archives(self, p, b, u):
+        self._send_json(200, {"archives": self.portal.public_archives()})
 
     def h_login(self, p, b, u):
         result = self.cp.demo_login((b or {}).get("account", ""))

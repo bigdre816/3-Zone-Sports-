@@ -19,7 +19,11 @@ services:
       - key: TZ_WS_PORT
         value: 8765
       - key: TZ_ALLOWED_ORIGINS
-        value: https://3zonesports.com,https://api.3zonesports.com
+        value: https://3zonesports.com,https://www.3zonesports.com
+      - key: TZ_PUBLIC_BASE_URL
+        value: https://api.3zonesports.com
+      - key: TZ_PUBLIC_APP_URL
+        value: https://3zonesports.com
       - key: TZ_DATABASE_URL
         fromDatabase:
           name: three-zone-postgres
@@ -36,6 +40,12 @@ services:
         generateValue: true
       - key: TZ_MEDIA_SERVICE_KEY
         generateValue: true
+      - key: TZ_SEED_PASSWORD_VIEWER
+        sync: false
+      - key: TZ_SEED_PASSWORD_WORKER
+        sync: false
+      - key: TZ_SEED_PASSWORD_OWNER
+        sync: false
       - key: TZ_MOTEN_SERVICE_URL
         sync: false
       - key: TZ_MOTEN_SHARED_SECRET

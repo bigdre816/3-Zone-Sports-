@@ -5,26 +5,48 @@
  * Update BACKEND_URL to point to your deployed member app.
  */
 
+function normalizeOrigin(value) {
+  return typeof value === 'string' ? value.trim().replace(/\/+$/, '') : '';
+}
+
+function resolveBackendOrigin() {
+  if (typeof window === 'undefined') return '';
+
+  const runtimeOverride = normalizeOrigin(window.__THREE_ZONE_BACKEND_URL__);
+  if (runtimeOverride) return runtimeOverride;
+
+  const meta = document.querySelector('meta[name="three-zone-backend"]');
+  const metaOverride = normalizeOrigin(meta && meta.content);
+  if (metaOverride) return metaOverride;
+
+  if (typeof process !== 'undefined' && process.env && process.env.REACT_APP_BACKEND_URL) {
+    return normalizeOrigin(process.env.REACT_APP_BACKEND_URL);
+  }
+
+  const { hostname, protocol } = window.location;
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
+    return 'http://localhost:8000';
+  }
+  if (hostname === '3zonesports.com' || hostname === 'www.3zonesports.com') {
+    return 'https://api.3zonesports.com';
+  }
+  return /^https?:$/.test(protocol) ? normalizeOrigin(window.location.origin) : '';
+}
+
 const ThreeZoneConfig = {
-  // Production deployment URL - update this when backend is deployed
-  // Examples: https://app.3zonesports.com, https://three-zone-api.render.com
-  BACKEND_URL: (() => {
-    // Auto-detect in development
-    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-      return 'http://localhost:8000';
-    }
-    // Use environment variable if available (for CI/CD)
-    if (typeof process !== 'undefined' && process.env.REACT_APP_BACKEND_URL) {
-      return process.env.REACT_APP_BACKEND_URL;
-    }
-    // Default to empty string (same origin) - will prompt user if needed
-    return '';
-  })(),
+  // The static site resolves the API at runtime so a backend redeploy does not
+  // require editing every page.
+  BACKEND_URL: resolveBackendOrigin(),
 
   // API endpoints (relative to BACKEND_URL)
   endpoints: {
     health: '/api/health',
     config: '/api/config',
+    public: {
+      live: '/api/public/live',
+      schedules: '/api/public/schedules',
+      archives: '/api/public/archives',
+    },
     
     // Authentication
     auth: {

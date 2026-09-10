@@ -67,7 +67,12 @@ Add these variables:
 | `TZ_DATABASE_PATH` | `/var/data/three_zone.sqlite3` |
 | `TZ_TOKEN_SECRET` | *Paste the first secret you generated* |
 | `TZ_MEDIA_SERVICE_KEY` | *Paste the second secret you generated* |
+| `TZ_SEED_PASSWORD_VIEWER` | *Set a unique production password* |
+| `TZ_SEED_PASSWORD_WORKER` | *Set a unique production password* |
+| `TZ_SEED_PASSWORD_OWNER` | *Set a unique production password* |
 | `TZ_ALLOWED_ORIGINS` | `https://3zonesports.com,https://www.3zonesports.com` |
+| `TZ_PUBLIC_BASE_URL` | `https://api.3zonesports.com` |
+| `TZ_PUBLIC_APP_URL` | `https://3zonesports.com` |
 | `TZ_LIVE_MEDIA_PROVIDER` | `demo` |
 | `TZ_UGC_MEDIA_PROVIDER` | `fake` |
 
@@ -123,11 +128,10 @@ Now the public website needs to know where the backend is.
    })(),
    ```
 
-6. Replace the entire `BACKEND_URL` function with:
-   ```javascript
-   BACKEND_URL: 'https://three-zone-sports-api-xxxx.onrender.com',
-   ```
-   (Use your actual Render URL from Step 6)
+6. The checked-in `docs/config.js` resolves the production API to
+   `https://api.3zonesports.com` at runtime. If you use the generated Render
+   hostname instead, set `window.__THREE_ZONE_BACKEND_URL__` before loading
+   `config.js` or replace the custom-domain mapping in that file.
 
 7. Scroll down and click **Commit changes**
 8. GitHub Pages will rebuild within 1-2 minutes
@@ -141,7 +145,7 @@ Now the public website needs to know where the backend is.
 5. You should be redirected to the member portal
 6. Sign in with demo account:
    - **Username**: `demo-viewer`
-   - **Password**: `change-me-viewer-local` (demo only; change in production)
+   - **Password**: the production value set for `TZ_SEED_PASSWORD_VIEWER`
 
 ## Step 9: Test Live Games
 
