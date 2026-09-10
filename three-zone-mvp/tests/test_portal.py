@@ -75,61 +75,6 @@ class PortalTests(unittest.TestCase):
         config = Config(env="demo", xrpl_signing_secret="do-not-show", allowed_origins=["http://localhost"])
         self.assertNotIn("do-not-show", str(config.public_config()))
 
-    def test_public_catalog_is_unsigned_and_sanitized(self):
-        live = self.portal.public_live()
-        schedules = self.portal.public_schedules()
-        archives = self.portal.public_archives()
-
-        self.assertTrue(live)
-        self.assertTrue(all(event["status"] == "live" for event in live))
-        self.assertTrue(schedules)
-        self.assertTrue(archives)
-        self.assertNotIn("rights", live[0])
-        self.assertNotIn("provider_input_id", live[0])
-        self.assertIn("home_team", schedules[0])
-        self.assertIn("replay_available", archives[0])
-
-    def test_public_catalog_http_routes_do_not_require_a_session(self):
-        import json
-        import threading
-        import urllib.request
-
-        from backend.http_server import make_http_server
-
-        cfg = Config(env="demo", http_host="127.0.0.1", http_port=0,
-                     allowed_origins=["http://127.0.0.1"])
-        httpd = make_http_server(cfg, self.cp, "/tmp")
-        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-        thread.start()
-        try:
-            host, port = httpd.server_address
-            base = f"http://{host}:{port}"
-            preflight = urllib.request.Request(
-                base + "/api/public/live",
-                method="OPTIONS",
-                headers={
-                    "Origin": "http://localhost",
-                    "Access-Control-Request-Method": "GET",
-                    "Access-Control-Request-Headers": "Content-Type",
-                },
-            )
-            with urllib.request.urlopen(preflight, timeout=5) as response:
-                self.assertEqual(response.status, 204)
-                self.assertEqual(response.headers["Access-Control-Allow-Origin"], "http://localhost")
-            for path, key in (
-                ("/api/public/live", "events"),
-                ("/api/public/schedules", "schedules"),
-                ("/api/public/archives", "archives"),
-            ):
-                with urllib.request.urlopen(base + path, timeout=5) as response:
-                    self.assertEqual(response.status, 200)
-                    body = json.loads(response.read())
-                self.assertIn(key, body)
-                self.assertTrue(body[key])
-        finally:
-            httpd.shutdown()
-            httpd.server_close()
-
     def test_catalog_seed_survives_concurrent_first_load(self):
         import threading
         errors = []

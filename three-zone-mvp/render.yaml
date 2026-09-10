@@ -26,18 +26,8 @@ services:
         sync: false
       - key: TZ_MEDIA_SERVICE_KEY
         sync: false
-      - key: TZ_SEED_PASSWORD_VIEWER
-        sync: false
-      - key: TZ_SEED_PASSWORD_WORKER
-        sync: false
-      - key: TZ_SEED_PASSWORD_OWNER
-        sync: false
       - key: TZ_ALLOWED_ORIGINS
-        value: https://3zonesports.com,https://www.3zonesports.com
-      - key: TZ_PUBLIC_BASE_URL
-        value: https://api.3zonesports.com
-      - key: TZ_PUBLIC_APP_URL
-        value: https://3zonesports.com
+        value: https://3zonesports.com,https://api.3zonesports.com
       - key: TZ_LIVE_MEDIA_PROVIDER
         value: demo
       - key: TZ_UGC_MEDIA_PROVIDER
