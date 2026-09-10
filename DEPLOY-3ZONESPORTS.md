@@ -1,6 +1,46 @@
-# Deploy 3zonesports.com
+# Set up Render
 
-Three pieces. One Render service.
+The public site is already live: https://3zonesports.com/
+
+Member portal and back portal run on **one** Render web service. That service is currently **503 / suspended**. Set it up with the Blueprint in this repo.
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/bigdre816/3-Zone-Sports-)
+
+## New (or replace the broken one)
+
+1. Open https://render.com/deploy?repo=https://github.com/bigdre816/3-Zone-Sports-
+2. Sign in to Render
+3. Connect the GitHub repo **3-Zone-Sports-**
+4. Apply Blueprint `render.yaml`
+5. If Render asks for a card, that is the **0.5 CPU / 512 MB** plan so the app stays up (~$7/month). Free instances sleep and then show 503.
+6. Wait until Status is **Live**
+7. Open https://three-zone-sports.onrender.com/api/health
+
+That health URL must return JSON with `"status": "ok"`.
+
+Do **not** apply `three-zone-mvp/render.yaml`. That Python/production file is what created **3-Zone-Api**. Delete **3-Zone-Api** if it is still on the dashboard.
+
+## Already have 3-Zone-Sports-
+
+1. Open https://dashboard.render.com
+2. Open **3-Zone-Sports-**
+3. If it says Suspended, tap **Resume** (or Apply the Blueprint above so it is Docker + always-on)
+4. Settings must be:
+   - Branch **`main`**
+   - Runtime **Docker**
+   - Root Directory `three-zone-mvp`
+   - Dockerfile path `./Dockerfile`
+   - Docker context `.`
+   - Health check `/api/health`
+   - `TZ_ENV=demo`
+5. Tap **Manual Deploy** → **Deploy latest commit**
+6. Wait until **Live**, then open the health URL
+
+Dockerfile path and Docker context are **relative to Root Directory**. If Root Directory is `three-zone-mvp`, both must stay `./Dockerfile` and `.`. Do not set either one to `three-zone-mvp` — that makes Render look for `three-zone-mvp/three-zone-mvp` and the build exits before Docker starts.
+
+Do not use `TZ_ENV=production` on this rail. Production mode refuses the demo logins and the service never becomes Live.
+
+## After it is Live
 
 | Piece | URL |
 | --- | --- |
@@ -8,42 +48,13 @@ Three pieces. One Render service.
 | Member portal | https://three-zone-sports.onrender.com/ |
 | Back portal | https://three-zone-sports.onrender.com/ops |
 
-The public site is already on GitHub Pages (`docs/`). Member portal and Back portal buttons on that site already point at the Render app. Do not create a second service. Do not point Pages at the repo root.
+Member: `demo-viewer` / `change-me-viewer-local`
 
-## One service
+Back portal: `demo-owner` / `change-me-owner-local`
 
-Use **3-Zone-Sports-** only. Ignore or delete **3-Zone-Api**.
+Camera: Back portal → Event controls → **Start camera** → **Go live with this camera**. Keep that tab open.
 
-Render must build the **`three-zone-mvp`** image from branch **`main`**. That image boots in demo mode, listens on Render’s `PORT`, and allows `https://3zonesports.com`.
-
-Dockerfile path and Docker context are **relative to Root Directory**. If Root Directory is `three-zone-mvp`, the Dockerfile path must be `./Dockerfile` and the context must be `.`. Do not set either one to `three-zone-mvp` — that makes Render look for `three-zone-mvp/three-zone-mvp` and the build exits before Docker starts.
-
-Do not use `TZ_ENV=production` on this rail. Production mode refuses the demo logins and the service never becomes Live.
-
-## Make Render Live
-
-1. Open https://dashboard.render.com
-2. Open **3-Zone-Sports-**
-3. Confirm branch is **`main`**
-4. Tap **Manual Deploy** → **Deploy latest commit**
-5. Wait until Status is **Live**
-6. Open https://three-zone-sports.onrender.com/api/health
-
-That health URL must return JSON with `"status": "ok"`. If the tab spins and never loads, the deploy is still failed or stuck. Stay on this service and deploy `main` again. Do not add **3-Zone-Api**.
-
-## Sign in
-
-Member portal:
-
-- Username: `demo-viewer`
-- Password: `change-me-viewer-local`
-
-Back portal (`/ops`):
-
-- Username: `demo-owner`
-- Password: `change-me-owner-local`
-
-If Render gave you a different `onrender.com` URL, paste it once in the Connect box on https://3zonesports.com/ and tap Connect.
+If Render gave a different `onrender.com` host, paste it once in the Connect box on https://3zonesports.com/.
 
 ## If it is still down
 

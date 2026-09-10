@@ -125,6 +125,28 @@ summary { cursor: pointer; font-weight: 600; }
 
 .op-controls { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
 .op-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.camera-row { align-items: flex-start; }
+.camera-station { display: flex; flex-direction: column; gap: 10px; flex: 1; min-width: 16rem; }
+#camera-preview {
+  width: min(420px, 100%);
+  min-height: 180px;
+  background: #0b0f14;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  object-fit: cover;
+}
+#camera-preview.on { border-color: var(--live); }
+.file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.file-btn input { display: none; }
 .op-label { width: 90px; color: var(--muted); font-size: 12px; }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 

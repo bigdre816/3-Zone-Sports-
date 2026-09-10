@@ -170,11 +170,7 @@
 
     async function watchArchive(archiveId) {
       const url = await archiveMemberUrl(archiveId);
-      if (!url) {
-        alert('Member services are not yet configured.');
-        return;
-      }
-      window.location.href = url;
+      window.location.href = url || (window.ThreeZoneConfig && ThreeZoneConfig.memberOrigin()) || '/';
     }
 
     document.addEventListener('DOMContentLoaded', function () {

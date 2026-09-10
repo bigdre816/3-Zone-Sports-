@@ -385,6 +385,7 @@ class Config:
         return {
             "env": self.env,
             "ws_url_base": f"ws://{self.ws_host}:{self.ws_port}/ws/events/",
+            "ws_enabled": self.ws_host not in ("0.0.0.0", "::"),
             "session_ttl": self.session_ttl,
             "lease_ttl": self.lease_ttl,
             "heartbeat_timeout": self.heartbeat_timeout,

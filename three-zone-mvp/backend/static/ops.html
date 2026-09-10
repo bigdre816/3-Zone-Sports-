@@ -46,6 +46,7 @@
       <div class="sidebar-account">
         <div id="who" class="who"></div>
         <a class="nav-link" href="/">Member site</a>
+        <a class="nav-link" href="https://3zonesports.com/">Public site</a>
         <button id="logout-btn" type="button" class="ghost">Sign out</button>
       </div>
     </aside>
@@ -118,6 +119,21 @@
                 <input name="clock" placeholder="clock" />
                 <button type="submit">Update</button>
               </form>
+            </div>
+            <div class="op-row camera-row">
+              <span class="op-label">Camera</span>
+              <div class="camera-station">
+                <video id="camera-preview" autoplay playsinline muted></video>
+                <div class="btn-row">
+                  <button id="start-camera-btn" type="button">Start camera</button>
+                  <button id="go-live-camera-btn" type="button">Go live with this camera</button>
+                  <label class="file-btn">Use video file
+                    <input id="camera-file" type="file" accept="video/*" capture="environment" />
+                  </label>
+                  <button id="stop-camera-btn" type="button" class="ghost">Stop camera</button>
+                </div>
+                <p class="muted" id="camera-status">Hook the camera on this phone or laptop, then tap Go live.</p>
+              </div>
             </div>
             <div class="op-row">
               <span class="op-label">Ingest</span>

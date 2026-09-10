@@ -100,6 +100,8 @@ SITE_ROUTES = [
      "purpose": "Member portal styles"},
     {"method": "GET", "path": "/ops", "tier": "public",
      "purpose": "Operator/owner control-plane console"},
+    {"method": "GET", "path": "/ops/", "tier": "public",
+     "purpose": "Operator/owner control-plane console (trailing slash)"},
     {"method": "GET", "path": "/app.js", "tier": "public",
      "purpose": "Control-plane catalog, player, operator, and owner logic"},
     {"method": "GET", "path": "/ops.css", "tier": "public",
@@ -184,6 +186,8 @@ SITE_ROUTES = [
      "purpose": "Restore rights as a new version"},
     {"method": "POST", "path": "/api/events/{id}/ingest-token", "tier": "worker",
      "purpose": "Issue an event-scoped ingest token"},
+    {"method": "POST", "path": "/api/events/{id}/camera/attach", "tier": "worker",
+     "purpose": "Attach this station camera and optionally go live"},
     {"method": "POST", "path": "/api/events/{id}/ingest/heartbeat", "tier": "ingest",
      "purpose": "Encoder heartbeat (ingest-token scoped)"},
     {"method": "POST", "path": "/api/events/{id}/media/provision", "tier": "worker",
@@ -776,6 +780,35 @@ class ControlPlane(PipelineMixin):
         self.audit_log(operator["user_id"], "ingest.token_issued", event_id, {"source": source})
         return {"ingest_token": token, "event_id": event_id, "source": source,
                 "expires_in": self.config.ingest_ttl}
+
+    def attach_station_camera(self, event_id: str, operator: dict, *,
+                              go_live: bool = False, source: str = "primary") -> dict:
+        """Treat this operator station (phone/laptop camera) as the production path.
+
+        Issues a fresh ingest heartbeat so clearance can proceed without a CLI
+        encoder. When go_live is true, walks scheduled → live.
+        """
+        self.require_operator(operator)
+        if source not in VALID_SOURCES:
+            raise ValidationError("source must be primary or backup", "bad_source")
+        issued = self.issue_ingest_token(event_id, operator, source)
+        self.record_heartbeat(event_id, issued["ingest_token"], source, healthy=True)
+        row = self.get_event_row(event_id)
+        if go_live and row["status"] != "live":
+            order = ("gray", "yellow", "green", "live")
+            while row["status"] != "live":
+                allowed = _ALLOWED_TRANSITIONS.get(row["status"], set())
+                nxt = next((state for state in order if state in allowed), None)
+                if not nxt:
+                    break
+                self.transition(event_id, operator, nxt)
+                row = self.get_event_row(event_id)
+        return {
+            "event": self._event_dict(row),
+            "camera": "station",
+            "source": source,
+            "production_ready": self.production_ready(row),
+        }
 
     # -- lifecycle --------------------------------------------------------
     def transition(self, event_id: str, operator: dict, target: str) -> dict:
