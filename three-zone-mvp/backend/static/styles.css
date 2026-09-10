@@ -110,8 +110,9 @@ video { width: 100%; max-height: 420px; background: #000; }
 #composer-photo { object-fit: contain; }
 .post-card .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .prov { color: var(--accent); font-size: 12px; font-weight: 650; margin: 0; }
-.empty, .media-ph { color: var(--muted); }
+.empty { color: var(--muted); }
 .media-ph {
+  color: var(--muted);
   min-height: 140px; display: flex; align-items: center; justify-content: center;
   background: #10161e; border: 1px dashed var(--line); border-radius: 8px; padding: 16px;
   text-align: center;

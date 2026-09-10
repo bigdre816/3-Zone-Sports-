@@ -18,6 +18,7 @@ from .control_plane import (
     AuthError, ConflictError, ControlError, ForbiddenError, NotFoundError, ValidationError,
 )
 from .db import dumps, loads
+from .media_provider import ProviderError
 
 
 class RateLimitError(ControlError):
@@ -1827,6 +1828,17 @@ class NetworkService:
             if not owner or owner["profile_id"] != asset["owner_profile_id"]:
                 if not self._staff(viewer):
                     raise ForbiddenError("not authorized", "media_forbidden")
-        meta = self.provider.playback_metadata(asset["provider_uid"])
+        if hasattr(self.provider, "remember_asset"):
+            self.provider.remember_asset(
+                asset.get("provider_uid"),
+                kind=asset.get("kind"),
+                duration_seconds=asset.get("duration_seconds"),
+                status=asset.get("status") or "ready",
+            )
+        meta = {}
+        try:
+            meta = self.provider.playback_metadata(asset["provider_uid"]) or {}
+        except ProviderError:
+            meta = {}
         seconds = int(asset["duration_seconds"] or meta.get("duration_seconds") or 8)
         return asset, max(2, min(seconds, 600))

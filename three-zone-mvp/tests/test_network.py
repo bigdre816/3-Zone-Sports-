@@ -501,6 +501,22 @@ class FakeProviderE2ETests(unittest.TestCase):
         self.assertEqual(opened["source_media_asset_id"], ready["source_media_asset_id"])
         self.assertIsNotNone(build_provider(cp.config))
 
+    def test_playback_survives_empty_provider_memory(self):
+        cp, portal, net, provider = build_net()
+        created = cp.register_viewer("clipper2", "password123", "Clipper Two")
+        user = created["user"]
+        game = net.submit_game(user, {
+            "sport": "basketball", "home_team_name": "Lincoln", "away_team_name": "West",
+            "rights_attestation": True, "level": "high_school",
+        })
+        net.complete_fake_upload(game["upload"]["upload_url"].rsplit("/", 1)[-1],
+                                 {"duration_seconds": 400})
+        ready = net.game_view(user, game["game_id"])
+        net.provider = FakeProvider(webhook_secret=cp.config.fake_webhook_secret)
+        asset, seconds = net.asset_for_playback(user, ready["source_media_asset_id"])
+        self.assertEqual(asset["media_asset_id"], ready["source_media_asset_id"])
+        self.assertGreaterEqual(seconds, 2)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
