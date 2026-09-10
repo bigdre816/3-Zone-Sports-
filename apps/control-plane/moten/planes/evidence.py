@@ -44,7 +44,6 @@ def _moten_head(session: Session) -> ChainHead:
         .one_or_none()
     )
     if head is None:
-        sequence, head_hash = _rebuild_chain_state(session)
         session.execute(
             text(
                 "INSERT INTO chain_head (ledger, sequence, head_hash, updated_at) "
@@ -53,8 +52,8 @@ def _moten_head(session: Session) -> ChainHead:
             ),
             {
                 "ledger": "moten",
-                "sequence": sequence,
-                "head_hash": head_hash,
+                "sequence": 0,
+                "head_hash": None,
                 "updated_at": now(),
             },
         )
@@ -65,6 +64,12 @@ def _moten_head(session: Session) -> ChainHead:
             .with_for_update()
             .one()
         )
+        if head.sequence == 0 and head.head_hash is None:
+            sequence, head_hash = _rebuild_chain_state(session)
+            head.sequence = sequence
+            head.head_hash = head_hash
+            head.updated_at = now()
+            session.flush()
     return head
 
 
