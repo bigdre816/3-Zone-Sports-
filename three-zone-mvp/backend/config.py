@@ -73,6 +73,12 @@ def _cloudflare_credentials() -> tuple[str, str, str, str]:
     return account, token, customer, webhook
 
 
+def cloudflare_live_credentials_complete() -> bool:
+    """True when Stream live-rail secrets are all present (values never logged)."""
+    account, token, customer, webhook = _cloudflare_credentials()
+    return bool(account and token and customer and webhook)
+
+
 @dataclass
 class Config:
     """Resolved configuration for one running instance."""
