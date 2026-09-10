@@ -287,6 +287,14 @@ class PortalTests(unittest.TestCase):
                 payload = json.loads(resp.read())
             self.assertEqual(payload["status"], "ok")
 
+            pages_origin = urllib.request.Request(
+                base + "/api/health",
+                headers={"Origin": "http://127.0.0.1:5500"},
+            )
+            with urllib.request.urlopen(pages_origin, timeout=5) as resp:
+                payload = json.loads(resp.read())
+            self.assertEqual(payload["status"], "ok")
+
             blocked = urllib.request.Request(
                 base + "/api/health",
                 headers={"Origin": "https://evil.example"},

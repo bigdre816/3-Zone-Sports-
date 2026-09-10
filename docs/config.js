@@ -20,7 +20,7 @@ const ThreeZoneConfig = {
         if (saved) return saved.replace(/\/+$/, '');
       } catch (_) {}
       if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        return 'http://localhost:8000';
+        return 'http://' + window.location.hostname + ':8000';
       }
     }
     return '';
@@ -153,7 +153,14 @@ const ThreeZoneConfig = {
   },
 
   async fetch(endpoint, options = {}) {
-    const baseUrl = await this.resolveBackendUrl();
+    const preferred = this.memberOrigin();
+    let baseUrl = '';
+    if (preferred && await this._probeBackend(preferred)) {
+      baseUrl = preferred;
+      this.BACKEND_URL = preferred;
+    } else {
+      baseUrl = await this.resolveBackendUrl();
+    }
     if (!baseUrl) {
       throw {
         status: 503,
@@ -187,7 +194,9 @@ const ThreeZoneConfig = {
     if (this.BACKEND_URL) return String(this.BACKEND_URL).replace(/\/+$/, '');
     if (typeof window !== 'undefined') {
       const host = String(window.location.hostname || '').replace(/^www\./, '');
-      if (host === 'localhost' || host === '127.0.0.1') return 'http://localhost:8000';
+      if (host === 'localhost' || host === '127.0.0.1') {
+        return 'http://' + window.location.hostname + ':8000';
+      }
     }
     return DEFAULT_MEMBER_ORIGIN;
   },
@@ -213,6 +222,8 @@ const ThreeZoneConfig = {
 
   async checkHealth() {
     try {
+      const preferred = this.memberOrigin();
+      if (preferred && await this._probeBackend(preferred)) return true;
       const baseUrl = await this.resolveBackendUrl();
       if (!baseUrl) return false;
       const result = await this._requestJson(`${baseUrl}${this.endpoints.health}`);

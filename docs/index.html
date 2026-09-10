@@ -625,6 +625,8 @@
       ThreeZoneConfig.setMemberOrigin(raw);
       bindPortals();
       checkBackendStatus();
+      loadLiveEvents();
+      loadUpcomingEvents();
     });
 
     async function watchLive(eventId) {
