@@ -76,7 +76,7 @@
     async function loadArchives() {
       const container = document.getElementById('archives-container');
       try {
-        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.member.archives);
+        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.archives);
         const archives = data.archives || [];
         
         if (archives.length === 0) {
@@ -88,10 +88,10 @@
           <div class="card">
             <div class="card-img">Video Archive</div>
             <div class="card-content">
-              <h3>${archive.away_team || 'Away'} vs ${archive.home_team || 'Home'}</h3>
-              <p>${archive.sport || 'Sports'} · ${archive.level || 'Competition'}</p>
-              <p>Final: ${archive.home_score || '—'} - ${archive.away_score || '—'}</p>
-              <div class="card-date">${new Date(archive.end_time).toLocaleDateString()}</div>
+              <h3>${archive.title || 'Archived game'}</h3>
+              <p>${archive.school || 'School'} · ${archive.team || 'Team'}</p>
+              <p>${archive.sport || 'Sports'} · ${archive.level || 'Competition'} · ${archive.kind || 'Archive'}</p>
+              <div class="card-date">${archive.season || 'Season unavailable'}</div>
               <button onclick="watchArchive('${archive.archive_id}')">Watch Replay</button>
             </div>
           </div>
@@ -101,12 +101,13 @@
       }
     }
 
-    function watchArchive(archiveId) {
-      if (!ThreeZoneConfig.BACKEND_URL) {
+    async function watchArchive(archiveId) {
+      const url = await ThreeZoneConfig.memberAppUrl('/?archive=' + encodeURIComponent(archiveId));
+      if (!url) {
         alert('Member services are not yet configured.');
         return;
       }
-      window.location.href = ThreeZoneConfig.BACKEND_URL + '/?archive=' + archiveId;
+      window.location.href = url;
     }
 
     document.addEventListener('DOMContentLoaded', loadArchives);

@@ -30,6 +30,10 @@ class PortalService:
         self.cp = cp
         self.db = cp.db
 
+    @staticmethod
+    def _public_user() -> dict:
+        return {"user_id": "public-catalog", "zones": ["*"]}
+
     def audit(self, event_type, subject_id=None, actor_type="system", actor_id="system",
               payload=None, correlation_id=None, verification_ref=None, rights_version=None):
         payload = payload or {}
@@ -147,6 +151,11 @@ class PortalService:
         self.audit("event.discovered", "live-catalog", "member", user["user_id"], {"count": len(result)})
         return result
 
+    def public_live(self):
+        self._ensure_catalog()
+        events = self.cp.list_events(self._public_user())
+        return [e for e in events if e["status"] in ("live", "green", "scheduled")]
+
     def schedules(self, user, filters=None):
         self._ensure_catalog()
         filters = filters or {}
@@ -160,12 +169,18 @@ class PortalService:
         sql += " ORDER BY se.start_at"
         return [dict(r) for r in self.db.query(sql, tuple(params))]
 
+    def public_schedules(self, filters=None):
+        return self.schedules(self._public_user(), filters)
+
     def archives(self, user, filters=None):
         self._ensure_catalog()
         rows = self.db.query("""SELECT a.*,sc.name school,t.name team,t.sport,t.level FROM archive_objects a
                               JOIN schools sc ON sc.school_id=a.school_id JOIN teams t ON t.team_id=a.team_id
                               WHERE a.status='ARCHIVED' ORDER BY a.season DESC,a.title""")
         return [dict(r) for r in rows]
+
+    def public_archives(self, filters=None):
+        return self.archives(self._public_user(), filters)
 
     def search(self, user, query):
         self._ensure_catalog()

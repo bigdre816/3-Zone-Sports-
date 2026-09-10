@@ -228,6 +228,51 @@ class PortalTests(unittest.TestCase):
             httpd.shutdown()
             httpd.server_close()
 
+    def test_public_catalog_endpoints_do_not_require_member_auth(self):
+        import json
+        import threading
+        import urllib.request
+
+        from backend.http_server import make_http_server
+
+        cfg = Config(env="demo", http_host="127.0.0.1", http_port=0,
+                     allowed_origins=["http://127.0.0.1"])
+        httpd = make_http_server(cfg, self.cp, "/tmp")
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            base = f"http://{host}:{port}"
+            with urllib.request.urlopen(base + "/api/public/live", timeout=5) as resp:
+                live = json.loads(resp.read())
+            with urllib.request.urlopen(base + "/api/public/schedules", timeout=5) as resp:
+                schedules = json.loads(resp.read())
+            with urllib.request.urlopen(base + "/api/public/archives", timeout=5) as resp:
+                archives = json.loads(resp.read())
+            self.assertIn("events", live)
+            self.assertIn("schedules", schedules)
+            self.assertIn("archives", archives)
+            self.assertGreaterEqual(len(live["events"]), 1)
+            self.assertGreaterEqual(len(schedules["schedules"]), 1)
+            self.assertGreaterEqual(len(archives["archives"]), 1)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_public_site_config_and_portal_redirect_hooks_are_present(self):
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with open(os.path.join(repo, "docs", "config.js"), encoding="utf-8") as handle:
+            config_js = handle.read()
+        self.assertIn("public: {", config_js)
+        self.assertIn("/api/public/live", config_js)
+        self.assertIn("three-zone-sports-api.onrender.com", config_js)
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "backend", "static", "portal.js"), encoding="utf-8") as handle:
+            portal_js = handle.read()
+        self.assertIn("new URLSearchParams(location.search || \"\")", portal_js)
+        self.assertIn("clearPendingPlayback()", portal_js)
+        self.assertIn("/api/member/archive/${pending.id}/playback", portal_js)
+
 
 if __name__ == "__main__":
     unittest.main()
