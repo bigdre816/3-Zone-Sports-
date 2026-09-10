@@ -83,22 +83,26 @@ const ThreeZoneConfig = {
   },
 
   async resolveBackendUrl() {
-    if (this.BACKEND_URL) return this.BACKEND_URL;
-    if (!this._backendUrlPromise) {
-      this._backendUrlPromise = (async () => {
-        for (const candidate of this._candidateBackendUrls()) {
-          try {
-            if (await this._probeBackend(candidate)) {
-              this.BACKEND_URL = candidate;
-              try { window.localStorage.setItem('threezone_backend_url', candidate); } catch (_) {}
-              return candidate;
-            }
-          } catch (_) {}
-        }
-        return '';
-      })();
+    if (this._backendUrlPromise) return this._backendUrlPromise;
+    this._backendUrlPromise = (async () => {
+      for (const candidate of this._candidateBackendUrls()) {
+        try {
+          if (await this._probeBackend(candidate)) {
+            this.BACKEND_URL = candidate;
+            try { window.localStorage.setItem('threezone_backend_url', candidate); } catch (_) {}
+            return candidate;
+          }
+        } catch (_) {}
+      }
+      this.BACKEND_URL = '';
+      try { window.localStorage.removeItem('threezone_backend_url'); } catch (_) {}
+      return '';
+    })();
+    try {
+      return await this._backendUrlPromise;
+    } finally {
+      this._backendUrlPromise = null;
     }
-    return this._backendUrlPromise;
   },
 
   async _requestJson(url, options = {}) {
@@ -174,6 +178,10 @@ const ThreeZoneConfig = {
     }
   },
 };
+
+if (typeof window !== 'undefined') {
+  window.ThreeZoneConfig = ThreeZoneConfig;
+}
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = ThreeZoneConfig;

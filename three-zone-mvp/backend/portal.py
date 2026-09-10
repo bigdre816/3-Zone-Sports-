@@ -154,7 +154,12 @@ class PortalService:
     def public_live(self):
         self._ensure_catalog()
         events = self.cp.list_events(self._public_user())
-        return [e for e in events if e["status"] in ("live", "green", "scheduled")]
+        allowed = ("event_id", "title", "zone", "category", "status", "scheduled_start", "scoreboard")
+        return [
+            {key: event.get(key) for key in allowed}
+            for event in events
+            if event["status"] in ("live", "green", "scheduled")
+        ]
 
     def schedules(self, user, filters=None):
         self._ensure_catalog()

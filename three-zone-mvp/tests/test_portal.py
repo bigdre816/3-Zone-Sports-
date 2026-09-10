@@ -255,6 +255,7 @@ class PortalTests(unittest.TestCase):
             self.assertGreaterEqual(len(live["events"]), 1)
             self.assertGreaterEqual(len(schedules["schedules"]), 1)
             self.assertGreaterEqual(len(archives["archives"]), 1)
+            self.assertNotIn("rights", live["events"][0])
         finally:
             httpd.shutdown()
             httpd.server_close()
@@ -267,6 +268,8 @@ class PortalTests(unittest.TestCase):
         self.assertIn("/api/public/live", config_js)
         self.assertIn("three-zone-sports-api.onrender.com", config_js)
         self.assertIn("backend_unconfigured", config_js)
+        self.assertIn("window.ThreeZoneConfig = ThreeZoneConfig;", config_js)
+        self.assertNotIn("if (this.BACKEND_URL) return this.BACKEND_URL;", config_js)
         self.assertNotIn("const url = baseUrl ? `${baseUrl}${endpoint}` : endpoint;", config_js)
         with open(os.path.join(repo, "docs", "live", "index.html"), encoding="utf-8") as handle:
             live_html = handle.read()
