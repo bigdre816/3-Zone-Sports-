@@ -170,6 +170,12 @@ const ThreeZoneSite = {
   },
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-  ThreeZoneSite.bindChrome();
-});
+if (typeof document !== 'undefined') {
+  document.addEventListener('DOMContentLoaded', () => {
+    ThreeZoneSite.bindChrome();
+  });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = ThreeZoneSite;
+}
