@@ -6,9 +6,10 @@ Cryptographic signatures and WORM object-lock storage are Phase 2/4 hardening.
 
 from __future__ import annotations
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ..models import Artifact, Event
+from ..models import Artifact, ChainHead, Event
 from ..util import (
     allocate_id,
     canonical_payload_hash,
@@ -19,10 +20,57 @@ from ..util import (
 )
 
 
-def _chain_hash(prev: Event | None) -> str | None:
-    if prev is None:
-        return None
-    return sha256_text(f"{prev.event_id}|{prev.payload_sha256}|{prev.previous_event_hash or ''}")
+def _event_hash(event_id: str, payload_sha256: str, previous_hash: str | None) -> str:
+    return sha256_text(f"{event_id}|{payload_sha256}|{previous_hash or ''}")
+
+
+def _rebuild_chain_state(session: Session) -> tuple[int, str | None]:
+    events = session.query(Event).order_by(Event.recorded_at.asc(), Event.event_id.asc()).all()
+    expected_prev: str | None = None
+    sequence = 0
+    for ev in events:
+        if ev.previous_event_hash != expected_prev:
+            raise ValueError("cannot initialize moten chain head from a broken chain")
+        expected_prev = _event_hash(ev.event_id, ev.payload_sha256, ev.previous_event_hash)
+        sequence += 1
+    return sequence, expected_prev
+
+
+def _moten_head(session: Session) -> ChainHead:
+    head = (
+        session.query(ChainHead)
+        .filter(ChainHead.ledger == "moten")
+        .with_for_update()
+        .one_or_none()
+    )
+    if head is None:
+        session.execute(
+            text(
+                "INSERT INTO chain_head (ledger, sequence, head_hash, updated_at) "
+                "VALUES (:ledger, :sequence, :head_hash, :updated_at) "
+                "ON CONFLICT (ledger) DO NOTHING"
+            ),
+            {
+                "ledger": "moten",
+                "sequence": 0,
+                "head_hash": None,
+                "updated_at": now(),
+            },
+        )
+        session.flush()
+        head = (
+            session.query(ChainHead)
+            .filter(ChainHead.ledger == "moten")
+            .with_for_update()
+            .one()
+        )
+        if head.sequence == 0 and head.head_hash is None:
+            sequence, head_hash = _rebuild_chain_state(session)
+            head.sequence = sequence
+            head.head_hash = head_hash
+            head.updated_at = now()
+            session.flush()
+    return head
 
 
 def append_event(
@@ -38,7 +86,7 @@ def append_event(
     links: list[str] | None = None,
 ) -> Event:
     """Append an immutable, hash-chained event."""
-    prev = session.query(Event).order_by(Event.recorded_at.desc(), Event.event_id.desc()).first()
+    head = _moten_head(session)
     event = Event(
         event_id=allocate_id(session, "EVD"),
         event_type=event_type,
@@ -49,11 +97,15 @@ def append_event(
         recorded_at=now(),
         clock_source=clock_source(),
         payload_sha256=canonical_payload_hash(payload),
-        previous_event_hash=_chain_hash(prev),
+        previous_event_hash=head.head_hash,
         legal_effect=legal_effect,
         links=links or [],
     )
     session.add(event)
+    session.flush()
+    head.sequence = int(head.sequence) + 1
+    head.head_hash = _event_hash(event.event_id, event.payload_sha256, event.previous_event_hash)
+    head.updated_at = now()
     session.flush()
     return event
 
@@ -84,8 +136,15 @@ def verify_chain(session: Session) -> bool:
     """Recompute the linked hash chain and confirm continuity."""
     events = session.query(Event).order_by(Event.recorded_at.asc(), Event.event_id.asc()).all()
     expected_prev: str | None = None
+    expected_head: str | None = None
+    expected_sequence = 0
     for ev in events:
         if ev.previous_event_hash != expected_prev:
             return False
-        expected_prev = sha256_text(f"{ev.event_id}|{ev.payload_sha256}|{ev.previous_event_hash or ''}")
-    return True
+        expected_head = _event_hash(ev.event_id, ev.payload_sha256, ev.previous_event_hash)
+        expected_prev = expected_head
+        expected_sequence += 1
+    head = session.query(ChainHead).filter(ChainHead.ledger == "moten").one_or_none()
+    if head is None:
+        return True
+    return int(head.sequence) == expected_sequence and head.head_hash == expected_head

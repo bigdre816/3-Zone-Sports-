@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Three-Zone Sports - Live games now. Watch verified games as they happen." />
+  <title>Live Games · Three-Zone Sports</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%236ea8ff' width='100' height='100'/><text x='50' y='70' font-size='60' font-weight='bold' text-anchor='middle' fill='%230f141a'>3</text></svg>" />
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    :root {
+      --bg: #0f141a;
+      --panel: #171e27;
+      --line: #2a3544;
+      --text: #e8edf3;
+      --muted: #9aa7b6;
+      --accent: #6ea8ff;
+      --accent2: #74e0c0;
+      --error: #ff7f86;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, sans-serif; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 18px 6%; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 100; }
+    .brand { display: flex; gap: 8px; font-weight: 700; font-size: 20px; color: var(--text); }
+    .brand small { color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: 650; }
+    nav { display: flex; gap: 32px; }
+    nav a { font-size: 14px; color: var(--text); text-decoration: none; }
+    nav a:hover { color: var(--accent); }
+    nav a.active { color: var(--accent2); }
+    main { max-width: 1200px; margin: 0 auto; padding: 56px 6% 72px; }
+    .eyebrow { color: var(--accent); font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 12px; }
+    h1 { font-size: clamp(32px, 5vw, 48px); line-height: 1.05; margin: 0 0 16px; }
+    .subtitle { color: var(--muted); font-size: 18px; margin: 0 0 48px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+    .card:hover { border-color: var(--accent); }
+    .card h3 { margin: 0 0 8px; font-size: 18px; }
+    .card p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+    .live-badge { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; background: rgba(255, 127, 134, 0.1); color: #ff7f86; padding: 6px 12px; border-radius: 6px; margin-bottom: 12px; }
+    .live-dot { width: 8px; height: 8px; background: #ff7f86; border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    button { cursor: pointer; border: none; padding: 12px 24px; border-radius: 8px; background: var(--accent); color: var(--bg); font-weight: 600; font-size: 14px; }
+    button:hover { opacity: 0.9; }
+    .loading, .error, .unavailable { padding: 32px; text-align: center; color: var(--muted); }
+    .error { background: rgba(255, 127, 134, 0.1); border: 1px solid #ff7f86; border-radius: 8px; color: #ff7f86; }
+    .unavailable { background: var(--panel); border: 1px dashed var(--line); border-radius: 8px; }
+    footer { padding: 40px 6%; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; text-align: center; }
+    footer a { color: var(--accent); }
+    @media (max-width: 900px) { nav { gap: 16px; font-size: 12px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/" class="brand">Three-Zone<small>Sports Access</small></a>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/live/" class="active">Live</a>
+      <a href="/schedules/">Schedules</a>
+      <a href="/archives/">Archives</a>
+      <a href="https://three-zone-sports.onrender.com/" data-member-link>Member portal</a>
+      <a href="https://three-zone-sports.onrender.com/ops" data-ops-link>Back portal</a>
+    </nav>
+  </header>
+
+  <main>
+    <p class="eyebrow">Live Events</p>
+    <h1>Games Happening Now</h1>
+    <p class="subtitle">Watch verified games live as they happen. Join members in your zone for rights-cleared playback.</p>
+    <div id="live-container" class="cards">
+      <div class="loading">Loading live games...</div>
+    </div>
+  </main>
+
+  <footer>
+    <p>Three-Zone Sports Access · <a href="/">3zonesports.com</a></p>
+  </footer>
+
+  <script src="/config.js"></script>
+  <script>
+    async function loadLiveGames() {
+      const container = document.getElementById('live-container');
+      try {
+        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.live);
+        const events = data.events || [];
+        
+        if (events.length === 0) {
+          container.innerHTML = '<div class="unavailable" style="grid-column: 1/-1;">No games live right now. Check the schedule for upcoming games.</div>';
+          return;
+        }
+
+        const cards = events.map(event => {
+          const card = document.createElement('div');
+          card.className = 'card';
+
+          const badge = document.createElement('div');
+          badge.className = 'live-badge';
+          const dot = document.createElement('span');
+          dot.className = 'live-dot';
+          badge.append(dot, ` ${event.status === 'live' ? 'LIVE NOW' : event.status === 'green' ? 'READY TO START' : 'UPCOMING'}`);
+
+          const title = document.createElement('h3');
+          title.textContent = event.title || 'Verified game';
+
+          const zone = document.createElement('p');
+          zone.textContent = `${event.zone || 'Zone'} · ${event.category || 'general'}`;
+
+          const status = document.createElement('p');
+          status.style.fontSize = '12px';
+          status.style.color = 'var(--muted)';
+          status.textContent = `Status: ${event.status || 'scheduled'}`;
+
+          const scoreboard = document.createElement('p');
+          scoreboard.style.fontSize = '12px';
+          scoreboard.style.color = 'var(--muted)';
+          scoreboard.textContent = `Scoreboard: ${event.scoreboard && Object.keys(event.scoreboard).length ? JSON.stringify(event.scoreboard) : 'Not posted yet'}`;
+
+          const button = document.createElement('button');
+          button.style.width = '100%';
+          button.style.marginTop = '12px';
+          button.textContent = 'Watch Live';
+          button.addEventListener('click', () => joinGame(event.event_id));
+
+          card.append(badge, title, zone, status, scoreboard, button);
+          return card;
+        });
+        container.replaceChildren(...cards);
+      } catch (error) {
+        container.innerHTML = `<div class="unavailable" style="grid-column: 1/-1;">Live games are temporarily unavailable. ${error.message || 'Please check back soon.'}</div>`;
+      }
+    }
+
+    async function joinGame(eventId) {
+      const url = await ThreeZoneConfig.memberAppUrl('/?event=' + encodeURIComponent(eventId));
+      if (!url) {
+        alert('Member services are not yet configured.');
+        return;
+      }
+      window.location.href = url;
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.ThreeZoneConfig) {
+        document.querySelectorAll('[data-member-link]').forEach(function (el) {
+          el.href = ThreeZoneConfig.memberOrigin();
+        });
+        document.querySelectorAll('[data-ops-link]').forEach(function (el) {
+          el.href = ThreeZoneConfig.opsUrl();
+        });
+      }
+      loadLiveGames();
+    });
+    setInterval(loadLiveGames, 30000);
+  </script>
+</body>
+</html>

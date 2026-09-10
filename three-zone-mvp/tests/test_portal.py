@@ -228,6 +228,137 @@ class PortalTests(unittest.TestCase):
             httpd.shutdown()
             httpd.server_close()
 
+    def test_public_catalog_endpoints_do_not_require_member_auth(self):
+        import json
+        import threading
+        import urllib.request
+
+        from backend.http_server import make_http_server
+
+        cfg = Config(env="demo", http_host="127.0.0.1", http_port=0,
+                     allowed_origins=["http://127.0.0.1"])
+        httpd = make_http_server(cfg, self.cp, "/tmp")
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            base = f"http://{host}:{port}"
+            with urllib.request.urlopen(base + "/api/public/live", timeout=5) as resp:
+                live = json.loads(resp.read())
+            with urllib.request.urlopen(base + "/api/public/schedules", timeout=5) as resp:
+                schedules = json.loads(resp.read())
+            with urllib.request.urlopen(base + "/api/public/archives", timeout=5) as resp:
+                archives = json.loads(resp.read())
+            self.assertIn("events", live)
+            self.assertIn("schedules", schedules)
+            self.assertIn("archives", archives)
+            self.assertGreaterEqual(len(live["events"]), 1)
+            self.assertGreaterEqual(len(schedules["schedules"]), 1)
+            self.assertGreaterEqual(len(archives["archives"]), 1)
+            allowed = {"event_id", "title", "zone", "category", "status", "scheduled_start", "scoreboard"}
+            for event in live["events"]:
+                self.assertTrue(set(event).issubset(allowed))
+                self.assertNotIn("rights", event)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_member_app_origin_is_allowed_even_when_not_listed(self):
+        import json
+        import threading
+        import urllib.error
+        import urllib.request
+
+        from backend.http_server import make_http_server
+
+        cfg = Config(env="demo", http_host="127.0.0.1", http_port=0,
+                     allowed_origins=["https://3zonesports.com"])
+        httpd = make_http_server(cfg, self.cp, "/tmp")
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            base = f"http://{host}:{port}"
+            same_origin = urllib.request.Request(
+                base + "/api/health",
+                headers={"Origin": base},
+            )
+            with urllib.request.urlopen(same_origin, timeout=5) as resp:
+                payload = json.loads(resp.read())
+            self.assertEqual(payload["status"], "ok")
+
+            pages_origin = urllib.request.Request(
+                base + "/api/health",
+                headers={"Origin": "http://127.0.0.1:5500"},
+            )
+            with urllib.request.urlopen(pages_origin, timeout=5) as resp:
+                payload = json.loads(resp.read())
+            self.assertEqual(payload["status"], "ok")
+
+            blocked = urllib.request.Request(
+                base + "/api/health",
+                headers={"Origin": "https://evil.example"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(blocked, timeout=5)
+            self.assertEqual(raised.exception.code, 403)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_public_site_config_and_portal_redirect_hooks_are_present(self):
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with open(os.path.join(repo, "docs", "config.js"), encoding="utf-8") as handle:
+            config_js = handle.read()
+        self.assertIn("public: {", config_js)
+        self.assertIn("/api/public/live", config_js)
+        self.assertIn("three-zone-sports.onrender.com", config_js)
+        self.assertIn("three-zone-sports-api.onrender.com", config_js)
+        self.assertIn("memberOrigin()", config_js)
+        self.assertIn("opsUrl()", config_js)
+        self.assertIn("setMemberOrigin(raw)", config_js)
+        self.assertIn("_timeoutSignal(ms)", config_js)
+        self.assertNotIn("window.localStorage.removeItem('threezone_backend_url')", config_js)
+        self.assertIn("backend_unconfigured", config_js)
+        self.assertIn("window.ThreeZoneConfig = ThreeZoneConfig;", config_js)
+        self.assertNotIn("if (this.BACKEND_URL) return this.BACKEND_URL;", config_js)
+        self.assertNotIn("const url = baseUrl ? `${baseUrl}${endpoint}` : endpoint;", config_js)
+        self.assertIn("const pending = this._backendUrlPromise || (this._backendUrlPromise = this._resolveBackendUrlOnce());", config_js)
+        self.assertIn("try { data = JSON.parse(text || '{}'); } catch (_) { data = null; }", config_js)
+        with open(os.path.join(repo, "docs", "live", "index.html"), encoding="utf-8") as handle:
+            live_html = handle.read()
+        with open(os.path.join(repo, "docs", "schedules", "index.html"), encoding="utf-8") as handle:
+            schedules_html = handle.read()
+        with open(os.path.join(repo, "docs", "archives", "index.html"), encoding="utf-8") as handle:
+            archives_html = handle.read()
+        with open(os.path.join(repo, "docs", "index.html"), encoding="utf-8") as handle:
+            home_html = handle.read()
+        self.assertIn("data-member-link", home_html)
+        self.assertIn("data-ops-link", home_html)
+        self.assertIn("Open back portal", home_html)
+        self.assertIn("connect-form", home_html)
+        self.assertIn("three-zone-sports.onrender.com", live_html)
+        self.assertIn("data-member-link", live_html)
+        self.assertIn("data-ops-link", schedules_html)
+        self.assertIn("https://three-zone-sports.onrender.com", archives_html)
+        self.assertIn("const card = document.createElement('div');", live_html)
+        self.assertIn("container.replaceChildren(...cards);", live_html)
+        self.assertNotIn("container.innerHTML = events.map", live_html)
+        self.assertIn("Schedules are temporarily unavailable.", schedules_html)
+        self.assertIn("Archives are temporarily unavailable.", archives_html)
+        self.assertIn("function archiveBackendCandidates()", archives_html)
+        self.assertIn("function archiveConfig()", archives_html)
+        self.assertIn("const endpoint = '/api/public/archives';", archives_html)
+        self.assertIn("return baseUrl + '/?archive=' + encodeURIComponent(archiveId);", archives_html)
+        self.assertNotIn("window.ThreeZoneConfig && typeof ThreeZoneConfig.fetch === 'function'", archives_html)
+        self.assertNotIn("window.ThreeZoneConfig && typeof ThreeZoneConfig.memberAppUrl === 'function'", archives_html)
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "backend", "static", "portal.js"), encoding="utf-8") as handle:
+            portal_js = handle.read()
+        self.assertIn("new URLSearchParams(location.search || \"\")", portal_js)
+        self.assertIn("clearPendingPlayback()", portal_js)
+        self.assertIn("/api/member/archive/${pending.id}/playback", portal_js)
+
 
 if __name__ == "__main__":
     unittest.main()
