@@ -224,6 +224,8 @@ SITE_ROUTES = [
      "purpose": "Owner back portal: print/export every single thing"},
     {"method": "GET", "path": "/api/owner/mastery", "tier": "owner",
      "purpose": "Owner back portal: printable Three Zone Mastery article"},
+    {"method": "POST", "path": "/api/owner/staff", "tier": "owner",
+     "purpose": "Owner issues an operator or owner account (staff cannot self-register)"},
     {"method": "WS", "path": "/ws/events/{id}", "tier": "member",
      "purpose": "Event-scoped live state, score, feed, lease, and rights updates"},
     {"method": "GET", "path": "/api/network/feed", "tier": "public",
@@ -478,6 +480,21 @@ class ControlPlane(PipelineMixin):
         return self._issue_session(user, "auth.login")
 
     def register_viewer(self, username: str, password: str, display_name: str) -> dict:
+        user = self._create_account(username, password, display_name, "viewer")
+        return self._issue_session(user, "auth.register")
+
+    def issue_staff(self, actor: dict, username: str, password: str,
+                    display_name: str, role: str) -> dict:
+        """Owner-only: create an operator or owner. Members cannot self-register as staff."""
+        self.require_owner(actor)
+        role = (role or "").strip().lower()
+        if role not in ("operator", "owner"):
+            raise ValidationError("role must be operator or owner", "bad_role")
+        user = self._create_account(username, password, display_name, role)
+        self.audit_log(actor["user_id"], "auth.staff_issued", user["user_id"], {"role": role})
+        return {"user": user}
+
+    def _create_account(self, username: str, password: str, display_name: str, role: str) -> dict:
         username = normalize_username(username)
         display_name = (display_name or "").strip() or username
         if not valid_username(username) or username in RESERVED:
@@ -489,12 +506,11 @@ class ControlPlane(PipelineMixin):
         self.db.execute(
             "INSERT INTO users(user_id,display_name,role,account_state,subscription,"
             "zones,packages,destinations,password_hash) VALUES (?,?,?,?,?,?,?,?,?)",
-            (username, display_name[:80], "viewer", "active", "active",
+            (username, display_name[:80], role, "active", "active",
              dumps(["midwest"]), dumps(["standard"]), dumps(["web"]),
              hash_password(password)),
         )
-        user = self.get_user(username)
-        return self._issue_session(user, "auth.register")
+        return self.get_user(username)
 
     def verify_session(self, token: str) -> dict:
         try:

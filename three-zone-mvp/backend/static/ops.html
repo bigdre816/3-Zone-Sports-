@@ -16,6 +16,7 @@
         <label>Password <input name="password" id="login-password" type="password" autocomplete="current-password" required /></label>
         <button id="login-btn" type="submit">Sign in</button>
       </form>
+      <p id="demo-hint" class="muted auth-note hidden"></p>
       <p class="muted auth-note">Members create accounts on the <a href="/">member site</a>.</p>
     </div>
   </section>
@@ -227,6 +228,20 @@ Lincoln High,Lincoln Freshman Basketball,basketball,freshman,West,2026-11-12,19:
             <button id="owner-export-btn" type="button">Download JSON export</button>
           </div>
           <div id="owner-summary" class="owner-summary muted"></div>
+          <h3>Issue staff account</h3>
+          <p class="muted">Members cannot self-register as staff. Create an operator or owner here, then they sign in on this page.</p>
+          <form id="staff-form" class="form-grid">
+            <label>Username <input name="username" autocomplete="off" required /></label>
+            <label>Password <input name="password" type="password" autocomplete="new-password" required minlength="8" /></label>
+            <label>Display name <input name="display_name" /></label>
+            <label>Role
+              <select name="role">
+                <option value="operator">operator</option>
+                <option value="owner">owner</option>
+              </select>
+            </label>
+            <button type="submit">Issue account</button>
+          </form>
         </section>
 
         <section data-pane="mastery" class="panel hidden">

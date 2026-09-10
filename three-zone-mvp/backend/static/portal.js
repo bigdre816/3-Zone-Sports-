@@ -709,6 +709,10 @@ async function loadPortal() {
   applyRoute();
 }
 
+function authError(error) {
+  return error.message + (error.code ? " (" + error.code + ")" : "");
+}
+
 async function submitAuth(path, body) {
   const result = await api("POST", path, body);
   if (result.home === "/ops" && !pendingPlayback()) { location.href = "/ops"; return; }
@@ -719,13 +723,13 @@ $("#login-form").addEventListener("submit", async event => {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.target).entries());
   try { await submitAuth("/api/auth/login", data); }
-  catch (error) { toast(error.message); }
+  catch (error) { toast(authError(error)); }
 });
 $("#register-form").addEventListener("submit", async event => {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.target).entries());
   try { await submitAuth("/api/auth/register", data); }
-  catch (error) { toast(error.message); }
+  catch (error) { toast(authError(error)); }
 });
 async function playMedia(path, title, stateText) {
   try {
@@ -1070,5 +1074,12 @@ bindStudio();
   catch (_) {
     loadPublicFeed();
     applyRoute();
+  }
+  if (player.config && player.config.simulation) {
+    const hint = $("#demo-hint");
+    if (hint) {
+      hint.textContent = "Local demo: demo-viewer / change-me-viewer-local — or create an account.";
+      hint.classList.remove("hidden");
+    }
   }
 })();

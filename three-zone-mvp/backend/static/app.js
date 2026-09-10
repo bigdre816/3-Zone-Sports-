@@ -83,7 +83,7 @@ async function login(event) {
     afterAuth();
     toast("Signed in as " + res.user.display_name, "ok");
   } catch (e) {
-    toast("Sign in failed: " + e.message, "bad");
+    toast("Sign in failed: " + e.message + (e.code ? " (" + e.code + ")" : ""), "bad");
   }
 }
 
@@ -110,13 +110,19 @@ function logout() {
 }
 
 async function restoreSession() {
-  if (!state.session) return;
   try {
     const res = await api("GET", "/api/me");
     state.user = res.user;
+    if (res.session_token) {
+      state.session = res.session_token;
+      sessionStorage.setItem("tz_session", state.session);
+    }
     afterAuth();
   } catch (e) {
-    logout();
+    if (state.session) {
+      state.session = null;
+      sessionStorage.removeItem("tz_session");
+    }
   }
 }
 
@@ -650,6 +656,22 @@ function fmtTs(ts) {
   try { return new Date(ts * 1000).toLocaleString(); } catch (_) { return String(ts); }
 }
 
+async function issueStaff(form) {
+  const data = Object.fromEntries(new FormData(form).entries());
+  try {
+    const res = await api("POST", "/api/owner/staff", {
+      username: data.username,
+      password: data.password,
+      display_name: data.display_name,
+      role: data.role,
+    });
+    form.reset();
+    toast("Issued " + res.user.role + " account " + res.user.user_id, "ok");
+  } catch (e) {
+    toast("Could not issue staff: " + e.message + (e.code ? " (" + e.code + ")" : ""), "bad");
+  }
+}
+
 async function loadInventory() {
   const res = await api("GET", "/api/owner/inventory");
   state.inventory = res;
@@ -848,6 +870,11 @@ async function init() {
     toast("Could not load config", "bad");
     return;
   }
+  const demoHint = $("#demo-hint");
+  if (demoHint && state.config && state.config.simulation) {
+    demoHint.textContent = "Local demo: demo-owner / change-me-owner-local";
+    demoHint.classList.remove("hidden");
+  }
   $("#login-form").addEventListener("submit", login);
   $("#logout-btn").addEventListener("click", logout);
   document.querySelectorAll(".nav-item").forEach((item) => {
@@ -880,6 +907,10 @@ async function init() {
   $("#owner-load-btn").addEventListener("click", ownerLoad);
   $("#owner-print-btn").addEventListener("click", ownerPrint);
   $("#owner-export-btn").addEventListener("click", ownerExport);
+  const staffForm = $("#staff-form");
+  if (staffForm) {
+    staffForm.addEventListener("submit", (e) => { e.preventDefault(); issueStaff(e.target); });
+  }
   $("#mastery-print-btn").addEventListener("click", async () => {
     await loadMastery();
     printMastery();

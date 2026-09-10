@@ -261,6 +261,7 @@ class OwnerPortalTests(unittest.TestCase):
         self.assertIn("/api/auth/login", paths)
         self.assertIn("/api/auth/register", paths)
         self.assertIn("/api/owner/mastery", paths)
+        self.assertIn("/api/owner/staff", paths)
         self.assertIn("/three-zone-mastery", paths)
 
 
