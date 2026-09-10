@@ -1,10 +1,16 @@
 # Render Blueprint — Three-Zone Sports member app.
 # Matches the Docker services already created on the Render dashboard.
+#
+# dockerfilePath and dockerContext are relative to rootDir. The dashboard still
+# has Root Directory = three-zone-mvp from the first Blueprint. Prefixing those
+# paths with three-zone-mvp makes Render lstat three-zone-mvp/three-zone-mvp
+# and the build dies before Docker starts.
 services:
   - type: web
     name: three-zone-sports
     runtime: docker
     plan: free
+    rootDir: three-zone-mvp
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /api/health
