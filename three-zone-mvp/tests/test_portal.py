@@ -143,6 +143,21 @@ class PortalTests(unittest.TestCase):
         self.assertIn("Sports Access", serve)
         self.assertNotIn("Investment Tracker", serve)
 
+    def test_live_render_blueprint_is_docker_demo_member_app(self):
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with open(os.path.join(repo, "render.yaml"), encoding="utf-8") as handle:
+            blueprint = handle.read()
+        self.assertIn("runtime: docker", blueprint)
+        self.assertIn("dockerfilePath: ./Dockerfile", blueprint)
+        self.assertIn("healthCheckPath: /api/health", blueprint)
+        self.assertIn("name: three-zone-sports", blueprint)
+        self.assertIn("branch: main", blueprint)
+        self.assertIn("autoDeployTrigger: commit", blueprint)
+        self.assertIn("TZ_ENV", blueprint)
+        self.assertIn("demo", blueprint)
+        self.assertNotIn("runtime: python", blueprint)
+        self.assertNotIn("TZ_ENV=production", blueprint)
+
     def test_member_site_keeps_network_shell_and_wired_watch(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         static = os.path.join(root, "backend", "static")

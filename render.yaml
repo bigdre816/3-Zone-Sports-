@@ -1,12 +1,16 @@
-# Render Blueprint — Three-Zone Sports member app.
-# Matches the Docker services already created on the Render dashboard.
+# Live Render Blueprint — Three-Zone Sports member + back portal.
+# Apply this file only (repo root). Do not apply three-zone-mvp/render.yaml.
+#
+# One-tap: https://render.com/deploy?repo=https://github.com/bigdre816/3-Zone-Sports-
 services:
   - type: web
     name: three-zone-sports
     runtime: docker
-    plan: free
+    plan: 0.5c-512mb
+    branch: main
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    autoDeployTrigger: commit
     healthCheckPath: /api/health
     envVars:
       - key: TZ_ENV
@@ -15,6 +19,10 @@ services:
         value: 0.0.0.0
       - key: TZ_WS_HOST
         value: 0.0.0.0
+      - key: TZ_DATABASE_PATH
+        value: /data/three_zone.sqlite3
+      - key: TZ_DATA_DIR
+        value: /data
       - key: TZ_ALLOWED_ORIGINS
         value: https://3zonesports.com,https://www.3zonesports.com,https://three-zone-sports.onrender.com
       - key: TZ_PUBLIC_BASE_URL

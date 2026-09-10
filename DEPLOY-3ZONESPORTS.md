@@ -1,6 +1,40 @@
-# Deploy 3zonesports.com
+# Set up Render
 
-Three pieces. One Render service.
+The public site is already live: https://3zonesports.com/
+
+Member portal and back portal run on **one** Render web service. That service is currently **503 / suspended**. Set it up with the Blueprint in this repo.
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/bigdre816/3-Zone-Sports-)
+
+## New (or replace the broken one)
+
+1. Open https://render.com/deploy?repo=https://github.com/bigdre816/3-Zone-Sports-
+2. Sign in to Render
+3. Connect the GitHub repo **3-Zone-Sports-**
+4. Apply Blueprint `render.yaml`
+5. If Render asks for a card, that is the **0.5 CPU / 512 MB** plan so the app stays up (~$7/month). Free instances sleep and then show 503.
+6. Wait until Status is **Live**
+7. Open https://three-zone-sports.onrender.com/api/health
+
+That health URL must return JSON with `"status": "ok"`.
+
+Do **not** apply `three-zone-mvp/render.yaml`. That Python/production file is what created **3-Zone-Api**. Delete **3-Zone-Api** if it is still on the dashboard.
+
+## Already have 3-Zone-Sports-
+
+1. Open https://dashboard.render.com
+2. Open **3-Zone-Sports-**
+3. If it says Suspended, tap **Resume** (or Apply the Blueprint above so it is Docker + always-on)
+4. Settings must be:
+   - Branch **`main`**
+   - Runtime **Docker**
+   - Dockerfile path `./Dockerfile`
+   - Health check `/api/health`
+   - `TZ_ENV=demo`
+5. Tap **Manual Deploy** → **Deploy latest commit**
+6. Wait until **Live**, then open the health URL
+
+## After it is Live
 
 | Piece | URL |
 | --- | --- |
@@ -8,65 +42,10 @@ Three pieces. One Render service.
 | Member portal | https://three-zone-sports.onrender.com/ |
 | Back portal | https://three-zone-sports.onrender.com/ops |
 
-The public site is already on GitHub Pages (`docs/`). Member portal and Back portal buttons on that site already point at the Render app. Do not create a second service. Do not point Pages at the repo root.
+Member: `demo-viewer` / `change-me-viewer-local`
 
-## One service
+Back portal: `demo-owner` / `change-me-owner-local`
 
-Use **3-Zone-Sports-** only. Ignore or delete **3-Zone-Api**.
+Camera: Back portal → Event controls → **Start camera** → **Go live with this camera**. Keep that tab open.
 
-Render must build the **root** `Dockerfile` from branch **`main`**. That image boots in demo mode, listens on Render’s `PORT`, and allows `https://3zonesports.com`.
-
-Do not use `TZ_ENV=production` on this rail. Production mode refuses the demo logins and the service never becomes Live.
-
-## Make Render Live
-
-1. Open https://dashboard.render.com
-2. Open **3-Zone-Sports-**
-3. Confirm branch is **`main`**
-4. Tap **Manual Deploy** → **Deploy latest commit**
-5. Wait until Status is **Live**
-6. Open https://three-zone-sports.onrender.com/api/health
-
-That health URL must return JSON with `"status": "ok"`. If the tab spins and never loads, the deploy is still failed or stuck. Stay on this service and deploy `main` again. Do not add **3-Zone-Api**.
-
-## Sign in
-
-Member portal:
-
-- Username: `demo-viewer`
-- Password: `change-me-viewer-local`
-
-Back portal (`/ops`):
-
-- Username: `demo-owner`
-- Password: `change-me-owner-local`
-
-If Render gave you a different `onrender.com` URL, paste it once in the Connect box on https://3zonesports.com/ and tap Connect.
-
-## Click through when Live
-
-Public site: Home → Live → Schedules → Archives → Member portal.
-
-Member portal (`demo-viewer`): Live, Schedules, Archives, Feed, Inbox, Profile.
-
-Back portal (`demo-owner`): Catalog → open a game → Event controls.
-
-## Hook up the camera
-
-1. Open https://three-zone-sports.onrender.com/ops
-2. Sign in as `demo-owner`
-3. Open **Event controls** (create a game or pick one from Catalog)
-4. Tap **Start camera** and allow camera access
-5. Tap **Go live with this camera**
-6. Keep that tab open
-7. On a phone or another tab, sign in as `demo-viewer` and tap **Watch live**
-
-On the demo rail, viewers play the rights-checked demo game file. The camera on `/ops` is the live station: it keeps the game in **live** without a Python command. When Cloudflare Stream credentials are set later, Provision still issues the RTMPS key for a hardware encoder.
-
-
-## If it is still down
-
-- Service settings must be **Docker**, Dockerfile path `./Dockerfile`, health check `/api/health`.
-- `TZ_ENV` must be `demo`.
-- `TZ_ALLOWED_ORIGINS` must include `https://3zonesports.com` and `https://www.3zonesports.com`.
-- GitHub Pages must stay on `/docs`. The repo-root `index.html` is not the public sports site.
+If Render gave a different `onrender.com` host, paste it once in the Connect box on https://3zonesports.com/.

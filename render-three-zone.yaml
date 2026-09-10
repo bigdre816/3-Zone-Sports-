@@ -1,3 +1,5 @@
+# UNUSED. Do not apply this Blueprint.
+# Live Render service is repo-root render.yaml (three-zone-sports, Docker).
 services:
   - type: web
     name: three-zone-api
