@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import sys
+import threading
 import unittest
+import urllib.request
 from pathlib import Path
 
 
 REPO = Path(__file__).resolve().parents[2]
 DOCS = REPO / "docs"
+sys.path.insert(0, str(REPO / "three-zone-mvp"))
 
 PUBLIC_PAGES = [
     DOCS / "index.html",
@@ -101,6 +106,48 @@ class PublicSiteTests(unittest.TestCase):
         self.assertIn("Sign In", home)
         app = (DOCS / "app" / "index.html").read_text(encoding="utf-8")
         self.assertIn("memberAppUrl", app)
+
+    def test_pages_origin_can_read_public_catalog(self):
+        from backend.config import Config
+        from backend.control_plane import ControlPlane
+        from backend.db import Database
+        from backend.http_server import make_http_server
+        from backend.seed import seed_if_empty
+
+        db = Database(":memory:")
+        seed_if_empty(db)
+        cfg = Config(
+            env="demo",
+            http_host="127.0.0.1",
+            http_port=0,
+            allowed_origins=["https://3zonesports.com"],
+        )
+        cp = ControlPlane(db, cfg)
+        httpd = make_http_server(cfg, cp, "/tmp")
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            base = f"http://{host}:{port}"
+            for path in ("/api/health", "/api/public/live", "/api/public/schedules", "/api/public/archives"):
+                request = urllib.request.Request(
+                    base + path,
+                    headers={"Origin": "https://3zonesports.com"},
+                )
+                with urllib.request.urlopen(request, timeout=5) as resp:
+                    payload = json.loads(resp.read())
+                    self.assertEqual(resp.headers.get("Access-Control-Allow-Origin"), "https://3zonesports.com")
+                if path == "/api/health":
+                    self.assertEqual(payload["status"], "ok")
+                elif path.endswith("live"):
+                    self.assertGreaterEqual(len(payload["events"]), 1)
+                elif path.endswith("schedules"):
+                    self.assertGreaterEqual(len(payload["schedules"]), 1)
+                else:
+                    self.assertGreaterEqual(len(payload["archives"]), 1)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
 
 
 if __name__ == "__main__":
