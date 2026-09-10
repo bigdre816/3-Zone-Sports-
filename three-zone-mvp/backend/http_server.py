@@ -343,6 +343,7 @@ class _Handler(BaseHTTPRequestHandler):
         self._send_json(200, payload, extra_headers={"Set-Cookie": cookie})
 
     def h_auth_login(self, p, b, u):
+        self.network.check_login_rate(self.client_address[0] if self.client_address else "unknown")
         body = b or {}
         result = self.cp.password_login(body.get("username", ""), body.get("password", ""))
         self._auth_cookie_response(result)

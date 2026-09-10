@@ -62,8 +62,9 @@ machine learning.
 2. Create → Full Game, fill metadata, check the rights attestation, submit.
 3. The browser completes the fake provider upload (metadata only). Wait until
    the UI says **Game ready**.
-4. Open the game from Profile → Games, set start/end in Studio (for example 0
-   and 20), render and publish.
+4. Open the game from Profile → Games. Game detail shows metadata and
+   rights-aware playback. Use **Create Clip**, drag the Studio timeline handles
+   (or type start/end, max 90 seconds), preview the range, then render and publish.
 5. The feed shows **Three-Zone Game Clip** and **Watch Full Game**.
 
 The site has three tiers:

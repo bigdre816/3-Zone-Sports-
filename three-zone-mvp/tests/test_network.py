@@ -15,7 +15,7 @@ from backend.control_plane import (
 from backend.db import Database
 from backend.identity import resolve_identity, resolve_identity_optional
 from backend.media_provider import FakeProvider, build_provider
-from backend.network import NetworkService
+from backend.network import NetworkService, RateLimitError
 from backend.portal import PortalService
 from backend.seed import seed_if_empty
 
@@ -50,6 +50,15 @@ class IdentityUnificationTests(unittest.TestCase):
         with self.assertRaises(AuthError) as ctx:
             resolve_identity(self.cp, self.portal, None, None)
         self.assertEqual(ctx.exception.code, "missing_session")
+
+    def test_login_rate_limit(self):
+        for _ in range(8):
+            self.net.check_login_rate("203.0.113.9")
+        with self.assertRaises(RateLimitError) as ctx:
+            self.net.check_login_rate("203.0.113.9")
+        self.assertEqual(ctx.exception.code, "rate_limited")
+        self.assertEqual(ctx.exception.status, 429)
+        self.net.check_login_rate("203.0.113.10")
 
 
 class ProfileTests(unittest.TestCase):
@@ -282,6 +291,27 @@ class VisibilityAndFeedTests(unittest.TestCase):
         if nxt["items"]:
             self.assertNotEqual(nxt["items"][0]["post_id"], page["items"][0]["post_id"])
 
+    def test_athlete_tags_from_handles(self):
+        other_profile = self.net.ensure_profile(self.other)
+        upload = self.net.create_upload(self.member, {"kind": "photo"})
+        self.net.complete_fake_upload(upload["upload_url"].rsplit("/", 1)[-1], {})
+        job = self.cp.db.query_one(
+            "SELECT provider_uid FROM upload_jobs WHERE upload_job_id=?", (upload["upload_job_id"],)
+        )
+        asset = self.cp.db.query_one(
+            "SELECT media_asset_id FROM media_assets WHERE provider_uid=?", (job["provider_uid"],)
+        )
+        post = self.net.create_post(self.member, {
+            "media_asset_id": asset["media_asset_id"], "caption": "Tagged play",
+            "sport": "basketball", "visibility": "public",
+            "tagged_handles": [other_profile["handle"]],
+            "tagged_team_ids": ["team_lincoln"],
+        })
+        self.assertEqual(post["athlete_tags"][0]["handle"], other_profile["handle"])
+        self.assertNotIn("user_id", post["athlete_tags"][0])
+        self.assertIn("team_lincoln", post["team_tags"])
+        self.assertNotIn("user_id", post)
+
 
 class SocialAndModerationTests(unittest.TestCase):
     def setUp(self):
@@ -364,6 +394,21 @@ class SocialAndModerationTests(unittest.TestCase):
                                            (case["subject_id"],))
             if removed:
                 self.assertEqual(removed["publication_status"], "removed")
+
+    def test_restricted_post_content_state(self):
+        post = self._post()
+        self.net.report(self.other, {
+            "subject_type": "post", "subject_id": post["post_id"], "reason": "rights",
+        })
+        case = self.cp.db.query_one(
+            "SELECT * FROM moderation_cases WHERE subject_id=?", (post["post_id"],)
+        )
+        self.net.decide_moderation(self.worker, case["case_id"], "restrict", "rights hold")
+        view = self.net.post_view(self.member, post["post_id"])
+        self.assertEqual(view["publication_status"], "restricted")
+        self.assertEqual(view["content_state"], "restricted")
+        with self.assertRaises(ForbiddenError):
+            self.net.post_view(self.other, post["post_id"])
 
     def test_worker_versus_owner(self):
         with self.assertRaises(ForbiddenError):
