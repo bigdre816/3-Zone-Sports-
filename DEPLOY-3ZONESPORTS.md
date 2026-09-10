@@ -1,111 +1,50 @@
-# Deploy Three-Zone Sports Backend to Render
+# Deploy Three-Zone Sports on Render
 
-This guide walks through deploying the Three-Zone Sports member app backend to Render.com. The public website (3zonesports.com) is already deployed on GitHub Pages. This deployment runs the member portal, live games, schedules, and archives.
+The public marketing site (`https://3zonesports.com`) is hosted on GitHub Pages.
+The Render service runs the member portal, live games, schedules, archives, and
+`/ops`.
 
 ## What You're Deploying
 
 - **Application**: Three-Zone Sports control-plane MVP (Python)
-- **Database**: SQLite (persistent disk on Render)
+- **Database**: SQLite (demo data; use PostgreSQL or a persistent disk for production)
 - **Live Stream**: Demo mode (use Cloudflare Stream for production)
 - **Member Auth**: Built-in username/password
 - **Public Site**: Already live at 3zonesports.com (GitHub Pages)
 
 ## Prerequisites
 
-1. **GitHub**: This repository pushed to github.com
-2. **Render Account**: Free or paid account at render.com
-3. **Environment Secrets**: Two random 32+ character strings (created below)
+1. Push this repository to GitHub.
+2. Sign in to [Render](https://dashboard.render.com).
 
-## Step 1: Generate Required Secrets
+## Step 1: Create the Blueprint
 
-You need two random secret strings. Generate them using Python:
+1. Select **New** → **Blueprint**.
+2. Connect GitHub and choose `3-Zone-Sports-`.
+3. Select the branch containing this `render.yaml`.
+4. Click **Apply**.
 
-```bash
-python3 -c "import secrets; print('TZ_TOKEN_SECRET=' + secrets.token_urlsafe(40))"
-python3 -c "import secrets; print('TZ_MEDIA_SERVICE_KEY=' + secrets.token_urlsafe(40))"
-```
+The root `render.yaml` sets the service root to `three-zone-mvp`, uses the
+demo media rail, generates the application secrets, and checks `/api/health`.
+Render supplies the web service `PORT`; do not hard-code `TZ_HTTP_PORT` to
+`8000`, or the health check will target the wrong port.
 
-Save these two values. You'll enter them into Render in Step 4.
+## Step 2: Deploy
 
-## Step 2: Connect GitHub to Render
+Render installs `three-zone-mvp/requirements.txt` and starts the service with
+the Blueprint settings. The first deploy normally takes a few minutes.
 
-1. Go to **render.com** and sign in (or create free account)
-2. Click **Dashboard** (top left)
-3. Click **New** (blue button, top right)
-4. Select **Web Service**
-5. Click **Connect Account** next to GitHub
-6. Authorize Render to access your GitHub repositories
-7. After authorization, you'll see a list of your repos
-8. Find and select: `3-Zone-Sports-`
-9. Click **Connect**
-
-## Step 3: Configure the Service
-
-On the "Create a new Web Service" page:
-
-### Name
-- Name: `three-zone-sports-api` (or similar)
-- Region: Choose your region (US, EU, etc.)
-
-### Build Settings
-- **Build Command**: `pip install -r requirements.txt`
-- **Start Command**: `cd three-zone-mvp && python run.py`
-
-### Environment Variables
-
-Click **Environment** on the left sidebar. You'll see a form for environment variables.
-
-Add these variables:
-
-| Variable | Value |
-|----------|-------|
-| `TZ_ENV` | `production` |
-| `TZ_HTTP_HOST` | `0.0.0.0` |
-| `TZ_WS_HOST` | `0.0.0.0` |
-| `TZ_HTTP_PORT` | `8000` |
-| `TZ_WS_PORT` | `8765` |
-| `TZ_DATABASE_PATH` | `/var/data/three_zone.sqlite3` |
-| `TZ_TOKEN_SECRET` | *Paste the first secret you generated* |
-| `TZ_MEDIA_SERVICE_KEY` | *Paste the second secret you generated* |
-| `TZ_ALLOWED_ORIGINS` | `https://3zonesports.com,https://www.3zonesports.com` |
-| `TZ_LIVE_MEDIA_PROVIDER` | `demo` |
-| `TZ_UGC_MEDIA_PROVIDER` | `fake` |
-
-### Disk
-
-Scroll down to **Persistent Disk**.
-
-- Click **Add Disk**
-- Mount Path: `/var/data`
-- Size: `10 GB` (sufficient for demo + small archives)
-
-## Step 4: Configure Health Check
-
-Scroll to **Health Check**:
-
-- Health Check Path: `/api/health`
-- Initial Delay: `30` seconds
-- Timeout: `10` seconds
-
-## Step 5: Deploy
-
-1. Scroll to the bottom of the form
-2. Click **Create Web Service**
-3. Render will start building and deploying
-4. You'll see a build log in real-time
-5. After ~3-5 minutes, you should see "Your service is live" (or similar)
-
-## Step 6: Get Your Backend URL
+## Step 3: Get Your Backend URL
 
 After deployment completes:
 
 1. Go to your service dashboard
-2. At the top, you'll see a URL like: `https://three-zone-sports-api-xxxx.onrender.com`
+2. At the top, you'll see a URL like: `https://three-zone-sports-xxxx.onrender.com`
 3. Copy this URL
 
 This is your **BACKEND_URL**.
 
-## Step 7: Connect Frontend to Backend
+## Step 4: Connect Frontend to Backend
 
 Now the public website needs to know where the backend is.
 
@@ -125,14 +64,14 @@ Now the public website needs to know where the backend is.
 
 6. Replace the entire `BACKEND_URL` function with:
    ```javascript
-   BACKEND_URL: 'https://three-zone-sports-api-xxxx.onrender.com',
+   BACKEND_URL: 'https://three-zone-sports-xxxx.onrender.com',
    ```
-   (Use your actual Render URL from Step 6)
+   (Use your actual Render URL from Step 3)
 
 7. Scroll down and click **Commit changes**
 8. GitHub Pages will rebuild within 1-2 minutes
 
-## Step 8: Test Sign-In
+## Step 5: Test Sign-In
 
 1. Open **3zonesports.com** in your browser
 2. Look for the **Status** badge at the top right
@@ -143,24 +82,24 @@ Now the public website needs to know where the backend is.
    - **Username**: `demo-viewer`
    - **Password**: `change-me-viewer-local` (demo only; change in production)
 
-## Step 9: Test Live Games
+## Step 6: Test Live Games
 
 1. After signing in, click **Live** in the navigation
 2. You should see demo games available
 3. Click a game to watch the demo video
 
-## Step 10: Test Schedules
+## Step 7: Test Schedules
 
 1. Click **Schedules** in the navigation
 2. You should see upcoming demo games
 
-## Step 11: Test Archives
+## Step 8: Test Archives
 
 1. Click **Archives** in the navigation
 2. You should see past demo games
 3. Click a game to view the replay
 
-## Step 12: Create Real Accounts (Optional)
+## Step 9: Create Real Accounts (Optional)
 
 1. On the member portal (after signing in), click your profile
 2. Go to **Sign out**
@@ -172,7 +111,7 @@ Now the public website needs to know where the backend is.
 5. Click **Create account**
 6. You're now a member
 
-## Step 13: Production Configuration (Later)
+## Step 10: Production Configuration (Later)
 
 When ready to go live:
 
