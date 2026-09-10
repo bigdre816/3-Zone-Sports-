@@ -1,6 +1,5 @@
 .git
 .gitignore
-three-zone-mvp
 __pycache__
 *.pyc
 .venv

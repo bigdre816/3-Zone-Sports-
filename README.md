@@ -1,3 +1,16 @@
+# 3-Zone Sports + Moten
+
+Everything that was built is still in this repository. Open these paths from the repo root — nothing lives in a nested `three-zone-mvp/three-zone-mvp` folder.
+
+| What you built | Open this |
+| --- | --- |
+| Investment Tracker | `System` |
+| Moten workshop (browser) | `index.html` |
+| Moten Phase 1 workbench (server) | `apps/control-plane/` → http://127.0.0.1:8100/ |
+| Public sports site | `docs/` → https://3zonesports.com/ |
+| Member portal + back portal | `three-zone-mvp/` (`run.py`, `backend/`) |
+| Moten on-chain audit | `moten_audit/` |
+
 # Moten IP & Invention Control Plane
 
 Phase 1 (Days 0–30), Phase 2 (Days 31–90), Phase 3 (Months 3–6), and Phase 4 (Months 6–12) browser prototype for the Moten master specification.
