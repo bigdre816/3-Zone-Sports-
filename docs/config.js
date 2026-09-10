@@ -128,7 +128,14 @@ const ThreeZoneConfig = {
 
   async fetch(endpoint, options = {}) {
     const baseUrl = await this.resolveBackendUrl();
-    const url = baseUrl ? `${baseUrl}${endpoint}` : endpoint;
+    if (!baseUrl) {
+      throw {
+        status: 503,
+        message: 'Member services are not yet configured.',
+        code: 'backend_unconfigured',
+      };
+    }
+    const url = `${baseUrl}${endpoint}`;
     try {
       const payload = {
         ...options,

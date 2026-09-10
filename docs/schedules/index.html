@@ -103,7 +103,7 @@
         html += '</tbody></table>';
         container.innerHTML = html;
       } catch (error) {
-        container.innerHTML = `<div class="error">Unable to load schedule. ${error.message || 'Please try again.'}</div>`;
+        container.innerHTML = `<div class="unavailable">Schedules are temporarily unavailable. ${error.message || 'Please check back soon.'}</div>`;
       }
     }
 

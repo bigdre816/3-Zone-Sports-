@@ -97,7 +97,7 @@
           </div>
         `).join('');
       } catch (error) {
-        container.innerHTML = `<div class="error" style="grid-column: 1/-1;">Unable to load archives. ${error.message || 'Please try again.'}</div>`;
+        container.innerHTML = `<div class="unavailable" style="grid-column: 1/-1;">Archives are temporarily unavailable. ${error.message || 'Please check back soon.'}</div>`;
       }
     }
 

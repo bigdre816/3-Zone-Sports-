@@ -516,7 +516,7 @@
           </div>
         `).join('');
       } catch (error) {
-        container.innerHTML = `<div class="error" style="grid-column: 1/-1;">Unable to load live events. ${error.message || 'Please try again later.'}</div>`;
+        container.innerHTML = `<div class="unavailable" style="grid-column: 1/-1;"><p>Live events are temporarily unavailable.</p><p>${error.message || 'Please check back soon.'}</p></div>`;
       }
     }
 
@@ -544,7 +544,7 @@
           </div>
         `).join('');
       } catch (error) {
-        container.innerHTML = `<div class="error" style="grid-column: 1/-1;">Unable to load schedule. ${error.message || 'Please try again later.'}</div>`;
+        container.innerHTML = `<div class="unavailable" style="grid-column: 1/-1;"><p>Schedules are temporarily unavailable.</p><p>${error.message || 'Please check back soon.'}</p></div>`;
       }
     }
 

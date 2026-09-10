@@ -266,6 +266,17 @@ class PortalTests(unittest.TestCase):
         self.assertIn("public: {", config_js)
         self.assertIn("/api/public/live", config_js)
         self.assertIn("three-zone-sports-api.onrender.com", config_js)
+        self.assertIn("backend_unconfigured", config_js)
+        self.assertNotIn("const url = baseUrl ? `${baseUrl}${endpoint}` : endpoint;", config_js)
+        with open(os.path.join(repo, "docs", "live", "index.html"), encoding="utf-8") as handle:
+            live_html = handle.read()
+        with open(os.path.join(repo, "docs", "schedules", "index.html"), encoding="utf-8") as handle:
+            schedules_html = handle.read()
+        with open(os.path.join(repo, "docs", "archives", "index.html"), encoding="utf-8") as handle:
+            archives_html = handle.read()
+        self.assertIn("Live games are temporarily unavailable.", live_html)
+        self.assertIn("Schedules are temporarily unavailable.", schedules_html)
+        self.assertIn("Archives are temporarily unavailable.", archives_html)
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with open(os.path.join(root, "backend", "static", "portal.js"), encoding="utf-8") as handle:
             portal_js = handle.read()
