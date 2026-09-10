@@ -82,26 +82,29 @@ const ThreeZoneConfig = {
     return data && data.status === 'ok';
   },
 
+  async _resolveBackendUrlOnce() {
+    for (const candidate of this._candidateBackendUrls()) {
+      try {
+        if (await this._probeBackend(candidate)) {
+          this.BACKEND_URL = candidate;
+          try { window.localStorage.setItem('threezone_backend_url', candidate); } catch (_) {}
+          return candidate;
+        }
+      } catch (_) {}
+    }
+    this.BACKEND_URL = '';
+    try { window.localStorage.removeItem('threezone_backend_url'); } catch (_) {}
+    return '';
+  },
+
   async resolveBackendUrl() {
-    if (this._backendUrlPromise) return this._backendUrlPromise;
-    this._backendUrlPromise = (async () => {
-      for (const candidate of this._candidateBackendUrls()) {
-        try {
-          if (await this._probeBackend(candidate)) {
-            this.BACKEND_URL = candidate;
-            try { window.localStorage.setItem('threezone_backend_url', candidate); } catch (_) {}
-            return candidate;
-          }
-        } catch (_) {}
-      }
-      this.BACKEND_URL = '';
-      try { window.localStorage.removeItem('threezone_backend_url'); } catch (_) {}
-      return '';
-    })();
+    const pending = this._backendUrlPromise || (this._backendUrlPromise = this._resolveBackendUrlOnce());
     try {
-      return await this._backendUrlPromise;
+      return await pending;
     } finally {
-      this._backendUrlPromise = null;
+      if (this._backendUrlPromise === pending) {
+        this._backendUrlPromise = null;
+      }
     }
   },
 

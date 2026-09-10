@@ -255,7 +255,10 @@ class PortalTests(unittest.TestCase):
             self.assertGreaterEqual(len(live["events"]), 1)
             self.assertGreaterEqual(len(schedules["schedules"]), 1)
             self.assertGreaterEqual(len(archives["archives"]), 1)
-            self.assertNotIn("rights", live["events"][0])
+            allowed = {"event_id", "title", "zone", "category", "status", "scheduled_start", "scoreboard"}
+            for event in live["events"]:
+                self.assertTrue(set(event).issubset(allowed))
+                self.assertNotIn("rights", event)
         finally:
             httpd.shutdown()
             httpd.server_close()
@@ -271,6 +274,8 @@ class PortalTests(unittest.TestCase):
         self.assertIn("window.ThreeZoneConfig = ThreeZoneConfig;", config_js)
         self.assertNotIn("if (this.BACKEND_URL) return this.BACKEND_URL;", config_js)
         self.assertNotIn("const url = baseUrl ? `${baseUrl}${endpoint}` : endpoint;", config_js)
+        self.assertIn("const pending = this._backendUrlPromise || (this._backendUrlPromise = this._resolveBackendUrlOnce());", config_js)
+        self.assertIn("try { data = JSON.parse(text || '{}'); } catch (_) { data = null; }", config_js)
         with open(os.path.join(repo, "docs", "live", "index.html"), encoding="utf-8") as handle:
             live_html = handle.read()
         with open(os.path.join(repo, "docs", "schedules", "index.html"), encoding="utf-8") as handle:
@@ -278,6 +283,9 @@ class PortalTests(unittest.TestCase):
         with open(os.path.join(repo, "docs", "archives", "index.html"), encoding="utf-8") as handle:
             archives_html = handle.read()
         self.assertIn("Live games are temporarily unavailable.", live_html)
+        self.assertIn("const card = document.createElement('div');", live_html)
+        self.assertIn("container.replaceChildren(...cards);", live_html)
+        self.assertNotIn("container.innerHTML = events.map", live_html)
         self.assertIn("Schedules are temporarily unavailable.", schedules_html)
         self.assertIn("Archives are temporarily unavailable.", archives_html)
         self.assertIn("function archiveBackendCandidates()", archives_html)
