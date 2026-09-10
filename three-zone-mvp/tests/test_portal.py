@@ -122,6 +122,25 @@ class PortalTests(unittest.TestCase):
         with self.assertRaises(ConflictError):
             self.cp.register_viewer("pat-member", "password123", "Pat")
 
+    def test_owner_issues_staff_and_members_cannot(self):
+        owner = self.cp.get_user("demo-owner")
+        worker = self.cp.get_user("demo-worker")
+        viewer = self.cp.get_user("demo-viewer")
+        issued = self.cp.issue_staff(owner, "andre-ops", "password123", "Andre", "owner")
+        self.assertEqual(issued["user"]["role"], "owner")
+        self.assertEqual(issued["user"]["user_id"], "andre-ops")
+        login = self.cp.password_login("andre-ops", "password123")
+        self.assertEqual(login["home"], "/ops")
+        with self.assertRaises(ForbiddenError) as ctx:
+            self.cp.issue_staff(worker, "new-worker", "password123", "Worker", "operator")
+        self.assertEqual(ctx.exception.code, "owner_required")
+        with self.assertRaises(ForbiddenError):
+            self.cp.issue_staff(viewer, "new-worker", "password123", "Worker", "operator")
+        with self.assertRaises(ValidationError):
+            self.cp.issue_staff(owner, "demo-owner", "password123", "Nope", "owner")
+        with self.assertRaises(ValidationError):
+            self.cp.issue_staff(owner, "new-admin", "password123", "Nope", "admin")
+
     def test_control_plane_app_js_is_preserved(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with open(os.path.join(root, "backend", "static", "app.js"), encoding="utf-8") as handle:
@@ -131,6 +150,11 @@ class PortalTests(unittest.TestCase):
         self.assertIn("/api/events/${state.selected}/camera/attach", app_js)
         self.assertIn("async function loadInventory()", app_js)
         self.assertIn("async function loadMastery()", app_js)
+        self.assertIn("async function restoreSession()", app_js)
+        self.assertIn("async function issueStaff(form)", app_js)
+        self.assertIn("/api/owner/staff", app_js)
+        self.assertIn("res.session_token", app_js)
+        self.assertNotIn("if (!state.session) return;", app_js)
         self.assertIn('querySelectorAll("#app [data-pane]")', app_js)
         self.assertIn("POST", app_js)
         self.assertGreater(len(app_js.splitlines()), 500)
@@ -338,6 +362,162 @@ class PortalTests(unittest.TestCase):
         self.assertIn("new URLSearchParams(location.search || \"\")", portal_js)
         self.assertIn("clearPendingPlayback()", portal_js)
         self.assertIn("/api/member/archive/${pending.id}/playback", portal_js)
+        self.assertIn("authError", portal_js)
+        self.assertIn("demo-hint", portal_js)
+        self.assertIn('if (result.home === "/ops"', portal_js)
+        self.assertNotIn(" sessionStorage", portal_js)
+
+
+class AuthHttpTests(unittest.TestCase):
+    def setUp(self):
+        import threading
+
+        from backend.config import DEMO_SEED_PASSWORDS
+        from backend.http_server import make_http_server
+
+        self.DEMO_SEED_PASSWORDS = DEMO_SEED_PASSWORDS
+        self.db = Database(":memory:")
+        seed_if_empty(self.db)
+        cfg = Config(env="demo", http_host="127.0.0.1", http_port=0,
+                     allowed_origins=["http://127.0.0.1"], media_provider="fake")
+        self.cp = ControlPlane(self.db, cfg)
+        self.httpd = make_http_server(cfg, self.cp, "/tmp")
+        thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = self.httpd.server_address
+        self.base = f"http://{host}:{port}"
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+    @staticmethod
+    def _cookie(headers, name="tz_member_session"):
+        raw = headers.get("Set-Cookie") or ""
+        for part in raw.split(";"):
+            piece = part.strip()
+            if piece.startswith(name + "="):
+                return piece.split("=", 1)[1]
+        return None
+
+    def _json(self, method, path, body=None, cookie=None, token=None):
+        import json
+        import urllib.error
+        import urllib.request
+
+        headers = {}
+        data = None
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+            data = json.dumps(body).encode()
+        if cookie:
+            headers["Cookie"] = f"tz_member_session={cookie}"
+        if token:
+            headers["Authorization"] = "Bearer " + token
+        req = urllib.request.Request(self.base + path, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                payload = json.loads(resp.read() or b"{}")
+                return resp.status, payload, resp.headers
+        except urllib.error.HTTPError as exc:
+            payload = json.loads(exc.read() or b"{}")
+            return exc.code, payload, exc.headers
+
+    def test_register_cookie_sees_own_account_and_can_post(self):
+        status, body, headers = self._json("POST", "/api/auth/register", {
+            "username": "pat-fan",
+            "password": "password123",
+            "display_name": "Pat Fan",
+        })
+        self.assertEqual(status, 200, body)
+        cookie = self._cookie(headers)
+        self.assertTrue(cookie)
+        self.assertEqual(body["user"]["role"], "viewer")
+        self.assertEqual(body["home"], "/")
+
+        status, me, _ = self._json("GET", "/api/member/me", cookie=cookie)
+        self.assertEqual(status, 200, me)
+        self.assertEqual(me["member"]["display_name"], "Pat Fan")
+        handle = me["member"]["username"]
+        self.assertTrue(handle)
+        self.assertNotIn("-", handle)
+
+        status, upload, _ = self._json("POST", "/api/network/uploads", {"kind": "photo"}, cookie=cookie)
+        self.assertEqual(status, 201, upload)
+        token = upload["upload_url"].rsplit("/", 1)[-1]
+        status, done, _ = self._json(
+            "POST", f"/api/network/provider/fake/upload/{token}",
+            {"filename": "sideline.jpg", "byte_size": 12},
+        )
+        self.assertEqual(status, 200, done)
+        status, published, _ = self._json("POST", "/api/network/posts", {
+            "upload_job_id": upload["upload_job_id"],
+            "caption": "Sideline photo",
+            "sport": "basketball",
+            "visibility": "public",
+        }, cookie=cookie)
+        self.assertEqual(status, 201, published)
+        self.assertEqual(published["post"]["caption"], "Sideline photo")
+
+        status, tab, _ = self._json("GET", f"/api/network/profiles/{handle}/posts", cookie=cookie)
+        self.assertEqual(status, 200, tab)
+        self.assertTrue(any(item.get("post_id") == published["post"]["post_id"] for item in tab["items"]))
+
+    def test_owner_cookie_restores_ops_and_viewer_cannot_read_inventory(self):
+        status, body, headers = self._json("POST", "/api/auth/login", {
+            "username": "demo-owner",
+            "password": self.DEMO_SEED_PASSWORDS["demo-owner"],
+        })
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["home"], "/ops")
+        cookie = self._cookie(headers)
+        status, me, _ = self._json("GET", "/api/me", cookie=cookie)
+        self.assertEqual(status, 200, me)
+        self.assertEqual(me["user"]["role"], "owner")
+        self.assertTrue(me["session_token"])
+        self.assertEqual(me["home"], "/ops")
+
+        status, viewer, vheaders = self._json("POST", "/api/auth/login", {
+            "username": "demo-viewer",
+            "password": self.DEMO_SEED_PASSWORDS["demo-viewer"],
+        })
+        self.assertEqual(status, 200, viewer)
+        vcookie = self._cookie(vheaders)
+        status, inv, _ = self._json("GET", "/api/owner/inventory", cookie=vcookie)
+        self.assertEqual(status, 403)
+        self.assertEqual(inv["code"], "owner_required")
+
+    def test_owner_issues_staff_who_can_open_ops(self):
+        status, owner, headers = self._json("POST", "/api/auth/login", {
+            "username": "demo-owner",
+            "password": self.DEMO_SEED_PASSWORDS["demo-owner"],
+        })
+        self.assertEqual(status, 200, owner)
+        cookie = self._cookie(headers)
+        status, issued, _ = self._json("POST", "/api/owner/staff", {
+            "username": "andre-ops",
+            "password": "password123",
+            "display_name": "Andre",
+            "role": "owner",
+        }, cookie=cookie)
+        self.assertEqual(status, 201, issued)
+        self.assertEqual(issued["user"]["role"], "owner")
+
+        status, login, _ = self._json("POST", "/api/auth/login", {
+            "username": "andre-ops",
+            "password": "password123",
+        })
+        self.assertEqual(status, 200, login)
+        self.assertEqual(login["home"], "/ops")
+        self.assertEqual(login["user"]["role"], "owner")
+
+        status, reserved, _ = self._json("POST", "/api/auth/register", {
+            "username": "demo-owner",
+            "password": "password123",
+            "display_name": "Nope",
+        })
+        self.assertEqual(status, 400)
+        self.assertEqual(reserved["code"], "bad_username")
 
 
 if __name__ == "__main__":

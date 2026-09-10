@@ -137,7 +137,7 @@ Override those passwords with `TZ_SEED_PASSWORD_VIEWER`, `TZ_SEED_PASSWORD_WORKE
 
 **Owners** can do everything a worker can, plus print/export the whole site and print this mastery guide.
 
-Staff cannot self-register. `POST /api/auth/register` always creates a **viewer** with midwest / standard / web. Usernames `demo-owner`, `demo-worker`, `demo-admin`, `owner`, `operator`, `admin`, `root`, `system` are reserved.
+Staff cannot self-register. `POST /api/auth/register` always creates a **viewer** with midwest / standard / web. Usernames `demo-owner`, `demo-worker`, `demo-admin`, `owner`, `operator`, `admin`, `root`, `system` are reserved. An owner issues worker or owner accounts with `POST /api/owner/staff`.
 
 A signed-in worker or owner on `/` sees a **Control plane** link. `/ops` has a **Member site** link. That is how you move without editing the URL.
 
@@ -435,7 +435,7 @@ There are **two audit ledgers**.
 
 Simple append-only log the operator UI reads (`GET /api/audit`): id, ts, actor, action, event_id, detail JSON.
 
-Actions include: `auth.login`, `auth.register`, `auth.demo_login`, `event.created`, `event.transition`, `event.score`, `event.media_end`, `rights.revoked`, `rights.restored`, `ingest.token_issued`, `feed.failover`, `playback.granted`, `playback.denied`, `seed.loaded`, plus every portal event type copied through `audit_log`.
+Actions include: `auth.login`, `auth.register`, `auth.staff_issued`, `auth.demo_login`, `event.created`, `event.transition`, `event.score`, `event.media_end`, `rights.revoked`, `rights.restored`, `ingest.token_issued`, `feed.failover`, `playback.granted`, `playback.denied`, `seed.loaded`, plus every portal event type copied through `audit_log`.
 
 ### 16.2 Canonical hash-chained audit (`audit_events` table)
 
@@ -548,6 +548,7 @@ Auth and identity:
 | --- | --- | --- | --- |
 | POST | `/api/auth/login` | public | Username + password; session + member cookie |
 | POST | `/api/auth/register` | public | Create viewer only |
+| POST | `/api/owner/staff` | owner | Issue operator or owner account |
 | POST | `/api/auth/demo-login` | public | Demo account picker |
 | POST | `/api/auth/start` | public | Begin Treasure verify flow |
 | POST | `/api/auth/verify` | public | Finish verify; member cookie |

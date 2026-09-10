@@ -127,6 +127,7 @@ def _routes():
         ("POST", re.compile(r"^/api/moten/intake/settlement$"), "h_moten_settlement", "operator"),
         ("GET", re.compile(r"^/api/owner/inventory$"), "h_owner_inventory", "owner"),
         ("GET", re.compile(r"^/api/owner/mastery$"), "h_owner_mastery", "owner"),
+        ("POST", re.compile(r"^/api/owner/staff$"), "h_owner_staff", "owner"),
         ("GET", re.compile(rf"^/demo/media/{_EVENT_RE}\.mp4$"), "h_media", "none"),
         ("GET", re.compile(r"^/api/network/me/profile$"), "h_net_me", "member"),
         ("POST", re.compile(r"^/api/network/me/profile$"), "h_net_me_update", "member"),
@@ -720,7 +721,16 @@ class _Handler(BaseHTTPRequestHandler):
         self._send_json(200, self.portal.audit_detail(u, p["audit_id"]))
 
     def h_me(self, p, b, u):
-        self._send_json(200, {"user": u})
+        from . import tokens
+        token = tokens.sign(
+            self.cp.config.token_secret, "session", {"sub": u["user_id"]},
+            self.cp.config.session_ttl,
+        )
+        self._send_json(200, {
+            "user": u,
+            "session_token": token,
+            "home": self.cp._home_for(u),
+        })
 
     def h_events_list(self, p, b, u):
         self._send_json(200, {"events": self.cp.list_events(u)})
@@ -900,6 +910,16 @@ class _Handler(BaseHTTPRequestHandler):
             "markdown": load_markdown(),
             "html": article_html(),
         })
+
+    def h_owner_staff(self, p, b, u):
+        body = b or {}
+        self._send_json(201, self.cp.issue_staff(
+            u,
+            body.get("username", ""),
+            body.get("password", ""),
+            body.get("display_name", ""),
+            body.get("role", ""),
+        ))
 
     def _serve_mastery_page(self):
         body = full_page_html().encode("utf-8")
