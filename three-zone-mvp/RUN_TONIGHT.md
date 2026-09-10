@@ -40,6 +40,8 @@ One JSON secret also works:
 
 Stream still needs account id, customer code, and webhook secret (separate secrets or that JSON). `TZ_LIVE_MEDIA_PROVIDER=cloudflare` (or legacy `TZ_MEDIA_PROVIDER=cloudflare`) must be set or Provision stays on the demo rail. Environment secrets apply to **new** agents only.
 
+Cloud Agent `start` (`.cursor/scripts/cloud-agent-start.sh`) sets `TZ_LIVE_MEDIA_PROVIDER=cloudflare` automatically when those four credentials are all present and the provider is otherwise unset. Incomplete secrets stay on demo so boot does not fail closed into a crash. A Cursor secret named only `CLOUDFLARE` that is not a valid Stream API token is not enough.
+
 Placeholders (copy from `config.example.env`, never commit real secrets):
 
 ```bash
