@@ -260,6 +260,19 @@ class FakeProvider(MediaProvider):
             "signature": self._sign(event_id, uid, "ready"),
         }
 
+    def remember_asset(self, provider_uid: str, kind: str = "clip",
+                       duration_seconds=None, status: str = "ready") -> None:
+        """Rehydrate in-memory state from the ledger after a process restart."""
+        if not provider_uid:
+            return
+        row = dict(self.assets.get(provider_uid) or {})
+        if kind:
+            row["kind"] = kind
+        if duration_seconds is not None:
+            row["duration_seconds"] = duration_seconds
+        row["status"] = status or row.get("status") or "ready"
+        self.assets[provider_uid] = row
+
     def get_status(self, provider_uid: str) -> dict:
         asset = self.assets.get(provider_uid)
         if not asset:

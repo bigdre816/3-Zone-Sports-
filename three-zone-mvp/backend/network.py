@@ -18,6 +18,7 @@ from .control_plane import (
     AuthError, ConflictError, ControlError, ForbiddenError, NotFoundError, ValidationError,
 )
 from .db import dumps, loads
+from .media_provider import ProviderError
 
 
 class RateLimitError(ControlError):
@@ -132,6 +133,31 @@ class NetworkService:
             (_id("ntf"), profile_id, kind, actor_profile_id, subject_type, subject_id, _now(), None),
         )
 
+    def check_login_rate(self, client_key: str) -> None:
+        self.limiter.check(f"login:{client_key or 'unknown'}", 8)
+
+    def _parse_tag_list(self, value) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return [str(part).strip() for part in value if str(part).strip()]
+
+    def _resolve_tag_inputs(self, data: dict) -> tuple[list[str], list[str]]:
+        ids = []
+        for raw in self._parse_tag_list(data.get("tagged_profile_ids")) + self._parse_tag_list(
+            data.get("tagged_handles")
+        ):
+            handle = raw.lower().lstrip("@")
+            row = self.db.query_one(
+                "SELECT profile_id FROM profiles WHERE profile_id=? OR handle=?",
+                (raw, handle),
+            )
+            if row:
+                ids.append(row["profile_id"])
+        teams = self._parse_tag_list(data.get("tagged_team_ids") or data.get("tagged_teams"))
+        return ids, teams
+
     def _tag(self, subject_type, subject_id, profile_ids=None, team_ids=None):
         for pid in profile_ids or []:
             if pid:
@@ -146,6 +172,24 @@ class NetworkService:
                     "INSERT OR IGNORE INTO team_tags VALUES (?,?,?)",
                     (subject_type, subject_id, tid),
                 )
+
+    def _post_tags(self, post_id: str) -> dict:
+        athletes = []
+        for row in self.db.query(
+            "SELECT p.handle, p.display_name FROM athlete_tags t "
+            "JOIN profiles p ON p.profile_id=t.profile_id "
+            "WHERE t.subject_type='post' AND t.subject_id=?",
+            (post_id,),
+        ):
+            athletes.append({"handle": row["handle"], "display_name": row["display_name"]})
+        teams = [
+            row["team_id"]
+            for row in self.db.query(
+                "SELECT team_id FROM team_tags WHERE subject_type='post' AND subject_id=?",
+                (post_id,),
+            )
+        ]
+        return {"athlete_tags": athletes, "team_tags": teams}
 
     def _counts(self, subject_type, subject_id):
         likes = self.db.query_one(
@@ -793,7 +837,8 @@ class NetworkService:
                 "published_at=?, updated_at=? WHERE clip_id=?",
                 (post_id, status, visibility, caption, stamp if status == "published" else None, stamp, clip_id),
             )
-        self._tag("post", post_id, data.get("tagged_profile_ids"), data.get("tagged_team_ids"))
+        tagged_profiles, tagged_teams = self._resolve_tag_inputs(data)
+        self._tag("post", post_id, tagged_profiles, tagged_teams)
         result = self._classify(caption, sport)
         self._flag("post", post_id, result)
         if status == "published":
@@ -876,7 +921,13 @@ class NetworkService:
             "published_at": post["published_at"],
             "provenance": None,
             "watch_full_game": None,
+            "content_state": (
+                "restricted" if post["publication_status"] == "restricted"
+                else "removed" if post["publication_status"] == "removed"
+                else "ok"
+            ),
         }
+        card.update(self._post_tags(post["post_id"]))
         if post["clip_id"]:
             clip = dict(self._row("clips", "clip_id", post["clip_id"]))
             card["provenance"] = self.clip_provenance(viewer, clip)
@@ -1285,6 +1336,7 @@ class NetworkService:
         return self.create_post(user, {
             "clip_id": clip_id, "caption": caption, "sport": data.get("sport") or clip["sport"],
             "visibility": visibility, "tagged_profile_ids": data.get("tagged_profile_ids"),
+            "tagged_handles": data.get("tagged_handles"),
             "tagged_team_ids": data.get("tagged_team_ids"),
         })
 
@@ -1776,6 +1828,17 @@ class NetworkService:
             if not owner or owner["profile_id"] != asset["owner_profile_id"]:
                 if not self._staff(viewer):
                     raise ForbiddenError("not authorized", "media_forbidden")
-        meta = self.provider.playback_metadata(asset["provider_uid"])
+        if hasattr(self.provider, "remember_asset"):
+            self.provider.remember_asset(
+                asset.get("provider_uid"),
+                kind=asset.get("kind"),
+                duration_seconds=asset.get("duration_seconds"),
+                status=asset.get("status") or "ready",
+            )
+        meta = {}
+        try:
+            meta = self.provider.playback_metadata(asset["provider_uid"]) or {}
+        except ProviderError:
+            meta = {}
         seconds = int(asset["duration_seconds"] or meta.get("duration_seconds") or 8)
         return asset, max(2, min(seconds, 600))
