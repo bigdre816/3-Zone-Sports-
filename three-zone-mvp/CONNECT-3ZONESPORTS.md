@@ -3,7 +3,7 @@
 Plane: Three-Zone public hostname (operating-company site, not Moten vault/invention records).
 Spec: public-release is privileged; this page is product marketing only.
 
-You bought `3zonesports.com` at **IONOS**. GitHub Pages is already set to that domain. IONOS DNS still points at IONOS’s empty server (`74.208.236.133`, nginx 404). These screens are the whole job.
+You bought `3zonesports.com` at **IONOS**. GitHub Pages on **`bigdre816/3-Zone-Sports-`** already serves `/docs` on that domain with HTTPS enforced. If https://3zonesports.com/ already shows the Three-Zone public site, skip the DNS clicks below.
 
 Do the GitHub folder click **before** changing DNS, or the Moten prototype at the repo root can go live on this domain.
 
@@ -11,7 +11,7 @@ Do the GitHub folder click **before** changing DNS, or the Moten prototype at th
 
 Open this link (signs you into GitHub, then opens Pages):
 
-https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fbigdre816%2FThe-system%2Fsettings%2Fpages
+https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fbigdre816%2F3-Zone-Sports-%2Fsettings%2Fpages
 
 On that page:
 
@@ -88,7 +88,7 @@ If `www` already has an **A** record to `74.208.236.133`, delete that A record f
 | Host name | `www` |
 | Points to | `bigdre816.github.io` |
 
-No `https://`. No trailing slash. No `/The-system`.
+No `https://`. No trailing slash. No `/3-Zone-Sports-`.
 
 ## 4. Check that the internet picked it up
 
@@ -106,7 +106,7 @@ IONOS is live immediately on their side; the rest of the internet can take up to
 
 Go back to:
 
-https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fbigdre816%2FThe-system%2Fsettings%2Fpages
+https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fbigdre816%2F3-Zone-Sports-%2Fsettings%2Fpages
 
 When GitHub shows the domain as DNS-ready, check **Enforce HTTPS**.
 

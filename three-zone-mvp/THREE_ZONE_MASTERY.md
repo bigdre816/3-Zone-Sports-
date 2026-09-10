@@ -22,7 +22,7 @@ The source file of this article is `three-zone-mvp/THREE_ZONE_MASTERY.md` in the
 
 ## 1. What this repository actually is
 
-The git repository is named **The-system**. It holds two related products, plus a leftover clock page.
+The git repository is named **3-Zone-Sports-**. It holds two related products, plus a leftover clock page.
 
 **Product A — Moten IP & Invention Control Plane** (`index.html` at the repo root). A browser-only confidential control surface for invention work. It uses local storage. It is a prototype of the Moten master specification: research registry, invention ledger, disclosure firewall, filing calendar, counsel workbench, evidence hashes, default-deny access, AI gateway, rights registry, lease simulation, socket simulation, ingest, revocation, discovery, measurement, settlement, partner adapters, WORM export, and drills. It does **not** serve live sports video. It is the **IP and policy brain** of the larger idea.
 

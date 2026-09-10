@@ -18,6 +18,10 @@ services:
     dockerContext: .
     autoDeployTrigger: commit
     healthCheckPath: /api/health
+    disk:
+      name: three-zone-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: TZ_ENV
         value: demo
