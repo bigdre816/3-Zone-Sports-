@@ -15,6 +15,20 @@ const STAFF = new Set(["operator", "owner", "admin"]);
 const PAGE_VIEWS = new Set(["about", "support", "privacy", "terms", "notifications"]);
 const MEMBER_VIEWS = new Set(["huddle", "feed", "live", "watch", "saved", "studio", "inbox", "profile", "game"]);
 const HASH_ALIAS = { schedules: "live", archives: "live", feed: "huddle", watch: "live" };
+const BANNED_GREETING = /^(demo|sample|preview|test|member|viewer|owner|worker|admin|operator)$/i;
+
+function courtsideGreeting(member) {
+  const raw = ((member && (member.greeting_name || member.display_name)) || "").trim().split(/\s+/)[0] || "";
+  if (!raw || BANNED_GREETING.test(raw)) return "GOOD TO HAVE YOU COURTSIDE";
+  return "GOOD TO HAVE YOU COURTSIDE, " + raw.toUpperCase();
+}
+
+function publicHandle(handle) {
+  const raw = (handle || "").trim();
+  if (!raw || /^demo/i.test(raw)) return "";
+  return raw;
+}
+
 const state = {
   profile: null, signedIn: false, mode: "for_you", sport: "", kind: "photo", tab: "posts",
   maxClipSeconds: 60, minClipSeconds: 5, studioDuration: 90, previewing: false, gameId: null,
@@ -120,11 +134,13 @@ function showSignedIn(member, profile) {
   $("#notify-btn").classList.remove("hidden");
   $("#avatar-chip").classList.remove("hidden");
   $("#bottom-nav").hidden = false;
-  const first = member.greeting_name || (member.display_name || "Member").split(" ")[0];
-  $("#greeting-eyebrow").textContent = "GOOD TO HAVE YOU COURTSIDE, " + first.toUpperCase();
+  const greeting = courtsideGreeting(member);
+  $("#greeting-eyebrow").textContent = greeting;
   $("#member-name").textContent = member.display_name;
-  $("#member-handle").textContent = profile ? "@" + profile.handle : "";
-  $("#avatar-chip").textContent = (first.slice(0, 2) || "TZ").toUpperCase();
+  const handle = publicHandle(profile && profile.handle);
+  $("#member-handle").textContent = handle ? "@" + handle : "";
+  const initials = (member.greeting_name || (member.display_name || "TZ")).trim().slice(0, 2);
+  $("#avatar-chip").textContent = (initials || "TZ").toUpperCase();
   $("#ops-link").classList.toggle("hidden", !STAFF.has(member.role));
   state.profile = profile;
 }

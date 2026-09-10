@@ -29,28 +29,85 @@ def _has_rows(db: Database, table: str) -> bool:
     return bool(row and row["c"])
 
 
+# Internal login ids stay demo-* for tests and local sign-in. Public names and
+# handles must look like people — never "Demo Member" on the member home screen.
+SEED_PEOPLE = {
+    "demo-viewer": {
+        "display_name": "Andre",
+        "handle": "andre",
+        "bio": "Midwest fan",
+        "profile_type": "fan",
+        "sports": ["basketball"],
+        "zones": ["midwest"],
+        "packages": ["standard"],
+        "destinations": ["web"],
+        "role": "viewer",
+        "profile_id": "prf_demo_viewer",
+    },
+    "demo-worker": {
+        "display_name": "Jordan",
+        "handle": "jordan",
+        "bio": "Operations",
+        "profile_type": "videographer",
+        "sports": [],
+        "zones": ["*"],
+        "packages": ["*"],
+        "destinations": ["*"],
+        "role": "operator",
+        "profile_id": "prf_demo_worker",
+    },
+    "demo-owner": {
+        "display_name": "Morgan",
+        "handle": "morgan",
+        "bio": "Owner",
+        "profile_type": "sports_organization",
+        "sports": [],
+        "zones": ["*"],
+        "packages": ["*"],
+        "destinations": ["*"],
+        "role": "owner",
+        "profile_id": "prf_demo_owner",
+    },
+}
+
+
+def _refresh_seed_public_names(db: Database) -> None:
+    """Keep seeded people named as people, including on already-created databases."""
+    for user_id, person in SEED_PEOPLE.items():
+        db.execute(
+            "UPDATE users SET display_name=? WHERE user_id=?",
+            (person["display_name"], user_id),
+        )
+        taken = db.query_one(
+            "SELECT profile_id FROM profiles WHERE handle=? AND user_id<>?",
+            (person["handle"], user_id),
+        )
+        if taken:
+            db.execute(
+                "UPDATE profiles SET display_name=? WHERE user_id=?",
+                (person["display_name"], user_id),
+            )
+        else:
+            db.execute(
+                "UPDATE profiles SET display_name=?, handle=? WHERE user_id=?",
+                (person["display_name"], person["handle"], user_id),
+            )
+
+
 def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
-    """Populate demo data if the database has no events yet. Returns True if seeded."""
+    """Populate local inventory if the database has no events yet. Returns True if seeded."""
     from .config import DEMO_SEED_PASSWORDS
     passwords = seed_passwords or DEMO_SEED_PASSWORDS
-    # Always upsert demo identities so existing pilot databases gain newly
+    # Always upsert local identities so existing databases gain newly
     # introduced roles without requiring destructive data deletion.
     db.executemany(
         "INSERT OR REPLACE INTO users(user_id,display_name,role,account_state,subscription,"
         "zones,packages,destinations,password_hash) VALUES (?,?,?,?,?,?,?,?,?)",
         [
-            # Member site: a subscriber who can only watch what they are entitled to.
-            _user("demo-viewer", "Demo Member (viewer)", "viewer",
-                  ["midwest"], ["standard"], ["web"],
-                  password_hash=hash_password(passwords.get("demo-viewer", DEMO_SEED_PASSWORDS["demo-viewer"]))),
-            # Back worker side: production staff who run events but cannot see the owner portal.
-            _user("demo-worker", "Demo Worker (operator)", "operator",
-                  ["*"], ["*"], ["*"],
-                  password_hash=hash_password(passwords.get("demo-worker", DEMO_SEED_PASSWORDS["demo-worker"]))),
-            # Owner side: full control plus the print-everything back portal.
-            _user("demo-owner", "Demo Owner", "owner",
-                  ["*"], ["*"], ["*"],
-                  password_hash=hash_password(passwords.get("demo-owner", DEMO_SEED_PASSWORDS["demo-owner"]))),
+            _user(user_id, person["display_name"], person["role"],
+                  person["zones"], person["packages"], person["destinations"],
+                  password_hash=hash_password(passwords.get(user_id, DEMO_SEED_PASSWORDS[user_id])))
+            for user_id, person in SEED_PEOPLE.items()
         ],
     )
     # V1 used demo-admin. The explicit three-tier model replaces it with the
@@ -63,14 +120,13 @@ def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
         "sports,profile_type,visibility,verification_state,verification_badge,team_id,created_at,updated_at)"
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [
-            ("prf_demo_viewer", "demo-viewer", "demo_viewer", "Demo Member (viewer)", "",
-             "Midwest fan", "midwest", dumps(["basketball"]), "fan", "public", "none", "", None, now, now),
-            ("prf_demo_worker", "demo-worker", "demo_worker", "Demo Worker (operator)", "",
-             "Operations", "midwest", dumps([]), "videographer", "public", "none", "", None, now, now),
-            ("prf_demo_owner", "demo-owner", "demo_owner", "Demo Owner", "",
-             "Owner", "midwest", dumps([]), "sports_organization", "public", "none", "", None, now, now),
+            (person["profile_id"], user_id, person["handle"], person["display_name"], "",
+             person["bio"], "midwest", dumps(person["sports"]), person["profile_type"],
+             "public", "none", "", None, now, now)
+            for user_id, person in SEED_PEOPLE.items()
         ],
     )
+    _refresh_seed_public_names(db)
 
     if _has_rows(db, "events"):
         _backfill_property_ids(db)

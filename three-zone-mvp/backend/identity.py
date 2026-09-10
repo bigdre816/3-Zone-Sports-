@@ -9,6 +9,30 @@ from __future__ import annotations
 
 from .control_plane import AuthError
 
+# First-name tokens that would make the member home look like a product demo.
+# Internal user_ids may still start with demo-; those must never be the greeting.
+BANNED_GREETING_TOKENS = frozenset({
+    "demo", "sample", "preview", "test", "member", "viewer", "owner", "worker",
+    "admin", "operator",
+})
+
+
+def greeting_name(display_name: str | None) -> str:
+    """Return the first name for the Huddle greeting, or empty if it is a label."""
+    first = (display_name or "").strip().split()[0] if (display_name or "").strip() else ""
+    cleaned = first.strip(".,!?:;\"'").lower()
+    if not cleaned or cleaned in BANNED_GREETING_TOKENS:
+        return ""
+    return first
+
+
+def public_handle(handle: str | None) -> str:
+    """Hide internal demo_* handles from member-facing chrome."""
+    raw = (handle or "").strip()
+    if not raw or raw.lower().startswith("demo"):
+        return ""
+    return raw
+
 
 def resolve_identity(cp, portal, bearer_token: str | None = None,
                      member_session_id: str | None = None):
