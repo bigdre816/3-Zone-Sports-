@@ -61,6 +61,29 @@ class WorkspaceLayoutTests(unittest.TestCase):
         self.assertIn("COPY requirements.txt", dockerfile)
         self.assertNotIn("COPY three-zone-mvp/", dockerfile)
 
+    def test_ci_workflow_is_parseable_yaml(self):
+        """A single-line run: with ': ' is invalid YAML and fails Actions in 0s."""
+        text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        self.assertIn("name: control-plane-ci", text)
+        self.assertIn("working-directory: apps/control-plane", text)
+        self.assertIn("working-directory: three-zone-mvp", text)
+        self.assertIn("python -m pytest -q", text)
+        for index, line in enumerate(text.splitlines(), 1):
+            stripped = line.lstrip()
+            if not stripped.startswith("run:"):
+                continue
+            rest = stripped[4:].lstrip()
+            if rest.startswith("|") or rest.startswith(">"):
+                continue
+            if rest.startswith(("'", '"')):
+                continue
+            self.assertNotIn(
+                ": ",
+                rest,
+                f".github/workflows/ci.yml line {index} is an unquoted run scalar "
+                "with ': '; GitHub rejects that before any job starts",
+            )
+
 
 if __name__ == "__main__":
     os.chdir(str(MVP))
