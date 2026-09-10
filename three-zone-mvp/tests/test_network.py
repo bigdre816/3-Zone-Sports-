@@ -311,7 +311,7 @@ class VisibilityAndFeedTests(unittest.TestCase):
     def test_feed_modes_filters_cursors_no_dupes(self):
         self._public_photo(self.member, "One", sport="basketball")
         self._public_photo(self.member, "Two", sport="soccer")
-        self.net.follow(self.other, "demo_viewer")
+        self.net.follow(self.other, "andre")
         feed = self.net.feed(self.other, "for_you")
         ids = [i["post_id"] for i in feed["items"]]
         self.assertEqual(len(ids), len(set(ids)))
@@ -382,8 +382,8 @@ class SocialAndModerationTests(unittest.TestCase):
             "SELECT * FROM saves WHERE subject_id=?", (post["post_id"],)
         )
         self.assertEqual(len(saves), 1)
-        self.net.follow(self.other, "demo_viewer")
-        self.net.follow(self.other, "demo_viewer")
+        self.net.follow(self.other, "andre")
+        self.net.follow(self.other, "andre")
         follows = self.cp.db.query("SELECT * FROM follows")
         self.assertEqual(len(follows), 1)
 

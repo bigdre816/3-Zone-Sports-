@@ -19,7 +19,10 @@ from urllib.parse import parse_qs, urlparse
 
 from . import demo_media
 from .control_plane import ControlError, ControlPlane
-from .identity import bearer_from_header, resolve_identity, resolve_identity_optional
+from .identity import (
+    bearer_from_header, greeting_name, public_handle, resolve_identity,
+    resolve_identity_optional,
+)
 from .mastery import article_html, full_page_html, load_markdown
 from .media_provider import build_provider
 from .moten_adapter import MotenIntakeService
@@ -529,12 +532,13 @@ class _Handler(BaseHTTPRequestHandler):
         profile = self.network.get_own_profile(u)
         settings = self.network.get_settings(u)
         notes = self.network.list_notifications(u)
-        first = (u["display_name"] or "Member").split()[0]
+        first = greeting_name(u.get("display_name"))
+        handle = public_handle(profile.get("handle"))
         self._send_json(200, {
             "member": {
                 "member_id": u["user_id"],
                 "display_name": u["display_name"],
-                "username": profile.get("handle"),
+                "username": handle,
                 "avatar_url": profile.get("avatar"),
                 "home_zone": profile.get("market"),
                 "role": u["role"],

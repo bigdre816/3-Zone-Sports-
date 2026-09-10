@@ -8,7 +8,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.control_plane import ForbiddenError
+from backend.config import Config
+from backend.control_plane import ControlPlane, ForbiddenError
 from tests.test_network import build_net
 
 
@@ -25,7 +26,7 @@ class HuddleFriendsTests(unittest.TestCase):
         self.assertEqual(pending["status"], "pending")
         notes = self.net.list_notifications(self.other)
         self.assertGreaterEqual(notes["unread_count"], 1)
-        accepted = self.net.accept_friend(self.other, "demo_viewer")
+        accepted = self.net.accept_friend(self.other, "andre")
         self.assertEqual(accepted["status"], "accepted")
         self.assertIn(
             self.net.ensure_profile(self.other)["profile_id"],
@@ -36,7 +37,7 @@ class HuddleFriendsTests(unittest.TestCase):
 
     def test_watching_activity_requires_opt_in(self):
         self.net.request_friend(self.member, "huddlepal")
-        self.net.accept_friend(self.other, "demo_viewer")
+        self.net.accept_friend(self.other, "andre")
         hidden = self.net.friends_activity(self.other)
         self.assertEqual(hidden["items"], [])
         self.net.update_settings(self.member, {"show_watching_to_friends": True})
@@ -53,7 +54,7 @@ class HuddleFriendsTests(unittest.TestCase):
         self.assertEqual(shown["items"][0]["activity"], "watching_live")
 
     def test_block_stops_friend_request(self):
-        self.net.block_member(self.other, "demo_viewer")
+        self.net.block_member(self.other, "andre")
         with self.assertRaises(ForbiddenError) as ctx:
             self.net.request_friend(self.member, "huddlepal")
         self.assertEqual(ctx.exception.code, "blocked")
@@ -96,7 +97,7 @@ class HuddleWatchPartyTests(unittest.TestCase):
 
     def test_friends_party_join_and_social_message(self):
         self.net.request_friend(self.member, "partyguest")
-        self.net.accept_friend(self.other, "demo_viewer")
+        self.net.accept_friend(self.other, "andre")
         party = self.net.create_watch_party(self.member, {"event_id": "evt_mw_basketball"})
         joined = self.net.join_watch_party(self.other, party["party_id"])
         self.assertTrue(joined["ok"])
@@ -138,7 +139,7 @@ class HuddleFeedRankingAndShareTests(unittest.TestCase):
     def test_zone_alias_and_follow_ranks_higher(self):
         followed = self._photo(self.member, "Lincoln hoop")
         other = self._photo(self.stranger, "Random hoop")
-        self.net.follow(self.other, "demo_viewer")
+        self.net.follow(self.other, "andre")
         zone = self.net.feed(self.other, "zone")
         self.assertEqual(zone["mode"], "zone")
         self.assertTrue(any(i["post_id"] == followed["post_id"] for i in zone["items"]))
@@ -239,6 +240,158 @@ class HuddleShellTests(unittest.TestCase):
             js = handle.read()
         self.assertNotIn(" sessionStorage", js)
         self.assertIn("This moment is no longer available.", js)
+        self.assertIn("function courtsideGreeting", js)
+        self.assertIn("BANNED_GREETING", js)
+
+    def test_member_home_copy_never_says_demo(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        static = os.path.join(root, "backend", "static")
+        with open(os.path.join(static, "index.html"), encoding="utf-8") as handle:
+            html = handle.read()
+        self.assertNotIn("demo", html.lower())
+        self.assertNotIn("sample content", html.lower())
+        self.assertNotIn("interactive preview", html.lower())
+        self.assertNotIn("this is a demo", html.lower())
+
+    def test_public_and_member_front_pages_never_show_demo_accounts(self):
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        pages = [
+            os.path.join(repo, "three-zone-mvp", "backend", "static", "index.html"),
+            os.path.join(repo, "three-zone-mvp", "backend", "static", "ops.html"),
+            os.path.join(repo, "docs", "index.html"),
+        ]
+        forbidden = (
+            "demo-viewer", "demo-owner", "demo-worker",
+            "demo member", "demo owner", "demo worker",
+            "this is a demo", "sample content", "interactive preview",
+            "change-me-viewer-local", "change-me-owner-local", "change-me-worker-local",
+        )
+        for path in pages:
+            text = open(path, encoding="utf-8").read().lower()
+            for needle in forbidden:
+                self.assertNotIn(needle, text, f"{path} still shows {needle!r}")
+
+
+class HuddleGreetingTests(unittest.TestCase):
+    def test_seeded_member_is_andre_not_demo(self):
+        from backend.identity import greeting_name, public_handle
+        from backend.seed import seed_if_empty
+        from backend.db import Database
+
+        db = Database(":memory:")
+        seed_if_empty(db)
+        user = db.query_one("SELECT * FROM users WHERE user_id=?", ("demo-viewer",))
+        profile = db.query_one("SELECT * FROM profiles WHERE user_id=?", ("demo-viewer",))
+        self.assertEqual(user["display_name"], "Andre")
+        self.assertEqual(profile["display_name"], "Andre")
+        self.assertEqual(profile["handle"], "andre")
+        self.assertEqual(greeting_name(user["display_name"]), "Andre")
+        self.assertEqual(public_handle(profile["handle"]), "andre")
+
+    def test_greeting_drops_demo_and_sample_labels(self):
+        from backend.identity import greeting_name, public_handle
+        self.assertEqual(greeting_name("Demo Member (viewer)"), "")
+        self.assertEqual(greeting_name("Sample Content"), "")
+        self.assertEqual(greeting_name("Andre Moten"), "Andre")
+        self.assertEqual(public_handle("demo_viewer"), "")
+        self.assertEqual(public_handle("andre"), "andre")
+
+    def test_existing_database_loses_demo_public_names(self):
+        from backend.db import Database
+        from backend.seed import seed_if_empty
+
+        db = Database(":memory:")
+        seed_if_empty(db)
+        db.execute(
+            "UPDATE users SET display_name=? WHERE user_id=?",
+            ("Demo Member (viewer)", "demo-viewer"),
+        )
+        db.execute(
+            "UPDATE profiles SET display_name=?, handle=? WHERE user_id=?",
+            ("Demo Member (viewer)", "demo_viewer", "demo-viewer"),
+        )
+        seed_if_empty(db)
+        user = db.query_one("SELECT * FROM users WHERE user_id=?", ("demo-viewer",))
+        profile = db.query_one("SELECT * FROM profiles WHERE user_id=?", ("demo-viewer",))
+        self.assertEqual(user["display_name"], "Andre")
+        self.assertEqual(profile["display_name"], "Andre")
+        self.assertEqual(profile["handle"], "andre")
+
+
+class HuddleHttpGreetingTests(unittest.TestCase):
+    def test_member_me_greeting_is_andre_and_pages_omit_demo(self):
+        import json
+        import threading
+        import urllib.error
+        import urllib.request
+
+        from backend.config import DEMO_SEED_PASSWORDS
+        from backend.db import Database
+        from backend.http_server import make_http_server
+        from backend.seed import seed_if_empty
+
+        db = Database(":memory:")
+        seed_if_empty(db)
+        cfg = Config(env="demo", http_host="127.0.0.1", http_port=0,
+                     allowed_origins=["http://127.0.0.1"])
+        cp = ControlPlane(db, cfg)
+        httpd = make_http_server(cfg, cp, "/tmp")
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            base = f"http://{host}:{port}"
+            for path in ("/", "/ops"):
+                with urllib.request.urlopen(base + path, timeout=5) as resp:
+                    html = resp.read().decode("utf-8", "replace").lower()
+                self.assertNotIn("demo-viewer", html)
+                self.assertNotIn("this is a demo", html)
+                self.assertNotIn("demo member", html)
+            login = urllib.request.Request(
+                base + "/api/auth/login",
+                data=json.dumps({
+                    "username": "demo-viewer",
+                    "password": DEMO_SEED_PASSWORDS["demo-viewer"],
+                }).encode(),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(login, timeout=5) as resp:
+                body = json.loads(resp.read())
+            self.assertEqual(body["user"]["display_name"], "Andre")
+            token = body["session_token"]
+            me_req = urllib.request.Request(
+                base + "/api/member/me",
+                headers={"Authorization": "Bearer " + token},
+            )
+            with urllib.request.urlopen(me_req, timeout=5) as resp:
+                me = json.loads(resp.read())
+            self.assertEqual(me["member"]["greeting_name"], "Andre")
+            self.assertEqual(me["member"]["display_name"], "Andre")
+            self.assertEqual(me["member"]["username"], "andre")
+            self.assertNotEqual(me["member"]["greeting_name"].lower(), "demo")
+            feed_req = urllib.request.Request(
+                base + "/api/network/feed?mode=for_you",
+                headers={"Authorization": "Bearer " + token},
+            )
+            with urllib.request.urlopen(feed_req, timeout=5) as resp:
+                feed = json.loads(resp.read())
+            for item in feed.get("items") or []:
+                author = (item.get("author") or {})
+                name = (author.get("display_name") or "").lower()
+                handle = (author.get("handle") or "").lower()
+                self.assertNotIn("demo", name)
+                self.assertFalse(handle.startswith("demo"))
+            for path in ("/api/public/live", "/api/public/schedules", "/api/public/archives"):
+                with urllib.request.urlopen(base + path, timeout=5) as resp:
+                    payload = json.loads(resp.read())
+                blob = json.dumps(payload).lower()
+                self.assertNotIn("demo member", blob)
+                self.assertNotIn("this is a demo", blob)
+        except urllib.error.HTTPError as exc:
+            self.fail(f"HTTP {exc.code} {exc.reason}: {exc.read()[:300]}")
+        finally:
+            httpd.shutdown()
 
 
 if __name__ == "__main__":
