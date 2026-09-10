@@ -1,23 +1,6 @@
 "use strict";
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
-const api = async (method, path, body) => {
-  const headers = {};
-  const token = sessionStorage.getItem("tz_session");
-  if (token) headers.Authorization = "Bearer " + token;
-  if (body !== undefined) headers["Content-Type"] = "application/json";
-  const response = await fetch(path, {
-    method, credentials: "include", headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    const err = Error(data.error || "Request failed");
-    err.code = data.code;
-    throw err;
-  }
-  return data;
-};
 const toast = text => {
   $("#toast").textContent = text; $("#toast").classList.remove("hidden");
   setTimeout(() => $("#toast").classList.add("hidden"), 3000);
@@ -29,12 +12,13 @@ const escapeText = value => {
 };
 const parseList = value => (value || "").split(",").map(part => part.trim()).filter(Boolean);
 const STAFF = new Set(["operator", "owner", "admin"]);
-const PAGE_VIEWS = new Set(["about", "support", "privacy", "terms"]);
-const MEMBER_VIEWS = new Set(["feed", "live", "watch", "inbox", "profile", "game"]);
-const HASH_ALIAS = { schedules: "watch", archives: "watch" };
+const PAGE_VIEWS = new Set(["about", "support", "privacy", "terms", "notifications"]);
+const MEMBER_VIEWS = new Set(["huddle", "feed", "live", "watch", "saved", "studio", "inbox", "profile", "game"]);
+const HASH_ALIAS = { schedules: "live", archives: "live", feed: "huddle", watch: "live" };
 const state = {
   profile: null, signedIn: false, mode: "for_you", sport: "", kind: "photo", tab: "posts",
-  maxClipSeconds: 90, studioDuration: 90, previewing: false, gameId: null,
+  maxClipSeconds: 60, minClipSeconds: 5, studioDuration: 90, previewing: false, gameId: null,
+  lastClipId: null, lastPostId: null, heroEventId: null, notifyTimer: null,
 };
 
 function pendingPlayback() {
@@ -47,19 +31,13 @@ function pendingPlayback() {
 }
 
 function clearPendingPlayback() {
-  const next = (location.hash || "") || "#live";
+  const next = (location.hash || "") || "#huddle";
   history.replaceState(null, "", location.pathname + next);
 }
 
 const player = {
-  config: null,
-  hls: null,
-  ws: null,
-  viewSession: null,
-  heartbeatTimer: null,
-  leaseTimer: null,
-  seq: 0,
-  eventId: null,
+  config: null, hls: null, ws: null, viewSession: null,
+  heartbeatTimer: null, leaseTimer: null, seq: 0, eventId: null,
 };
 
 function stopPortalMedia(reason) {
@@ -93,11 +71,10 @@ function attachPortalMedia(url, mediaType) {
 
 function connectEventSocket(eventId) {
   if (!player.config || !player.config.ws_enabled || !player.config.ws_url_base) return;
-  if (!sessionStorage.getItem("tz_session")) return;
   if (player.ws) { try { player.ws.close(); } catch (_) {} }
   const url = player.config.ws_url_base + eventId;
   let ws;
-  try { ws = new WebSocket(url, ["tz-session", sessionStorage.getItem("tz_session")]); }
+  try { ws = new WebSocket(url, ["tz-session"]); }
   catch (_) { return; }
   player.ws = ws;
   ws.onmessage = (msg) => {
@@ -106,8 +83,28 @@ function connectEventSocket(eventId) {
       toast("Playback stopped — rights revoked");
       $("#player-state").textContent = "Rights revoked";
       stopPortalMedia("rights_revoked");
+    } else if (m.type === "moment.published") {
+      loadLiveMoments(eventId);
     } else if (m.type === "event.state" && m.snapshot && m.snapshot.replay_pending) {
       $("#player-state").textContent = "Recording pending";
+    }
+  };
+}
+
+function connectPartySocket(partyId) {
+  if (!player.config || !player.config.ws_enabled || !player.config.ws_url_base) return;
+  const url = player.config.ws_url_base.replace("/ws/events/", "/ws/watch-parties/") + partyId;
+  let ws;
+  try { ws = new WebSocket(url, ["tz-session"]); }
+  catch (_) { return; }
+  ws.onmessage = (msg) => {
+    let m; try { m = JSON.parse(msg.data); } catch (_) { return; }
+    if (m.type === "rights.revoked") {
+      toast("Game rights revoked. Chat stays up; video uses the playback lease.");
+    } else if (m.type === "comment.created" || m.type === "reaction.created") {
+      toast("Watch-party update");
+    } else if (m.type === "moment.published") {
+      if (state.heroEventId) loadLiveMoments(state.heroEventId);
     }
   };
 }
@@ -117,21 +114,32 @@ function showSignedIn(member, profile) {
   $("#auth").classList.add("hidden");
   $("#portal").classList.remove("hidden");
   $("#section-nav").classList.remove("hidden");
+  $("#search-wrap").classList.remove("hidden");
   $("#signout").classList.remove("hidden");
   $("#create-btn").classList.remove("hidden");
+  $("#notify-btn").classList.remove("hidden");
+  $("#avatar-chip").classList.remove("hidden");
+  $("#bottom-nav").hidden = false;
+  const first = member.greeting_name || (member.display_name || "Member").split(" ")[0];
+  $("#greeting-eyebrow").textContent = "GOOD TO HAVE YOU COURTSIDE, " + first.toUpperCase();
   $("#member-name").textContent = member.display_name;
   $("#member-handle").textContent = profile ? "@" + profile.handle : "";
+  $("#avatar-chip").textContent = (first.slice(0, 2) || "TZ").toUpperCase();
   $("#ops-link").classList.toggle("hidden", !STAFF.has(member.role));
   state.profile = profile;
 }
 
 function setView(name) {
-  $$(".view").forEach(el => el.classList.toggle("hidden", el.id !== "view-" + name));
-  if (name === "game") $("#player-wrap").classList.add("hidden");
+  const mapped = name === "feed" ? "huddle" : name === "watch" ? "live" : name;
+  $$(".view").forEach(el => el.classList.toggle("hidden", el.id !== "view-" + mapped && el.id !== "view-" + name));
+  if (mapped === "game") $("#player-wrap").classList.add("hidden");
+  $$("#section-nav a, #bottom-nav a").forEach(a => {
+    a.classList.toggle("active", a.dataset.view === mapped);
+  });
 }
 
 function mediaUnavailable(reason) {
-  return `<div class="media-ph">${escapeText(reason || "Media unavailable")}</div>`;
+  return `<div class="media-ph">${escapeText(reason || "This moment is no longer available.")}</div>`;
 }
 
 function routeName() {
@@ -145,14 +153,15 @@ function applyRoute() {
     $("#auth").classList.add("hidden");
     $("#portal").classList.add("hidden");
     setView(view);
+    if (view === "notifications") loadNotifications();
     return;
   }
   if (state.signedIn) {
     $("#auth").classList.add("hidden");
     $("#portal").classList.remove("hidden");
-    const name = MEMBER_VIEWS.has(view) ? view : "live";
+    const name = MEMBER_VIEWS.has(view) ? view : "huddle";
     setView(name);
-    if (name === "feed") loadFeed();
+    if (name === "huddle" || name === "feed") { loadFeed(); loadFriends(); }
     if (name === "live" || name === "watch") loadCatalog();
     if ((location.hash || "").replace(/^#/, "") === "archives") {
       const archives = $("#archives");
@@ -160,6 +169,8 @@ function applyRoute() {
     }
     if (name === "inbox") loadInbox();
     if (name === "profile") loadProfileTab();
+    if (name === "saved") loadSaved();
+    if (name === "studio") loadStudioSources();
     return;
   }
   $("#auth").classList.remove("hidden");
@@ -168,21 +179,26 @@ function applyRoute() {
 }
 
 function mediaTag(item) {
+  if (item.content_state === "unavailable") {
+    return mediaUnavailable("This moment is no longer available.");
+  }
   if (item.content_state === "restricted" || item.publication_status === "restricted") {
     return mediaUnavailable("This post is restricted");
   }
   if (item.content_state === "removed" || item.publication_status === "removed") {
     return mediaUnavailable("This post was removed");
   }
+  const url = (item.media && item.media.playback_url) || null;
   const id = item.derived_media_asset_id || item.media_asset_id || item.source_media_asset_id;
-  if (!id) return mediaUnavailable("Media unavailable");
-  if (item.clip_id || item.start_seconds != null || item.game_id || (item.provenance && item.provenance.source_type === "game_clip")) {
-    return `<video src="/api/network/media/${id}" controls playsinline muted></video>`;
+  if (!url && !id) return mediaUnavailable("This moment is no longer available.");
+  const src = url || `/api/network/media/${id}`;
+  if (item.clip_id || (item.media && item.media.kind === "clip") || (item.provenance && item.provenance.source_type === "game_clip")) {
+    return `<video src="${src}" controls playsinline muted></video>`;
   }
-  const photo = !item.clip_id && item.provenance && item.provenance.source_type === "member_upload";
+  const photo = item.media && item.media.kind === "photo";
   return photo
-    ? `<img alt="" src="/api/network/media/${id}" />`
-    : `<video src="/api/network/media/${id}" controls playsinline muted></video>`;
+    ? `<img alt="" src="${src}" />`
+    : `<video src="${src}" controls playsinline muted></video>`;
 }
 
 function postCard(item) {
@@ -197,14 +213,19 @@ function postCard(item) {
   const tags = (item.athlete_tags || []).map(tag =>
     `<span class="pill">@${escapeText(tag.handle)}</span>`
   ).join(" ");
-  const restricted = item.content_state === "restricted" || item.publication_status === "restricted";
-  const removed = item.content_state === "removed" || item.publication_status === "removed";
-  const actions = (restricted || removed) ? "" : `<div class="actions">
-      <button type="button" data-like="post:${item.post_id}">Like ${item.like_count || 0}</button>
+  const blocked = item.content_state === "restricted" || item.content_state === "removed" || item.content_state === "unavailable";
+  const liked = item.viewer_liked || (item.engagement && item.engagement.liked_by_me);
+  const likeCount = (item.engagement && item.engagement.likes) || item.like_count || 0;
+  const actions = blocked ? "" : `<div class="actions">
+      <button type="button" class="${liked ? "liked" : ""}" data-like="post:${item.post_id}">Like ${likeCount}</button>
       <button type="button" data-save="post:${item.post_id}">Save</button>
+      <button type="button" data-share="post:${item.post_id}">Share</button>
       <button type="button" data-send="post:${item.post_id}">Send</button>
+      <button type="button" class="quiet" data-follow="${escapeText(item.author.handle)}">Follow</button>
       <button type="button" class="quiet" data-report="post:${item.post_id}">Report</button>
+      <button type="button" class="quiet" data-block="${escapeText(item.author.handle)}">Block</button>
     </div>
+    <div class="comments" data-comments="post:${item.post_id}"></div>
     <form class="comment-form" data-subject="post:${item.post_id}">
       <label>Comment <input name="body" maxlength="500" /></label>
       <button type="submit">Comment</button>
@@ -221,31 +242,16 @@ function postCard(item) {
   </article>`;
 }
 
-async function loadFeed() {
-  const root = $("#feed-list");
-  root.innerHTML = "<p class='empty'>Loading feed…</p>";
-  try {
-    const sport = state.sport ? `&sport=${encodeURIComponent(state.sport)}` : "";
-    const data = await api("GET", `/api/network/feed?mode=${state.mode}${sport}`);
-    if (!data.items.length) {
-      root.innerHTML = "<p class='empty'>No posts in this feed yet.</p>";
-      return;
-    }
-    root.innerHTML = data.items.map(postCard).join("");
-    bindCards(root);
-  } catch (_) {
-    root.innerHTML = "<p class='empty'>Feed is unavailable right now.</p>";
-  }
-}
-
-async function loadPublicFeed() {
-  try {
-    const data = await api("GET", "/api/network/feed?mode=for_you");
-    $("#public-feed").innerHTML = data.items.length
-      ? data.items.map(postCard).join("")
-      : "<p class='sub'>Public sports posts will appear here.</p>";
-    bindCards($("#public-feed"));
-  } catch (_) { /* unsigned feed is best-effort */ }
+async function loadComments(root) {
+  root.querySelectorAll("[data-comments]").forEach(async el => {
+    const [type, id] = el.dataset.comments.split(":");
+    try {
+      const data = await api("GET", `/api/network/comments?subject_type=${type}&subject_id=${id}`);
+      el.innerHTML = (data.comments || []).slice(-3).map(c =>
+        `<p><strong>${escapeText(c.author.display_name)}</strong> ${escapeText(c.body)}</p>`
+      ).join("") || "";
+    } catch (_) { /* keep empty */ }
+  });
 }
 
 function bindMediaErrors(root) {
@@ -253,7 +259,7 @@ function bindMediaErrors(root) {
     el.addEventListener("error", () => {
       const ph = document.createElement("div");
       ph.className = "media-ph";
-      ph.textContent = "Media unavailable";
+      ph.textContent = "This moment is no longer available.";
       el.replaceWith(ph);
     });
   });
@@ -261,23 +267,54 @@ function bindMediaErrors(root) {
 
 function bindCards(root) {
   bindMediaErrors(root);
+  loadComments(root);
   root.querySelectorAll("[data-like]").forEach(btn => btn.onclick = async () => {
     const [type, id] = btn.dataset.like.split(":");
+    const prev = btn.textContent;
+    btn.textContent = "Like …";
     try {
-      const res = await api("POST", "/api/network/react", { subject_type: type, subject_id: id, kind: "like" });
+      const liked = btn.classList.contains("liked");
+      const res = liked
+        ? await api("POST", `/api/member/posts/${id}/unlike`)
+        : await api("PUT", `/api/member/posts/${id}/like`);
       btn.textContent = "Like " + res.like_count;
-    } catch (error) { toast(error.message); }
+      btn.classList.toggle("liked", res.liked);
+    } catch (error) {
+      btn.textContent = prev;
+      toast(error.message);
+    }
   });
   root.querySelectorAll("[data-save]").forEach(btn => btn.onclick = async () => {
     const [type, id] = btn.dataset.save.split(":");
     try { await api("POST", "/api/network/saves", { subject_type: type, subject_id: id }); toast("Saved"); }
     catch (error) { toast(error.message); }
   });
+  root.querySelectorAll("[data-share]").forEach(btn => btn.onclick = async () => {
+    const [type, id] = btn.dataset.share.split(":");
+    try {
+      const res = await api("POST", `/api/member/posts/${id}/share`, { destination: "copy_link" });
+      await navigator.clipboard.writeText(res.url);
+      toast("Copied " + res.url);
+    } catch (error) { toast(error.message); }
+  });
   root.querySelectorAll("[data-send]").forEach(btn => btn.onclick = () => {
     const [type, id] = btn.dataset.send.split(":");
     $("#send-form").subject_type.value = type;
     $("#send-form").subject_id.value = id;
     $("#send-dialog").showModal();
+  });
+  root.querySelectorAll("[data-follow]").forEach(btn => btn.onclick = async () => {
+    try {
+      await api("POST", `/api/network/profiles/${btn.dataset.follow}/follow`);
+      toast("Following");
+    } catch (error) { toast(error.message); }
+  });
+  root.querySelectorAll("[data-block]").forEach(btn => btn.onclick = async () => {
+    try {
+      await api("POST", `/api/member/blocks/${btn.dataset.block}`);
+      toast("Blocked");
+      loadFeed();
+    } catch (error) { toast(error.message); }
   });
   root.querySelectorAll("[data-report]").forEach(btn => btn.onclick = async () => {
     const [type, id] = btn.dataset.report.split(":");
@@ -294,6 +331,7 @@ function bindCards(root) {
       await api("POST", "/api/network/comments", { subject_type: type, subject_id: id, body: form.body.value });
       form.body.value = "";
       toast("Comment added");
+      loadComments(form.parentElement);
     } catch (error) { toast(error.message); }
   });
 }
@@ -307,19 +345,54 @@ function liveCard(event) {
     action = "<p class='sub'>Playback is held until rights are restored.</p>";
   } else if (event.status === "live") {
     pill = "LIVE";
-    action = `<button data-event="${escapeText(event.event_id)}" type="button">Watch live</button>`;
+    action = `<button data-event="${escapeText(event.event_id)}" type="button">Watch live</button>
+      <button class="quiet" data-party="${escapeText(event.event_id)}" type="button">Watch with friends</button>`;
   }
-  return `<article><span class="pill">${pill}</span><h3>${escapeText(event.title)}</h3>${action}</article>`;
+  const board = event.scoreboard || {};
+  const score = board.home != null
+    ? `<p class="sub">${escapeText(board.period || "")} ${escapeText(board.clock || "")} · ${board.home}–${board.away}</p>`
+    : "";
+  return `<article><span class="pill">${pill}</span><h3>${escapeText(event.title)}</h3>${score}${action}</article>`;
+}
+
+async function loadLiveMoments(eventId) {
+  if (!eventId) return;
+  try {
+    const data = await api("GET", `/api/member/events/${eventId}/moments`);
+    $("#live-moments").innerHTML = (data.moments || []).map(m =>
+      `<div class="moment-row"><span class="sub">${escapeText(m.type)}</span>
+       <div><strong>${escapeText(m.label)}</strong></div></div>`
+    ).join("") || "<p class='empty'>Moments appear when the authorized scoreboard changes.</p>";
+  } catch (_) {
+    $("#live-moments").innerHTML = "<p class='empty'>Moments unavailable.</p>";
+  }
 }
 
 async function loadCatalog() {
   try {
     const live = await api("GET", "/api/member/live");
-    $("#live-list").innerHTML = live.events.map(liveCard).join("")
+    const events = live.events || [];
+    const hero = events.find(e => e.status === "live") || events[0];
+    if (hero) {
+      state.heroEventId = hero.event_id;
+      const board = hero.scoreboard || {};
+      $("#live-hero").innerHTML = `<div class="live-hero">
+        <span class="pill">${escapeText((hero.status || "").toUpperCase())}</span>
+        <h3>${escapeText(hero.title)}</h3>
+        <div class="scoreboard"><span>${board.home ?? "—"}</span><small>${escapeText(board.period || "")} ${escapeText(board.clock || "")}</small><span>${board.away ?? "—"}</span></div>
+        ${hero.status === "live" ? `<button type="button" data-event="${hero.event_id}">Watch live</button>` : "<p class='sub'>Watch live unlocks when the game starts.</p>"}
+      </div>`;
+      loadLiveMoments(hero.event_id);
+    } else {
+      $("#live-hero").innerHTML = "";
+      $("#live-moments").innerHTML = "";
+    }
+    $("#live-list").innerHTML = events.map(liveCard).join("")
       || "<p class='empty'>No live or upcoming games in your zone.</p>";
-    $$("#live-list [data-event]").forEach(button => button.onclick = () => {
-      playMedia(`/api/member/events/${button.dataset.event}/playback`, button.closest("article").querySelector("h3").textContent, "Authorized playback lease issued");
+    $$("#live-list [data-event], #live-hero [data-event]").forEach(button => button.onclick = () => {
+      playMedia(`/api/member/events/${button.dataset.event}/playback`, button.closest("article, .live-hero").querySelector("h3").textContent, "Authorized playback lease issued");
     });
+    $$("#live-list [data-party]").forEach(button => button.onclick = () => startWatchParty(button.dataset.party));
   } catch (error) { toast(error.message); }
   try {
     const schedules = await api("GET", "/api/member/schedules");
@@ -354,6 +427,48 @@ async function loadInbox() {
   });
 }
 
+async function loadSaved() {
+  try {
+    const data = await api("GET", "/api/member/saved");
+    $("#saved-list").innerHTML = data.items && data.items.length
+      ? data.items.map(item => item.post_id ? postCard(item) : `<article class="post-card"><p>${escapeText(item.caption || item.game_id || "Saved")}</p></article>`).join("")
+      : "<p class='empty'>Nothing saved yet.</p>";
+    bindCards($("#saved-list"));
+  } catch (error) { toast(error.message); }
+}
+
+async function loadFriends() {
+  try {
+    const data = await api("GET", "/api/member/friends/activity");
+    const row = $("#friends-row");
+    if (!data.items || !data.items.length) { row.classList.add("hidden"); row.innerHTML = ""; return; }
+    row.classList.remove("hidden");
+    row.innerHTML = data.items.map(item =>
+      `<div class="friend-chip"><span class="avatar">${escapeText((item.display_name || "?").slice(0, 1))}</span>
+       ${escapeText(item.display_name)}<small>${escapeText(item.activity)}</small></div>`
+    ).join("");
+  } catch (_) { $("#friends-row").classList.add("hidden"); }
+}
+
+async function loadNotifications() {
+  try {
+    const data = await api("GET", "/api/member/notifications");
+    const badge = $("#notify-badge");
+    if (data.unread_count) { badge.textContent = data.unread_count; badge.classList.remove("hidden"); }
+    else badge.classList.add("hidden");
+    if ($("#notify-list")) {
+      $("#notify-list").innerHTML = (data.items || []).map(n =>
+        `<article class="post-card"><p><strong>${escapeText(n.type)}</strong> ${escapeText((n.actor && n.actor.display_name) || "")}</p>
+         ${n.read_at ? "" : `<button type="button" data-nread="${n.notification_id}">Mark read</button>`}</article>`
+      ).join("") || "<p class='empty'>No notifications.</p>";
+      $$("#notify-list [data-nread]").forEach(btn => btn.onclick = async () => {
+        await api("POST", `/api/member/notifications/${btn.dataset.nread}/read`);
+        loadNotifications();
+      });
+    }
+  } catch (_) { /* ignore */ }
+}
+
 async function loadProfileTab() {
   if (!state.profile) return;
   const data = await api("GET", `/api/network/profiles/${state.profile.handle}/${state.tab}`);
@@ -385,12 +500,14 @@ async function loadProfileTab() {
 
 function clampStudio(start, end) {
   const duration = state.studioDuration || 0;
-  const maxClip = state.maxClipSeconds || 90;
+  const maxClip = state.maxClipSeconds || 60;
+  const minClip = state.minClipSeconds || 5;
   start = Math.max(0, Number(start) || 0);
   end = Number(end);
-  if (!(end > start)) end = start + 0.1;
+  if (!(end > start)) end = start + minClip;
   if (duration > 0) end = Math.min(end, duration);
   if (end - start > maxClip) end = start + maxClip;
+  if (end - start < minClip && duration >= minClip) end = Math.min(duration, start + minClip);
   if (duration > 0 && end > duration) {
     end = duration;
     start = Math.max(0, end - maxClip);
@@ -450,18 +567,48 @@ function bindStudio() {
   };
 }
 
-async function openStudio(gameId) {
+async function loadStudioSources() {
+  try {
+    const data = await api("GET", "/api/member/studio/sources");
+    const select = $("#studio-source");
+    select.innerHTML = (data.games || []).map(g =>
+      `<option value="${g.game_id}" data-event="${g.event_id || ""}" data-asset="${g.source_media_asset_id}">${escapeText(g.title)} · ${escapeText(g.sport)}</option>`
+    ).join("") || "<option value=''>No entitled source games</option>";
+    if (data.games && data.games[0]) await selectStudioGame(data.games[0].game_id);
+  } catch (error) { toast(error.message); }
+}
+
+async function selectStudioGame(gameId) {
+  if (!gameId) return;
+  await openStudio(gameId, false);
+}
+
+async function openStudio(gameId, switchView = true) {
   const data = await api("GET", `/api/network/games/${gameId}`);
   const game = data.game;
   $("#studio-form").game_id.value = gameId;
   $("#studio-form").start_seconds.value = "0";
   $("#studio-form").end_seconds.value = "";
   $("#studio-status").textContent = game.can_create_clip ? "Ready to clip" : "Game not ready";
-  $("#studio-form").querySelector("[type=submit]").disabled = !game.can_create_clip;
+  $("#studio-publish").disabled = !game.can_create_clip;
+  $("#studio-save").disabled = !game.can_create_clip;
   if (game.source_media_asset_id) {
     $("#studio-video").src = `/api/network/media/${game.source_media_asset_id}`;
   }
-  $("#studio-dialog").showModal();
+  if (game.event_id) {
+    try {
+      const tl = await api("GET", `/api/member/events/${game.event_id}/timeline`);
+      const dur = (tl.duration_ms || (game.duration_seconds || 1) * 1000);
+      $("#studio-markers").innerHTML = (tl.moments || []).map(m => {
+        const left = dur ? (m.start_ms / dur) * 100 : 0;
+        return `<span title="${escapeText(m.label)}" style="left:${left}%"></span>`;
+      }).join("");
+    } catch (_) { $("#studio-markers").innerHTML = ""; }
+  }
+  if (switchView) {
+    location.hash = "studio";
+    setView("studio");
+  }
 }
 
 async function openGame(gameId) {
@@ -508,10 +655,46 @@ async function openGame(gameId) {
   }
 }
 
+async function loadFeed() {
+  const root = $("#feed-list");
+  root.innerHTML = "<p class='empty'>Loading feed…</p>";
+  try {
+    const sport = state.sport ? `&sport=${encodeURIComponent(state.sport)}` : "";
+    const data = await api("GET", `/api/member/feed?view=${state.mode}${sport}`);
+    if (!data.items.length) {
+      root.innerHTML = "<p class='empty'>Nothing in this huddle yet.</p>";
+      return;
+    }
+    root.innerHTML = data.items.map(postCard).join("");
+    bindCards(root);
+  } catch (error) {
+    root.innerHTML = "<p class='empty'>Could not load the huddle.</p>";
+    toast(error.message);
+  }
+}
+
+async function loadPublicFeed() {
+  try {
+    const data = await api("GET", "/api/network/feed?mode=for_you");
+    $("#public-feed").innerHTML = (data.items || []).slice(0, 3).map(postCard).join("");
+    bindCards($("#public-feed"));
+  } catch (_) { /* unsigned catalog is optional */ }
+}
+
 async function loadPortal() {
   const me = await api("GET", "/api/member/me");
   showSignedIn(me.member, me.profile);
-  await Promise.all([loadFeed(), loadCatalog()]);
+  if (me.settings) {
+    $("#profile-form").show_watching_to_friends.checked = !!me.settings.show_watching_to_friends;
+  }
+  if (typeof me.unread_notifications === "number" && me.unread_notifications > 0) {
+    $("#notify-badge").textContent = me.unread_notifications;
+    $("#notify-badge").classList.remove("hidden");
+  }
+  await Promise.all([loadFeed(), loadCatalog(), loadNotifications()]);
+  if (!state.notifyTimer) {
+    state.notifyTimer = setInterval(() => { if (state.signedIn) loadNotifications(); }, 30000);
+  }
   const pending = pendingPlayback();
   if (pending) {
     clearPendingPlayback();
@@ -528,7 +711,6 @@ async function loadPortal() {
 
 async function submitAuth(path, body) {
   const result = await api("POST", path, body);
-  if (result.session_token) sessionStorage.setItem("tz_session", result.session_token);
   if (result.home === "/ops" && !pendingPlayback()) { location.href = "/ops"; return; }
   await loadPortal();
 }
@@ -597,13 +779,12 @@ async function playMedia(path, title, stateText) {
 }
 $("#signout").onclick = async () => {
   stopPortalMedia("logout");
-  sessionStorage.removeItem("tz_session");
   await api("POST", "/api/auth/logout");
   location.reload();
 };
 window.addEventListener("hashchange", applyRoute);
 window.addEventListener("pagehide", () => stopPortalMedia("pagehide"));
-$$("#section-nav a").forEach(link => link.onclick = event => {
+$$("#section-nav a, #bottom-nav a").forEach(link => link.onclick = event => {
   event.preventDefault();
   const href = (link.getAttribute("href") || "").replace(/^#/, "");
   location.hash = href || link.dataset.view;
@@ -623,10 +804,11 @@ $$("[data-tab]").forEach(btn => btn.onclick = () => {
   $$("[data-tab]").forEach(b => b.classList.toggle("active", b === btn));
   loadProfileTab();
 });
-$("#create-btn").onclick = () => {
+$("#create-btn").onclick = $("#bottom-create").onclick = () => {
   $("#composer").classList.add("hidden");
   $("#create-dialog").showModal();
 };
+$("#notify-btn").onclick = () => { location.hash = "notifications"; };
 $$(".create-choices [data-kind]").forEach(btn => btn.onclick = () => {
   state.kind = btn.dataset.kind;
   $("#composer").classList.remove("hidden");
@@ -688,7 +870,7 @@ $("#composer").onsubmit = async event => {
       const url = String(upload.upload_url || "");
       const localFake = url.includes("photos.test") || url.startsWith("/");
       if (file && upload.upload_method === "put" && !localFake) {
-        await fetch(url, { method: "PUT", body: file });
+        await fetch(url, { method: "PUT", body: file, credentials: "include" });
       }
       const token = url.split("?")[0].split("/").pop();
       await api("POST", `/api/network/provider/fake/upload/${token}`, {
@@ -720,34 +902,61 @@ $("#composer").onsubmit = async event => {
     toast(error.message);
   }
 };
+
+async function studioCreate(publish) {
+  syncStudio(false);
+  const form = $("#studio-form");
+  $("#studio-status").textContent = "Creating clip definition…";
+  const clip = await api("POST", "/api/network/clips", {
+    source_game_id: form.game_id.value,
+    start_seconds: Number(form.start_seconds.value),
+    end_seconds: Number(form.end_seconds.value),
+    caption: form.caption.value || form.title.value,
+    visibility: form.visibility.value,
+  });
+  state.lastClipId = clip.clip.clip_id;
+  $("#studio-status").textContent = "Rendering derived clip…";
+  await api("POST", `/api/network/clips/${clip.clip.clip_id}/render`);
+  if (!publish) {
+    $("#studio-status").textContent = "Saved privately. Post to Huddle when you want it public.";
+    toast("Clip saved");
+    return clip;
+  }
+  $("#studio-status").textContent = "Publishing…";
+  const post = await api("POST", `/api/network/clips/${clip.clip.clip_id}/publish`, {
+    caption: form.caption.value || form.title.value, visibility: form.visibility.value,
+  });
+  state.lastPostId = post.post && post.post.post_id;
+  $("#studio-status").textContent = "Posted to Huddle";
+  toast("Clip published");
+  loadFeed();
+  return post;
+}
+
 $("#studio-form").onsubmit = async event => {
   event.preventDefault();
-  syncStudio(false);
-  const form = event.target;
-  $("#studio-status").textContent = "Creating clip definition…";
-  try {
-    const clip = await api("POST", "/api/network/clips", {
-      source_game_id: form.game_id.value,
-      start_seconds: Number(form.start_seconds.value),
-      end_seconds: Number(form.end_seconds.value),
-      caption: form.caption.value,
-      visibility: form.visibility.value,
-    });
-    $("#studio-status").textContent = "Rendering derived clip…";
-    await api("POST", `/api/network/clips/${clip.clip.clip_id}/render`);
-    $("#studio-status").textContent = "Publishing…";
-    await api("POST", `/api/network/clips/${clip.clip.clip_id}/publish`, {
-      caption: form.caption.value, visibility: form.visibility.value,
-    });
-    $("#studio-status").textContent = "Clip ready";
-    toast("Clip published");
-    $("#studio-dialog").close();
-    loadFeed();
-  } catch (error) {
+  try { await studioCreate(true); }
+  catch (error) {
     $("#studio-status").textContent = error.message;
     toast(error.message);
   }
 };
+$("#studio-save").onclick = async () => {
+  try { await studioCreate(false); }
+  catch (error) {
+    $("#studio-status").textContent = error.message;
+    toast(error.message);
+  }
+};
+$("#studio-share").onclick = async () => {
+  if (!state.lastPostId) { toast("Post to Huddle first"); return; }
+  try {
+    const res = await api("POST", `/api/member/posts/${state.lastPostId}/share`, { destination: "copy_link" });
+    await navigator.clipboard.writeText(res.url);
+    toast("Copied " + res.url);
+  } catch (error) { toast(error.message); }
+};
+$("#studio-source").onchange = () => selectStudioGame($("#studio-source").value);
 $("#send-form").onsubmit = async event => {
   event.preventDefault();
   const form = event.target;
@@ -766,12 +975,19 @@ $("#profile-form").onsubmit = async event => {
   try {
     const res = await api("POST", "/api/network/me/profile", data);
     state.profile = res.profile;
+    await api("POST", "/api/member/settings", {
+      show_watching_to_friends: $("#profile-form").show_watching_to_friends.checked,
+    });
     toast("Profile saved");
     loadProfileTab();
   } catch (error) { toast(error.message); }
 };
 async function openSearchItem(item) {
   $("#search-results").classList.add("hidden");
+  if (item.kind === "person" && item.handle) {
+    location.hash = "profile";
+    return;
+  }
   if (item.kind === "archive") {
     location.hash = "watch";
     await playMedia(`/api/member/archive/${item.id}/playback`, item.name, "Authorized archive playback");
@@ -821,12 +1037,22 @@ document.addEventListener("click", event => {
   $("#search-results").classList.add("hidden");
 });
 $("#game-back").onclick = () => {
-  setView("profile");
-  loadProfileTab();
-  if ((location.hash || "").replace(/^#/, "") !== "profile") location.hash = "profile";
+  setView("huddle");
+  if ((location.hash || "").replace(/^#/, "") !== "huddle") location.hash = "huddle";
 };
 $("#create-clip-btn").onclick = () => {
   if (state.gameId) openStudio(state.gameId);
+};
+async function startWatchParty(eventId) {
+  try {
+    const party = await api("POST", "/api/member/watch-parties", { event_id: eventId, visibility: "friends" });
+    toast("Watch party " + party.join_code + " — chat is separate from the game feed");
+    connectPartySocket(party.party_id);
+  } catch (error) { toast(error.message); }
+}
+$("#watch-party-btn").onclick = () => {
+  const eventId = state.heroEventId;
+  if (eventId) startWatchParty(eventId);
 };
 bindStudio();
 (async () => {
@@ -834,11 +1060,12 @@ bindStudio();
     player.config = await api("GET", "/api/config");
     if (player.config && player.config.max_game_clip_seconds) {
       state.maxClipSeconds = Number(player.config.max_game_clip_seconds);
+      state.minClipSeconds = Number(player.config.min_game_clip_seconds || 5);
       $("#studio-max").textContent = String(state.maxClipSeconds);
       $("#studio-start-range").max = String(state.maxClipSeconds);
       $("#studio-end-range").max = String(state.maxClipSeconds);
     }
-  } catch (_) { /* keep default 90s cap */ }
+  } catch (_) { /* keep default 60s cap */ }
   try { await loadPortal(); }
   catch (_) {
     loadPublicFeed();

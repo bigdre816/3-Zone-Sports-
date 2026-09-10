@@ -38,6 +38,45 @@ def test_three_zone_intake_preserves_payload_and_chain(client, monkeypatch):
     assert any(item["event_type"] == "three-zone.intake.event.accepted" for item in audit_body["events"])
 
 
+def test_clip_handoff_types_round_trip(client, monkeypatch):
+    monkeypatch.setenv("MOTEN_INGEST_SHARED_SECRET", "shared-secret")
+    published = {
+        "schema": "three-zone.moten.clip-published.v1",
+        "source_system": "three-zone-mvp",
+        "handoff_type": "clip-published",
+        "object_id": "clp_demo",
+        "event_id": "evt_mw_basketball",
+        "publication_decision": "allowed",
+    }
+    res = client.post(
+        "/intake/clip-published",
+        headers={"X-Moten-Shared-Secret": "shared-secret"},
+        json=published,
+    )
+    assert res.status_code == 202
+    body = res.json()
+    assert body["accepted"] is True
+    record = client.get(f"/intake/{body['intake_id']}").json()
+    assert record["handoff_type"] == "clip-published"
+
+    withdrawn = {
+        "schema": "three-zone.moten.clip-withdrawn.v1",
+        "source_system": "three-zone-mvp",
+        "handoff_type": "clip-withdrawn",
+        "event_id": "evt_mw_basketball",
+        "clip_ids": ["clp_demo"],
+        "publication_decision": "unavailable",
+    }
+    res = client.post(
+        "/intake/clip-withdrawn",
+        headers={"X-Moten-Shared-Secret": "shared-secret"},
+        json=withdrawn,
+    )
+    assert res.status_code == 202
+    record = client.get(f"/intake/{res.json()['intake_id']}").json()
+    assert record["handoff_type"] == "clip-withdrawn"
+
+
 def test_health_aliases_and_phase2_fail_closed(client):
     assert client.get("/health").status_code == 200
     assert client.get("/api/health").status_code == 200

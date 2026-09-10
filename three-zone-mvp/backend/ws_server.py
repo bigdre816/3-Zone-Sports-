@@ -20,22 +20,25 @@ import collections
 import json
 import signal
 import time
+from http.cookies import SimpleCookie
 
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
-from . import tokens
 from .config import Config
 from .control_plane import ControlPlane
 from .db import Database, dumps, loads
+from .portal import PortalService
 
 SUBPROTOCOL = "tz-session"
 _PATH_PREFIX = "/ws/events/"
+_PARTY_PREFIX = "/ws/watch-parties/"
 
 
 class Hub:
-    def __init__(self, cp: ControlPlane):
+    def __init__(self, cp: ControlPlane, portal: PortalService | None = None):
         self.cp = cp
+        self.portal = portal or PortalService(cp)
         self.subscribers: dict[str, set] = collections.defaultdict(set)
         self.ip_counts: collections.Counter = collections.Counter()
         self._feed_state: dict[str, tuple] = {}
@@ -51,6 +54,26 @@ class Hub:
             if item != SUBPROTOCOL:
                 return item
         return None
+
+    def _cookie_session(self, request) -> str | None:
+        raw = request.headers.get("Cookie") or ""
+        jar = SimpleCookie()
+        try:
+            jar.load(raw)
+        except Exception:
+            return None
+        morsel = jar.get("tz_member_session")
+        return morsel.value if morsel else None
+
+    def _user_from_request(self, request):
+        token = self._offered_token(request)
+        if token:
+            return self.cp.verify_session(token)
+        sid = self._cookie_session(request)
+        if sid:
+            _row, user = self.portal.session(sid)
+            return user
+        raise LookupError("missing session token")
 
     async def _send(self, ws, obj: dict) -> None:
         try:
@@ -72,28 +95,47 @@ class Hub:
         if origin is not None and origin not in self.cp.config.allowed_origins:
             await ws.close(1008, "origin not allowed")
             return
-        if not path.startswith(_PATH_PREFIX):
-            await ws.close(1008, "unknown path")
-            return
-        event_id = path[len(_PATH_PREFIX):].strip("/")
-
-        token = self._offered_token(request)
-        if not token:
-            await ws.close(1008, "missing session token")
-            return
         try:
-            user = self.cp.verify_session(token)
+            user = self._user_from_request(request)
         except Exception:
             await ws.close(1008, "invalid session")
             return
 
-        try:
-            event_row = self.cp.get_event_row(event_id)
-        except Exception:
-            await ws.close(1008, "unknown event")
-            return
-        if "*" not in user["zones"] and event_row["zone"] not in user["zones"]:
-            await ws.close(1008, "zone not entitled")
+        event_row = None
+        if path.startswith(_PARTY_PREFIX):
+            party_id = path[len(_PARTY_PREFIX):].strip("/")
+            if not party_id.startswith("party_"):
+                await ws.close(1008, "unknown path")
+                return
+            party = self.cp.db.query_one("SELECT * FROM watch_parties WHERE party_id=?", (party_id,))
+            if not party:
+                await ws.close(1008, "unknown party")
+                return
+            profile = self.cp.db.query_one("SELECT * FROM profiles WHERE user_id=?", (user["user_id"],))
+            member = None
+            if profile:
+                member = self.cp.db.query_one(
+                    "SELECT 1 FROM watch_party_members WHERE party_id=? AND profile_id=? AND left_at IS NULL",
+                    (party_id, profile["profile_id"]),
+                )
+            if not member:
+                await ws.close(1008, "not in this party")
+                return
+            event_id = party_id
+            snapshot = {"party_id": party_id, "event_id": party["event_id"], "status": party["status"]}
+        elif path.startswith(_PATH_PREFIX):
+            event_id = path[len(_PATH_PREFIX):].strip("/")
+            try:
+                event_row = self.cp.get_event_row(event_id)
+            except Exception:
+                await ws.close(1008, "unknown event")
+                return
+            if "*" not in user["zones"] and event_row["zone"] not in user["zones"]:
+                await ws.close(1008, "zone not entitled")
+                return
+            snapshot = self.cp._event_dict(event_row)
+        else:
+            await ws.close(1008, "unknown path")
             return
 
         if self.ip_counts[peer] >= self.cp.config.ws_max_conns_per_ip:
@@ -104,8 +146,7 @@ class Hub:
         self.subscribers[event_id].add(ws)
         ws_user_id = user["user_id"]
         try:
-            await self._send(ws, {"type": "event.state", "event_id": event_id,
-                                  "snapshot": self.cp._event_dict(event_row)})
+            await self._send(ws, {"type": "event.state", "event_id": event_id, "snapshot": snapshot})
             await self._recv_loop(ws, event_id, ws_user_id)
         finally:
             self.subscribers[event_id].discard(ws)
@@ -138,8 +179,10 @@ class Hub:
         if kind == "ping":
             await self._send(ws, {"type": "pong", "ts": time.time()})
         elif kind == "renew":
-            # A lease-renewal attempt: re-run authorization against live state.
             user = self.cp.get_user(user_id)
+            if event_id.startswith("party_"):
+                await self._send(ws, {"type": "lease.status", "allow": True, "reason": "social_only"})
+                return
             try:
                 row = self.cp.get_event_row(event_id)
             except Exception:
@@ -158,8 +201,15 @@ class Hub:
                 )
                 for row in rows:
                     payload = loads(row["payload"], {})
-                    await self.broadcast(row["event_id"],
-                                         {"type": row["type"], "event_id": row["event_id"], **payload})
+                    message = {"type": row["type"], "event_id": row["event_id"], **payload}
+                    await self.broadcast(row["event_id"], message)
+                    if row["type"] in ("rights.revoked", "score.update", "moment.published", "event.state"):
+                        parties = self.cp.db.query(
+                            "SELECT party_id FROM watch_parties WHERE event_id=? AND status='open'",
+                            (row["event_id"],),
+                        )
+                        for party in parties:
+                            await self.broadcast(party["party_id"], message)
                     self.cp.db.execute("UPDATE socket_outbox SET delivered=1 WHERE id=?", (row["id"],))
             except Exception:
                 pass
@@ -212,7 +262,7 @@ class Hub:
 async def ws_main(config: Config) -> None:
     db = Database(config.database_locator)
     cp = ControlPlane(db, config)
-    hub = Hub(cp)
+    hub = Hub(cp, PortalService(cp))
 
     loop = asyncio.get_running_loop()
     stop = asyncio.Future()

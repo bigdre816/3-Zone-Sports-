@@ -7,18 +7,26 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <header>
-    <a class="brand" href="#live">Three-Zone<small>Sports Access</small></a>
-    <nav id="section-nav" class="hidden" aria-label="Member">
+  <header class="topbar">
+    <a class="brand" href="#huddle">THREEZONE.</a>
+    <nav id="section-nav" class="hidden desktop-nav" aria-label="Member">
+      <a href="#huddle" data-view="huddle">Huddle</a>
       <a href="#live" data-view="live">Live</a>
-      <a href="#watch" data-view="watch">Schedules</a>
-      <a href="#archives" data-view="watch">Archives</a>
-      <a href="#feed" data-view="feed">Feed</a>
+      <a href="#saved" data-view="saved">Saved</a>
+      <a href="#studio" data-view="studio">Studio</a>
       <a href="#inbox" data-view="inbox">Inbox</a>
       <a href="#profile" data-view="profile">Profile</a>
     </nav>
     <div class="header-actions">
-      <button id="create-btn" class="hidden" type="button">Create</button>
+      <div id="search-wrap" class="hidden">
+        <input id="search" placeholder="Find a team, a play, or your people" autocomplete="off" aria-label="Search" />
+        <div id="search-results" class="search-results hidden" role="listbox"></div>
+      </div>
+      <button id="notify-btn" class="icon-btn hidden" type="button" aria-label="Notifications">
+        <span>Bell</span><i id="notify-badge" class="badge hidden">0</i>
+      </button>
+      <button id="create-btn" class="icon-btn hidden" type="button" aria-label="Create">+</button>
+      <span id="avatar-chip" class="avatar hidden">AM</span>
       <a id="ops-link" class="quiet hidden" href="/ops">Control plane</a>
       <a class="quiet" href="https://3zonesports.com/">Public site</a>
       <button id="signout" class="quiet hidden" type="button">Sign out</button>
@@ -50,52 +58,92 @@
     </section>
 
     <section id="portal" class="hidden">
-      <p class="eyebrow">MEMBERS PORTAL</p>
-      <h1>Welcome back, <span id="member-name">Member</span></h1>
-      <p class="sub">Your verified access to live games, schedules, and school archives. <span id="member-handle"></span></p>
-      <div id="search-wrap">
-        <input id="search" placeholder="Search schools, teams, or games" autocomplete="off" />
-        <div id="search-results" class="search-results hidden" role="listbox"></div>
-      </div>
+      <p class="eyebrow" id="greeting-eyebrow">GOOD TO HAVE YOU COURTSIDE</p>
+      <h1 id="huddle-title">The Huddle.</h1>
+      <p class="sub">The game brings us together. The moments keep us here. Welcome back, <span id="member-name">Member</span>. <span id="member-handle"></span></p>
 
-      <section id="view-feed" class="view">
-        <div class="section-title">
-          <h2>Feed</h2>
-          <span>Chronological. Not machine learning.</span>
-        </div>
+      <section id="view-huddle" class="view">
         <div class="chip-row" role="tablist" aria-label="Feed mode">
-          <button type="button" class="chip active" data-mode="for_you">For You</button>
+          <button type="button" class="chip active" data-mode="for_you">For you</button>
           <button type="button" class="chip" data-mode="following">Following</button>
-          <button type="button" class="chip" data-mode="local">Local</button>
+          <button type="button" class="chip" data-mode="zone">In your zone</button>
         </div>
         <div class="chip-row" role="group" aria-label="Sport filter">
-          <button type="button" class="chip active" data-sport="">All</button>
+          <button type="button" class="chip active" data-sport="">All sports</button>
           <button type="button" class="chip" data-sport="basketball">Basketball</button>
           <button type="button" class="chip" data-sport="football">Football</button>
           <button type="button" class="chip" data-sport="soccer">Soccer</button>
-          <button type="button" class="chip" data-sport="baseball">Baseball</button>
           <button type="button" class="chip" data-sport="volleyball">Volleyball</button>
-          <button type="button" class="chip" data-sport="other">Other</button>
         </div>
-        <div id="feed-list" class="feed-col"></div>
+        <div id="friends-row" class="friends-row hidden"></div>
+        <div id="feed-list" class="feed-col" aria-label="Feed"></div>
       </section>
 
       <section id="view-live" class="view hidden">
-        <div class="section-title"><h2>Live now</h2><span>Watch varsity and club games live.</span></div>
+        <div class="section-title"><h2>Live</h2><span>Watch varsity and club games live.</span></div>
+        <div id="live-hero"></div>
+        <div class="section-title"><h2>Live Moments</h2><span>Detected from the authorized scoreboard and clock. Not a profile of any athlete.</span></div>
+        <div id="live-moments" class="moments-list"></div>
+        <div class="section-title"><h2>Live now</h2></div>
         <div id="live-list" class="cards"></div>
-      </section>
-
-      <section id="view-watch" class="view hidden">
         <div class="columns">
           <section id="schedules">
-            <div class="section-title"><h2>Schedules</h2><span>Team games and event details.</span></div>
+            <div class="section-title"><h2>Upcoming in your zone</h2></div>
             <div id="schedule-list" class="schedule"></div>
           </section>
           <section id="archives">
-            <div class="section-title"><h2>Archives</h2><span>School, team, season, game.</span></div>
+            <div class="section-title"><h2>Archives</h2></div>
             <div id="archive-list" class="cards archive"></div>
           </section>
         </div>
+      </section>
+
+      <section id="view-saved" class="view hidden">
+        <div class="section-title"><h2>Saved</h2><span>Moments, games, and teams you kept.</span></div>
+        <div id="saved-list" class="feed-col"></div>
+      </section>
+
+      <section id="view-studio" class="view hidden">
+        <p class="eyebrow">CREATE A CLIP</p>
+        <h2>Studio.</h2>
+        <p class="sub">Turn entitled games into governed, source-linked moments. 5–60 seconds. Creating a clip is not permission to publish it.</p>
+        <label>Source game
+          <select id="studio-source"></select>
+        </label>
+        <p id="studio-source-meta" class="sub"></p>
+        <video id="studio-video" controls playsinline></video>
+        <form id="studio-form">
+          <input type="hidden" name="game_id" />
+          <div class="studio-timeline" role="group" aria-labelledby="studio-range-label">
+            <p id="studio-range-label" class="sub">Selected range: <span id="studio-range-text">0–20s</span> · max <span id="studio-max">60</span>s</p>
+            <div class="timeline-track">
+              <div class="timeline-markers" id="studio-markers"></div>
+              <div class="timeline-fill" id="studio-fill"></div>
+              <input id="studio-start-range" type="range" min="0" max="60" step="0.1" value="0" aria-label="Clip start" />
+              <input id="studio-end-range" type="range" min="0" max="60" step="0.1" value="20" aria-label="Clip end" />
+            </div>
+            <div class="studio-times">
+              <label>Start (seconds) <input name="start_seconds" type="number" min="0" step="0.1" required /></label>
+              <label>End (seconds) <input name="end_seconds" type="number" min="0.1" step="0.1" required /></label>
+            </div>
+            <button type="button" id="studio-preview" class="quiet">Preview selected range</button>
+          </div>
+          <label>Clip title <input name="title" maxlength="100" placeholder="Andre Breaks Free for the TD" /></label>
+          <label>Caption <textarea name="caption" rows="2"></textarea></label>
+          <label>Audience (illustrative — the server enforces visibility)
+            <select name="visibility">
+              <option value="private">save privately</option>
+              <option value="connections">friends / connections</option>
+              <option value="public">public</option>
+            </select>
+          </label>
+          <p id="studio-status" class="sub" aria-live="polite"></p>
+          <div class="studio-actions">
+            <button type="button" id="studio-save" class="quiet">Save</button>
+            <button type="submit" id="studio-publish">Post to Huddle</button>
+            <button type="button" id="studio-share" class="quiet">Share</button>
+          </div>
+        </form>
       </section>
 
       <section id="view-inbox" class="view hidden">
@@ -120,6 +168,7 @@
                 <option value="sports_organization">sports organization</option>
               </select>
             </label>
+            <label class="check"><input name="show_watching_to_friends" type="checkbox" /> Allow friends to see when I'm watching</label>
             <button type="submit">Save profile</button>
           </form>
         </div>
@@ -135,7 +184,7 @@
       <section id="view-game" class="view hidden">
         <div class="section-title">
           <h2 id="game-title">Game</h2>
-          <button type="button" class="quiet" id="game-back">Back to profile</button>
+          <button type="button" class="quiet" id="game-back">Back</button>
         </div>
         <p id="game-meta" class="sub"></p>
         <p id="game-state"></p>
@@ -143,6 +192,7 @@
         <video id="game-video" class="hidden" controls playsinline></video>
         <p class="sub">The source game is the immutable original. Clips are derived copies.</p>
         <button type="button" id="create-clip-btn">Create Clip</button>
+        <button type="button" id="watch-party-btn" class="quiet">Watch with friends</button>
       </section>
 
       <section id="player-wrap" class="hidden">
@@ -152,10 +202,15 @@
       </section>
     </section>
 
+    <section id="view-notifications" class="view page-view hidden">
+      <h1>Notifications</h1>
+      <div id="notify-list" class="feed-col"></div>
+    </section>
+
     <section id="view-about" class="view page-view hidden">
       <h1>About Three-Zone</h1>
       <p>Three-Zone Sports Access is the member site for live high-school and youth games, schedules, and archives. Treasure verifies the member. Three-Zone authorizes playback. Every watch is recorded in the audit trail.</p>
-      <p class="sub">Signed-in members can also post photos and clips, upload a full game, trim a moment in Studio, and share media in Inbox. Feed ranking is chronological. It is not machine learning.</p>
+      <p class="sub">Signed-in members can also post photos and clips, upload a full game, trim a moment in Studio, and share media in Inbox. Feed ranking is sports-relevance, not engagement addiction.</p>
     </section>
     <section id="view-support" class="view page-view hidden">
       <h1>Support</h1>
@@ -163,18 +218,26 @@
       <ul>
         <li>Upcoming games stay listed until they go live. Watch live unlocks only while the game is live.</li>
         <li>Archives play through the same rights check as live. If rights are held, playback stays off.</li>
-        <li>Search only returns schools, teams, and games you are authorized to see.</li>
+        <li>Search only returns schools, teams, people, and games you are authorized to see.</li>
       </ul>
     </section>
     <section id="view-privacy" class="view page-view hidden">
       <h1>Privacy</h1>
-      <p>Playback leases are HttpOnly cookies scoped to the media path. Search, live, schedule, and archive lists are server-filtered to your zone and package. Demo audit publication is labelled simulated until a production audit upstream is connected.</p>
+      <p>Playback leases are HttpOnly cookies scoped to the media path. Search, live, schedule, and archive lists are server-filtered to your zone and package. Watching activity is off by default. Audience chips in Studio are illustrative, not privacy controls.</p>
     </section>
     <section id="view-terms" class="view page-view hidden">
       <h1>Terms</h1>
-      <p>Access is entitlement-based. A live, archive, or full-game Watch action only plays when Three-Zone issues a lease. Public full-game uploads stay pending verification. You attest you have the right to upload media you publish.</p>
+      <p>Access is entitlement-based. A live, archive, or full-game Watch action only plays when Three-Zone issues a lease. Public full-game uploads stay pending verification. You attest you have the right to upload media you publish. Creating a clip is not permission to publish it.</p>
     </section>
   </main>
+
+  <nav class="bottom-nav" id="bottom-nav" hidden>
+    <a href="#huddle" data-view="huddle">Huddle</a>
+    <a href="#live" data-view="live">Live</a>
+    <button type="button" id="bottom-create" aria-label="Create">+</button>
+    <a href="#saved" data-view="saved">Saved</a>
+    <a href="#studio" data-view="studio">Studio</a>
+  </nav>
 
   <footer>
     Three-Zone Sports Access
@@ -247,34 +310,7 @@
       <strong id="studio-title">Three-Zone Studio</strong>
       <button type="submit" class="quiet" value="close">Close</button>
     </form>
-    <p class="sub">Trim a moment. The source game is not changed. Maximum <span id="studio-max">90</span> seconds.</p>
-    <video id="studio-video" controls playsinline></video>
-    <form id="studio-form">
-      <input type="hidden" name="game_id" />
-      <div class="studio-timeline" role="group" aria-labelledby="studio-range-label">
-        <p id="studio-range-label" class="sub">Selected range: <span id="studio-range-text">0–20s</span></p>
-        <div class="timeline-track">
-          <div class="timeline-fill" id="studio-fill"></div>
-          <input id="studio-start-range" type="range" min="0" max="90" step="0.1" value="0" aria-label="Clip start" />
-          <input id="studio-end-range" type="range" min="0" max="90" step="0.1" value="20" aria-label="Clip end" />
-        </div>
-        <div class="studio-times">
-          <label>Start (seconds) <input name="start_seconds" type="number" min="0" step="0.1" required /></label>
-          <label>End (seconds) <input name="end_seconds" type="number" min="0.1" step="0.1" required /></label>
-        </div>
-        <button type="button" id="studio-preview" class="quiet">Preview selected range</button>
-      </div>
-      <label>Caption <textarea name="caption" rows="2"></textarea></label>
-      <label>Visibility
-        <select name="visibility">
-          <option value="private">save privately</option>
-          <option value="public">public</option>
-          <option value="connections">connections</option>
-        </select>
-      </label>
-      <p id="studio-status" class="sub" aria-live="polite"></p>
-      <button type="submit">Render and publish</button>
-    </form>
+    <p class="sub">Use the Studio tab to trim a source-linked moment.</p>
   </dialog>
 
   <dialog id="send-dialog" aria-labelledby="send-title">
@@ -293,6 +329,7 @@
 
   <div id="toast" class="toast hidden"></div>
   <script src="/vendor/hls.min.js"></script>
+  <script src="/api.js"></script>
   <script src="/portal.js"></script>
 </body>
 </html>
