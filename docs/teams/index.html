@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Three-Zone Sports — teams with verified games." />
+  <title>Teams · Three-Zone Sports</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <a href="/" class="brand">Three-Zone<small>Sports</small></a>
+    <button class="mobile-menu-toggle" id="menu-toggle" type="button" aria-label="Menu">Menu</button>
+    <nav id="main-nav" aria-label="Primary">
+      <a href="/live/">Live</a>
+      <a href="/schedules/">Schedule</a>
+      <a href="/teams/" class="active">Teams</a>
+      <a href="/schools/">Schools</a>
+      <a href="/clips/">Clips</a>
+      <a href="/archives/">Archive</a>
+      <a href="/app/" data-signin>My Zone</a>
+      <a href="/app/" data-signin>Account</a>
+    </nav>
+    <div class="header-actions">
+      <a class="btn" href="/app/" data-signin>Sign In</a>
+    </div>
+  </header>
+
+  <main>
+    <p class="eyebrow">Teams</p>
+    <h1>Find a team</h1>
+    <p class="subtitle">Programs drawn from the public schedule and archive.</p>
+    <div id="teams-container" class="cards">
+      <div class="unavailable">Loading teams…</div>
+    </div>
+  </main>
+
+  <footer>
+    <p>Three-Zone Sports · <a href="/">3zonesports.com</a></p>
+  </footer>
+
+  <script src="/config.js"></script>
+  <script src="/site.js"></script>
+  <script>
+    async function loadTeams() {
+      const container = document.getElementById('teams-container');
+      try {
+        const [schedules, archives] = await Promise.all([
+          ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.schedules),
+          ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.archives),
+        ]);
+        const rows = []
+          .concat(schedules.schedules || [])
+          .concat(archives.archives || []);
+        const teams = ThreeZoneSite.uniqueBy(rows, 'team');
+        if (!teams.length) {
+          ThreeZoneSite.showEmpty(container, 'No teams listed yet.');
+          return;
+        }
+        container.replaceChildren(...teams.map((row) => ThreeZoneSite.el('a', { class: 'card', href: '/schedules/' }, [
+          ThreeZoneSite.el('h3', { text: row.team }),
+          ThreeZoneSite.el('p', { text: [row.school, row.sport, row.level].filter(Boolean).join(' · ') }),
+        ])));
+      } catch (_) {
+        ThreeZoneSite.showUnavailable(container, 'teams');
+      }
+    }
+    document.addEventListener('DOMContentLoaded', loadTeams);
+  </script>
+</body>
+</html>

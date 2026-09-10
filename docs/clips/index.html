@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Three-Zone Sports — live games happening now." />
-  <title>Live · Three-Zone Sports</title>
+  <meta name="description" content="Three-Zone Sports — replays and clips from verified games." />
+  <title>Clips · Three-Zone Sports</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -12,11 +12,11 @@
     <a href="/" class="brand">Three-Zone<small>Sports</small></a>
     <button class="mobile-menu-toggle" id="menu-toggle" type="button" aria-label="Menu">Menu</button>
     <nav id="main-nav" aria-label="Primary">
-      <a href="/live/" class="active">Live</a>
+      <a href="/live/">Live</a>
       <a href="/schedules/">Schedule</a>
       <a href="/teams/">Teams</a>
       <a href="/schools/">Schools</a>
-      <a href="/clips/">Clips</a>
+      <a href="/clips/" class="active">Clips</a>
       <a href="/archives/">Archive</a>
       <a href="/app/" data-signin>My Zone</a>
       <a href="/app/" data-signin>Account</a>
@@ -27,11 +27,11 @@
   </header>
 
   <main>
-    <p class="eyebrow">Live</p>
-    <h1>Games happening now</h1>
-    <p class="subtitle">Watch verified games as they happen. Sign in when a game is live in your zone.</p>
-    <div id="live-container" class="cards">
-      <div class="unavailable">Loading live games…</div>
+    <p class="eyebrow">Clips</p>
+    <h1>Replays &amp; moments</h1>
+    <p class="subtitle">Public clips in this pass come from the verified game archive.</p>
+    <div id="clips-container" class="cards">
+      <div class="unavailable">Loading clips…</div>
     </div>
   </main>
 
@@ -43,7 +43,10 @@
   <script src="/site.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
-      ThreeZoneSite.loadLive(document.getElementById('live-container'));
+      const container = document.getElementById('clips-container');
+      ThreeZoneSite.loadArchives(container).then(function (rows) {
+        if (!rows.length && container.querySelector('.unavailable')) return;
+      });
     });
   </script>
 </body>

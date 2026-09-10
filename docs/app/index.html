@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in · Three-Zone Sports</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Three-Zone Sports</p>
+    <h1>Sign in</h1>
+    <p class="subtitle">Taking you to your member account.</p>
+  </main>
+  <script src="/config.js"></script>
+  <script>
+    (function () {
+      const query = window.location.search || '';
+      ThreeZoneConfig.memberAppUrl('/' + query).then(function (url) {
+        window.location.replace(url);
+      }).catch(function () {
+        document.querySelector('.subtitle').textContent = 'Member sign-in is temporarily unavailable. Try again shortly.';
+      });
+    })();
+  </script>
+</body>
+</html>

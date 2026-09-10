@@ -42,19 +42,17 @@ Do not use `TZ_ENV=production` on this rail. Production mode refuses the demo lo
 
 ## After it is Live
 
-| Piece | URL |
+The public site at https://3zonesports.com/ loads Live, Schedule, and Archive by itself. Fans never paste a host, never see Render URLs, and never open an admin console from the homepage.
+
+| Piece | Where |
 | --- | --- |
 | Public site | https://3zonesports.com/ |
-| Member portal | https://three-zone-sports.onrender.com/ |
-| Back portal | https://three-zone-sports.onrender.com/ops |
+| Member sign-in | https://3zonesports.com/app/ (redirects to the Render app) |
+| Operator console | Render app `/ops` — unlisted, not linked from the public site |
 
-Member: `demo-viewer` / `change-me-viewer-local`
+Operator logins stay in the Render dashboard / local run notes. Do not print them on 3zonesports.com.
 
-Back portal: `demo-owner` / `change-me-owner-local`
-
-Camera: Back portal → Event controls → **Start camera** → **Go live with this camera**. Keep that tab open.
-
-If Render gave a different `onrender.com` host, paste it once in the Connect box on https://3zonesports.com/.
+Camera: operator console → Event controls → **Start camera** → **Go live with this camera**. Keep that tab open.
 
 ## If it is still down
 
