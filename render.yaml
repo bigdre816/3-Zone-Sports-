@@ -2,12 +2,18 @@
 # Apply this file only (repo root). Do not apply three-zone-mvp/render.yaml.
 #
 # One-tap: https://render.com/deploy?repo=https://github.com/bigdre816/3-Zone-Sports-
+#
+# dockerfilePath and dockerContext are relative to rootDir. The dashboard still
+# has Root Directory = three-zone-mvp from the first Blueprint. Prefixing those
+# paths with three-zone-mvp makes Render lstat three-zone-mvp/three-zone-mvp
+# and the build dies before Docker starts.
 services:
   - type: web
     name: three-zone-sports
     runtime: docker
     plan: 0.5c-512mb
     branch: main
+    rootDir: three-zone-mvp
     dockerfilePath: ./Dockerfile
     dockerContext: .
     autoDeployTrigger: commit

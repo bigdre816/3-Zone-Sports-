@@ -28,11 +28,17 @@ Do **not** apply `three-zone-mvp/render.yaml`. That Python/production file is wh
 4. Settings must be:
    - Branch **`main`**
    - Runtime **Docker**
+   - Root Directory `three-zone-mvp`
    - Dockerfile path `./Dockerfile`
+   - Docker context `.`
    - Health check `/api/health`
    - `TZ_ENV=demo`
 5. Tap **Manual Deploy** → **Deploy latest commit**
 6. Wait until **Live**, then open the health URL
+
+Dockerfile path and Docker context are **relative to Root Directory**. If Root Directory is `three-zone-mvp`, both must stay `./Dockerfile` and `.`. Do not set either one to `three-zone-mvp` — that makes Render look for `three-zone-mvp/three-zone-mvp` and the build exits before Docker starts.
+
+Do not use `TZ_ENV=production` on this rail. Production mode refuses the demo logins and the service never becomes Live.
 
 ## After it is Live
 
@@ -49,3 +55,10 @@ Back portal: `demo-owner` / `change-me-owner-local`
 Camera: Back portal → Event controls → **Start camera** → **Go live with this camera**. Keep that tab open.
 
 If Render gave a different `onrender.com` host, paste it once in the Connect box on https://3zonesports.com/.
+
+## If it is still down
+
+- Service settings must be **Docker**, Root Directory `three-zone-mvp`, Dockerfile path `./Dockerfile`, Docker context `.`, health check `/api/health`.
+- `TZ_ENV` must be `demo`.
+- `TZ_ALLOWED_ORIGINS` must include `https://3zonesports.com` and `https://www.3zonesports.com`.
+- GitHub Pages must stay on `/docs`. The repo-root `index.html` is not the public sports site.
