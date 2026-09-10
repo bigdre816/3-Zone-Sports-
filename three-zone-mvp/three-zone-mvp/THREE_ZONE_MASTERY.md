@@ -1,1 +1,0 @@
-../THREE_ZONE_MASTERY.md

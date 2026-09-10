@@ -137,11 +137,17 @@ class PortalTests(unittest.TestCase):
 
     def test_investment_tracker_is_not_on_the_site(self):
         repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        self.assertFalse(os.path.exists(os.path.join(repo, "System")))
+        self.assertTrue(os.path.exists(os.path.join(repo, "System")))
         with open(os.path.join(repo, ".cursor", "serve.py"), encoding="utf-8") as handle:
             serve = handle.read()
         self.assertIn("Sports Access", serve)
         self.assertNotIn("Investment Tracker", serve)
+        static = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend", "static")
+        for name in os.listdir(static):
+            if not name.endswith(".html"):
+                continue
+            with open(os.path.join(static, name), encoding="utf-8") as handle:
+                self.assertNotIn("Investment Tracker", handle.read())
 
     def test_live_render_blueprint_is_docker_demo_member_app(self):
         repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
