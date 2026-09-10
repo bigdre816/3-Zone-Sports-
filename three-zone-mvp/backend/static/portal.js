@@ -27,11 +27,15 @@ const escapeText = value => {
   node.textContent = value == null ? "" : String(value);
   return node.innerHTML;
 };
+const parseList = value => (value || "").split(",").map(part => part.trim()).filter(Boolean);
 const STAFF = new Set(["operator", "owner", "admin"]);
 const PAGE_VIEWS = new Set(["about", "support", "privacy", "terms"]);
-const MEMBER_VIEWS = new Set(["feed", "live", "watch", "inbox", "profile"]);
+const MEMBER_VIEWS = new Set(["feed", "live", "watch", "inbox", "profile", "game"]);
 const HASH_ALIAS = { schedules: "watch", archives: "watch" };
-const state = { profile: null, signedIn: false, mode: "for_you", sport: "", kind: "photo", tab: "posts" };
+const state = {
+  profile: null, signedIn: false, mode: "for_you", sport: "", kind: "photo", tab: "posts",
+  maxClipSeconds: 90, studioDuration: 90, previewing: false, gameId: null,
+};
 
 function pendingPlayback() {
   const params = new URLSearchParams(location.search || "");
@@ -123,6 +127,11 @@ function showSignedIn(member, profile) {
 
 function setView(name) {
   $$(".view").forEach(el => el.classList.toggle("hidden", el.id !== "view-" + name));
+  if (name === "game") $("#player-wrap").classList.add("hidden");
+}
+
+function mediaUnavailable(reason) {
+  return `<div class="media-ph">${escapeText(reason || "Media unavailable")}</div>`;
 }
 
 function routeName() {
@@ -159,8 +168,14 @@ function applyRoute() {
 }
 
 function mediaTag(item) {
+  if (item.content_state === "restricted" || item.publication_status === "restricted") {
+    return mediaUnavailable("This post is restricted");
+  }
+  if (item.content_state === "removed" || item.publication_status === "removed") {
+    return mediaUnavailable("This post was removed");
+  }
   const id = item.derived_media_asset_id || item.media_asset_id || item.source_media_asset_id;
-  if (!id) return "<div class='media-ph'>No media</div>";
+  if (!id) return mediaUnavailable("Media unavailable");
   if (item.clip_id || item.start_seconds != null || item.game_id || (item.provenance && item.provenance.source_type === "game_clip")) {
     return `<video src="/api/network/media/${id}" controls playsinline muted></video>`;
   }
@@ -179,15 +194,12 @@ function postCard(item) {
     ? `<button type="button" class="quiet" data-open-game="${item.watch_full_game.game_id}">Watch Full Game</button>`
     : item.watch_full_game
       ? `<p class="sub">${escapeText(item.watch_full_game.label)}</p>` : "";
-  return `<article class="post-card">
-    <header><strong>${escapeText(item.author.display_name)}</strong>
-      <span class="sub">@${escapeText(item.author.handle)} · ${escapeText(item.author.profile_type)}</span>
-      ${badge}</header>
-    ${mediaTag(item)}
-    <p>${escapeText(item.caption)}</p>
-    <p class="sub">${escapeText(item.sport)}</p>
-    ${provenance}${watch}
-    <div class="actions">
+  const tags = (item.athlete_tags || []).map(tag =>
+    `<span class="pill">@${escapeText(tag.handle)}</span>`
+  ).join(" ");
+  const restricted = item.content_state === "restricted" || item.publication_status === "restricted";
+  const removed = item.content_state === "removed" || item.publication_status === "removed";
+  const actions = (restricted || removed) ? "" : `<div class="actions">
       <button type="button" data-like="post:${item.post_id}">Like ${item.like_count || 0}</button>
       <button type="button" data-save="post:${item.post_id}">Save</button>
       <button type="button" data-send="post:${item.post_id}">Send</button>
@@ -196,20 +208,34 @@ function postCard(item) {
     <form class="comment-form" data-subject="post:${item.post_id}">
       <label>Comment <input name="body" maxlength="500" /></label>
       <button type="submit">Comment</button>
-    </form>
+    </form>`;
+  return `<article class="post-card">
+    <header><strong>${escapeText(item.author.display_name)}</strong>
+      <span class="sub">@${escapeText(item.author.handle)} · ${escapeText(item.author.profile_type)}</span>
+      ${badge}</header>
+    ${mediaTag(item)}
+    <p>${escapeText(item.caption)}</p>
+    <p class="sub">${escapeText(item.sport)}${tags ? " · " + tags : ""}</p>
+    ${provenance}${watch}
+    ${actions}
   </article>`;
 }
 
 async function loadFeed() {
-  const sport = state.sport ? `&sport=${encodeURIComponent(state.sport)}` : "";
-  const data = await api("GET", `/api/network/feed?mode=${state.mode}${sport}`);
   const root = $("#feed-list");
-  if (!data.items.length) {
-    root.innerHTML = "<p class='empty'>No posts in this feed yet.</p>";
-    return;
+  root.innerHTML = "<p class='empty'>Loading feed…</p>";
+  try {
+    const sport = state.sport ? `&sport=${encodeURIComponent(state.sport)}` : "";
+    const data = await api("GET", `/api/network/feed?mode=${state.mode}${sport}`);
+    if (!data.items.length) {
+      root.innerHTML = "<p class='empty'>No posts in this feed yet.</p>";
+      return;
+    }
+    root.innerHTML = data.items.map(postCard).join("");
+    bindCards(root);
+  } catch (_) {
+    root.innerHTML = "<p class='empty'>Feed is unavailable right now.</p>";
   }
-  root.innerHTML = data.items.map(postCard).join("");
-  bindCards(root);
 }
 
 async function loadPublicFeed() {
@@ -222,7 +248,19 @@ async function loadPublicFeed() {
   } catch (_) { /* unsigned feed is best-effort */ }
 }
 
+function bindMediaErrors(root) {
+  root.querySelectorAll("video, img").forEach(el => {
+    el.addEventListener("error", () => {
+      const ph = document.createElement("div");
+      ph.className = "media-ph";
+      ph.textContent = "Media unavailable";
+      el.replaceWith(ph);
+    });
+  });
+}
+
 function bindCards(root) {
+  bindMediaErrors(root);
   root.querySelectorAll("[data-like]").forEach(btn => btn.onclick = async () => {
     const [type, id] = btn.dataset.like.split(":");
     try {
@@ -333,7 +371,8 @@ async function loadProfileTab() {
   $("#profile-list").innerHTML = data.items.map(item => {
     if (item.post_id) return postCard(item);
     if (item.game_id) {
-      return `<article class="post-card"><span class="pill">${escapeText(item.processing_status)}</span>
+      const status = item.verification_status || item.processing_status;
+      return `<article class="post-card"><span class="pill">${escapeText(status)}</span>
         <h3>${escapeText(item.home_team_name)} vs ${escapeText(item.away_team_name)}</h3>
         <p class="sub">${escapeText(item.game_number)} · ${escapeText(item.sport)}</p>
         <button type="button" data-open-game="${item.game_id}">Open game</button></article>`;
@@ -344,24 +383,129 @@ async function loadProfileTab() {
   bindCards($("#profile-list"));
 }
 
-async function openGame(gameId) {
+function clampStudio(start, end) {
+  const duration = state.studioDuration || 0;
+  const maxClip = state.maxClipSeconds || 90;
+  start = Math.max(0, Number(start) || 0);
+  end = Number(end);
+  if (!(end > start)) end = start + 0.1;
+  if (duration > 0) end = Math.min(end, duration);
+  if (end - start > maxClip) end = start + maxClip;
+  if (duration > 0 && end > duration) {
+    end = duration;
+    start = Math.max(0, end - maxClip);
+  }
+  return [Math.round(start * 10) / 10, Math.round(end * 10) / 10];
+}
+
+function syncStudio(fromRange) {
+  const form = $("#studio-form");
+  const startRange = $("#studio-start-range");
+  const endRange = $("#studio-end-range");
+  let start = fromRange ? Number(startRange.value) : Number(form.start_seconds.value);
+  let end = fromRange ? Number(endRange.value) : Number(form.end_seconds.value);
+  [start, end] = clampStudio(start, end);
+  form.start_seconds.value = start;
+  form.end_seconds.value = end;
+  const max = String(state.studioDuration || state.maxClipSeconds);
+  startRange.max = max;
+  endRange.max = max;
+  startRange.value = String(start);
+  endRange.value = String(end);
+  const pct = value => state.studioDuration ? (value / state.studioDuration) * 100 : 0;
+  $("#studio-fill").style.left = pct(start) + "%";
+  $("#studio-fill").style.width = Math.max(0, pct(end) - pct(start)) + "%";
+  $("#studio-range-text").textContent = `${start}–${end}s`;
+}
+
+function bindStudio() {
+  const video = $("#studio-video");
+  video.onloadedmetadata = () => {
+    state.studioDuration = video.duration || state.maxClipSeconds;
+    const form = $("#studio-form");
+    if (!form.start_seconds.value) form.start_seconds.value = "0";
+    if (!form.end_seconds.value) {
+      form.end_seconds.value = String(Math.min(20, state.studioDuration, state.maxClipSeconds));
+    }
+    syncStudio(false);
+  };
+  video.ontimeupdate = () => {
+    if (!state.previewing) return;
+    const end = Number($("#studio-form").end_seconds.value);
+    if (video.currentTime >= end - 0.05) {
+      video.pause();
+      state.previewing = false;
+    }
+  };
+  $("#studio-start-range").oninput = () => syncStudio(true);
+  $("#studio-end-range").oninput = () => syncStudio(true);
+  $("#studio-form").start_seconds.oninput = () => syncStudio(false);
+  $("#studio-form").end_seconds.oninput = () => syncStudio(false);
+  $("#studio-preview").onclick = () => {
+    syncStudio(false);
+    const start = Number($("#studio-form").start_seconds.value);
+    state.previewing = true;
+    video.currentTime = start;
+    video.play().catch(() => {});
+  };
+}
+
+async function openStudio(gameId) {
   const data = await api("GET", `/api/network/games/${gameId}`);
   const game = data.game;
-  setView("profile");
-  $("#player-wrap").classList.remove("hidden");
-  $("#player-title").textContent = `${game.home_team_name} vs ${game.away_team_name}`;
-  $("#player-state").textContent = game.can_watch ? "Authorized source game" : "Not authorized";
+  $("#studio-form").game_id.value = gameId;
+  $("#studio-form").start_seconds.value = "0";
+  $("#studio-form").end_seconds.value = "";
+  $("#studio-status").textContent = game.can_create_clip ? "Ready to clip" : "Game not ready";
+  $("#studio-form").querySelector("[type=submit]").disabled = !game.can_create_clip;
+  if (game.source_media_asset_id) {
+    $("#studio-video").src = `/api/network/media/${game.source_media_asset_id}`;
+  }
+  $("#studio-dialog").showModal();
+}
+
+async function openGame(gameId) {
+  state.gameId = gameId;
+  let data;
+  try {
+    data = await api("GET", `/api/network/games/${gameId}`);
+  } catch (error) {
+    setView("game");
+    $("#game-title").textContent = "Game unavailable";
+    $("#game-meta").textContent = "";
+    $("#game-state").textContent = error.message || "Not authorized";
+    $("#game-video").classList.add("hidden");
+    $("#game-unavailable").classList.remove("hidden");
+    $("#create-clip-btn").disabled = true;
+    return;
+  }
+  const game = data.game;
+  setView("game");
+  $("#game-title").textContent = `${game.home_team_name} vs ${game.away_team_name}`;
+  $("#game-meta").textContent = [
+    game.game_number, game.sport, game.season, game.level, game.venue,
+  ].filter(Boolean).join(" · ");
+  const restricted = game.verification_status === "rights_restricted" || game.verification_status === "rejected";
+  $("#game-state").textContent = restricted
+    ? "This game is restricted or rejected."
+    : game.can_watch ? "Authorized source game" : "Not authorized to watch this game";
+  $("#create-clip-btn").disabled = !game.can_create_clip;
+  $("#create-clip-btn").dataset.gameId = gameId;
   if (game.can_watch && game.source_media_asset_id) {
+    $("#game-unavailable").classList.add("hidden");
+    $("#game-video").classList.remove("hidden");
     try {
       const play = await api("POST", `/api/network/games/${gameId}/playback`);
-      $("#video").src = play.media_url;
-      $("#video").play().catch(() => {});
-    } catch (error) { toast(error.message); }
+      $("#game-video").src = play.media_url;
+    } catch (error) {
+      $("#game-video").classList.add("hidden");
+      $("#game-unavailable").classList.remove("hidden");
+      $("#game-unavailable").textContent = error.message || "This game is not currently available with your access.";
+    }
+  } else {
+    $("#game-video").classList.add("hidden");
+    $("#game-unavailable").classList.remove("hidden");
   }
-  $("#studio-form").game_id.value = gameId;
-  $("#studio-status").textContent = game.can_create_clip ? "Ready to clip" : "Game not ready";
-  if (game.source_media_asset_id) $("#studio-video").src = `/api/network/media/${game.source_media_asset_id}`;
-  $("#studio-dialog").showModal();
 }
 
 async function loadPortal() {
@@ -488,16 +632,23 @@ $$(".create-choices [data-kind]").forEach(btn => btn.onclick = () => {
   $("#composer").classList.remove("hidden");
   $("#composer-kind").textContent = btn.dataset.kind === "game" ? "Full Game" : btn.dataset.kind === "clip" ? "Clip" : "Photo";
   $("#game-fields").classList.toggle("hidden", state.kind !== "game");
+  $("#composer-tags").classList.toggle("hidden", state.kind === "game");
   $("#game-fields").querySelector("[name=rights_attestation]").required = state.kind === "game";
+  $("#composer-file").accept = state.kind === "photo" ? "image/*" : "video/*";
 });
 $("#composer-file").onchange = () => {
   const file = $("#composer-file").files[0];
-  const preview = $("#composer-preview");
-  if (file && file.type.startsWith("video/")) {
-    preview.src = URL.createObjectURL(file);
-    preview.classList.remove("hidden");
-  } else {
-    preview.classList.add("hidden");
+  const video = $("#composer-preview");
+  const photo = $("#composer-photo");
+  video.classList.add("hidden");
+  photo.classList.add("hidden");
+  if (!file) return;
+  if (file.type.startsWith("video/")) {
+    video.src = URL.createObjectURL(file);
+    video.classList.remove("hidden");
+  } else if (file.type.startsWith("image/")) {
+    photo.src = URL.createObjectURL(file);
+    photo.classList.remove("hidden");
   }
 };
 $("#composer").onsubmit = async event => {
@@ -524,8 +675,9 @@ $("#composer").onsubmit = async event => {
         status.textContent = ready ? "Game ready" : "Processing video…";
       }
       if (!ready) throw Error("Game is still processing");
-      toast("Game ready — open Studio from your Games tab");
+      toast("Game ready");
       $("#create-dialog").close();
+      openGame(game.game.game_id);
       return;
     }
     status.textContent = "Requesting direct upload…";
@@ -555,6 +707,8 @@ $("#composer").onsubmit = async event => {
       caption: form.caption.value,
       sport: form.sport.value,
       visibility: form.visibility.value,
+      tagged_handles: parseList(form.tagged_handles.value),
+      tagged_team_ids: parseList(form.tagged_teams.value),
     });
     status.textContent = "";
     toast("Published");
@@ -568,6 +722,7 @@ $("#composer").onsubmit = async event => {
 };
 $("#studio-form").onsubmit = async event => {
   event.preventDefault();
+  syncStudio(false);
   const form = event.target;
   $("#studio-status").textContent = "Creating clip definition…";
   try {
@@ -665,8 +820,25 @@ document.addEventListener("click", event => {
   if (!$("#search-wrap") || $("#search-wrap").contains(event.target)) return;
   $("#search-results").classList.add("hidden");
 });
+$("#game-back").onclick = () => {
+  setView("profile");
+  loadProfileTab();
+  if ((location.hash || "").replace(/^#/, "") !== "profile") location.hash = "profile";
+};
+$("#create-clip-btn").onclick = () => {
+  if (state.gameId) openStudio(state.gameId);
+};
+bindStudio();
 (async () => {
-  try { player.config = await api("GET", "/api/config"); } catch (_) {}
+  try {
+    player.config = await api("GET", "/api/config");
+    if (player.config && player.config.max_game_clip_seconds) {
+      state.maxClipSeconds = Number(player.config.max_game_clip_seconds);
+      $("#studio-max").textContent = String(state.maxClipSeconds);
+      $("#studio-start-range").max = String(state.maxClipSeconds);
+      $("#studio-end-range").max = String(state.maxClipSeconds);
+    }
+  } catch (_) { /* keep default 90s cap */ }
   try { await loadPortal(); }
   catch (_) {
     loadPublicFeed();
