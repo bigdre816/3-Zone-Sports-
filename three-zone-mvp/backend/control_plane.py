@@ -12,8 +12,9 @@ import hashlib
 import time
 import uuid
 
+from .camera_adapters import CameraSource, adapter_for
 from . import tokens
-from .db import Database, dumps, loads
+from .db import Database, IntegrityError, dumps, loads
 from .passwords import (
     RESERVED, hash_password, normalize_username, valid_password, valid_username,
     verify_password,
@@ -145,6 +146,10 @@ SITE_ROUTES = [
      "purpose": "Request a rights-checked playback lease"},
     {"method": "POST", "path": "/api/admin/schedules/upload", "tier": "worker",
      "purpose": "Import a versioned team schedule"},
+    {"method": "GET", "path": "/api/cameras", "tier": "worker",
+     "purpose": "List configured capture cameras (secret-safe)"},
+    {"method": "POST", "path": "/api/cameras", "tier": "worker",
+     "purpose": "Register and verify a camera source"},
     {"method": "GET", "path": "/api/admin/audit/{id}", "tier": "worker",
      "purpose": "Inspect a canonical audit event and XRPL receipt"},
     {"method": "GET", "path": "/api/me", "tier": "member",
@@ -522,6 +527,114 @@ class ControlPlane(PipelineMixin):
     def _max_version(self, event_id: str) -> int:
         row = self.db.query_one("SELECT MAX(version) AS m FROM rights WHERE event_id=?", (event_id,))
         return int(row["m"]) if row and row["m"] is not None else 0
+
+    # -- cameras -----------------------------------------------------------
+    def _put_camera_secret(self, camera_id: str, field: str, value: str | None) -> str | None:
+        if not value:
+            return None
+        ref = f"camera/{camera_id}/{field}"
+        self.db.execute(
+            "INSERT OR REPLACE INTO camera_secrets(secret_ref,secret_value,created_at) VALUES (?,?,?)",
+            (ref, value, now()),
+        )
+        return ref
+
+    def _get_camera_secret(self, secret_ref: str | None) -> str | None:
+        if not secret_ref:
+            return None
+        row = self.db.query_one("SELECT secret_value FROM camera_secrets WHERE secret_ref=?", (secret_ref,))
+        return row["secret_value"] if row else None
+
+    @staticmethod
+    def _camera_public(row) -> dict:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "transport": row["transport"],
+            "endpoint": row["endpoint"],
+            "enabled": bool(row["enabled"]),
+            "status": row["status"],
+            "rights_policy_id": row["rights_policy_id"],
+            "has_username": bool(row["username_secret_ref"]),
+            "has_password": bool(row["password_secret_ref"]),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def list_cameras(self, operator: dict) -> list[dict]:
+        self.require_operator(operator)
+        rows = self.db.query(
+            "SELECT * FROM camera_sources ORDER BY created_at DESC, id DESC"
+        )
+        return [self._camera_public(row) for row in rows]
+
+    def register_camera(self, operator: dict, data: dict) -> dict:
+        self.require_operator(operator)
+        name = (data.get("name") or "").strip()
+        endpoint = (data.get("endpoint") or "").strip()
+        transport = (data.get("transport") or "rtsp").strip().lower()
+        username = (data.get("username") or "").strip() or None
+        password = (data.get("password") or "").strip() or None
+        rights_policy_id = (data.get("rights_policy_id") or "").strip() or None
+        if not name:
+            raise ValidationError("camera name is required", "camera_name_required")
+        if not endpoint:
+            raise ValidationError("camera endpoint is required", "camera_endpoint_required")
+        if transport not in ("rtsp", "onvif"):
+            raise ValidationError("unsupported camera transport", "camera_transport_unsupported")
+        if transport == "rtsp" and not endpoint.lower().startswith("rtsp://"):
+            raise ValidationError("rtsp endpoint must start with rtsp://", "camera_endpoint_invalid")
+
+        camera_id = str(uuid.uuid4())
+        username_ref = self._put_camera_secret(camera_id, "username", username)
+        password_ref = self._put_camera_secret(camera_id, "password", password)
+        candidate = CameraSource(camera_id, name, transport, endpoint, username, password)
+        try:
+            adapter_for(candidate).verify()
+        except FileNotFoundError as exc:
+            raise ValidationError("camera probe binary is unavailable", "camera_probe_unavailable") from exc
+        except RuntimeError as exc:
+            raise ValidationError(str(exc), "camera_unreachable") from exc
+        except ValueError as exc:
+            raise ValidationError(str(exc), "camera_transport_unsupported") from exc
+
+        stamp = now()
+        try:
+            self.db.execute(
+                "INSERT INTO camera_sources(id,name,transport,endpoint,username_secret_ref,password_secret_ref,"
+                "enabled,status,rights_policy_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    camera_id,
+                    name,
+                    transport,
+                    endpoint,
+                    username_ref,
+                    password_ref,
+                    1,
+                    "ready",
+                    rights_policy_id,
+                    stamp,
+                    stamp,
+                ),
+            )
+        except IntegrityError as exc:
+            raise ConflictError("camera endpoint already exists", "camera_endpoint_exists") from exc
+        row = self.db.query_one("SELECT * FROM camera_sources WHERE id=?", (camera_id,))
+        return self._camera_public(row)
+
+    def load_enabled_cameras(self) -> list[CameraSource]:
+        rows = self.db.query(
+            "SELECT id,name,transport,endpoint,username_secret_ref,password_secret_ref FROM camera_sources "
+            "WHERE enabled=1 AND status='ready' ORDER BY id ASC"
+        )
+        cameras: list[CameraSource] = []
+        for row in rows:
+            secret_user = self._get_camera_secret(row["username_secret_ref"])
+            secret_pass = self._get_camera_secret(row["password_secret_ref"])
+            cameras.append(
+                CameraSource(str(row["id"]), row["name"], row["transport"], row["endpoint"], secret_user, secret_pass)
+            )
+        return cameras
 
     # -- events -----------------------------------------------------------
     def get_event_row(self, event_id: str):

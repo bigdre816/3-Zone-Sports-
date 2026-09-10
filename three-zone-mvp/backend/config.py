@@ -82,7 +82,9 @@ class Config:
     http_port: int = 8000
     ws_host: str = "127.0.0.1"
     ws_port: int = 8765
+    database_url: str = ""
     database_path: str = "data/three_zone.sqlite3"
+    data_dir: str = "data"
     allowed_origins: list[str] = field(default_factory=list)
     token_secret: str = DEMO_TOKEN_SECRET
     media_service_key: str = DEMO_MEDIA_SERVICE_KEY
@@ -134,6 +136,9 @@ class Config:
     photo_s3_secret_key: str = ""
     photo_s3_region: str = "auto"
     photo_webhook_secret: str = ""
+    moten_service_url: str = ""
+    moten_shared_secret: str = ""
+    moten_timeout_seconds: int = 5
 
     def __post_init__(self) -> None:
         """Keep live/UGC provider names and Cloudflare credential aliases in sync."""
@@ -176,7 +181,12 @@ class Config:
         env = os.environ.get("TZ_ENV", "development").strip().lower()
         http_host = http_host or os.environ.get("TZ_HTTP_HOST", "127.0.0.1")
         ws_host = ws_host or os.environ.get("TZ_WS_HOST", "127.0.0.1")
-        http_port = int(http_port or os.environ.get("TZ_HTTP_PORT", "8000"))
+        http_port = int(
+            http_port
+            or os.environ.get("TZ_HTTP_PORT")
+            or os.environ.get("PORT")
+            or "8000"
+        )
         ws_port = int(ws_port or os.environ.get("TZ_WS_PORT", "8765"))
         default_origin = f"http://127.0.0.1:{http_port}" if http_host in ("0.0.0.0", "::") else f"http://{http_host}:{http_port}"
         allowed = _split_origins(os.environ.get("TZ_ALLOWED_ORIGINS", default_origin))
@@ -204,7 +214,9 @@ class Config:
             http_port=http_port,
             ws_host=ws_host,
             ws_port=ws_port,
+            database_url=os.environ.get("TZ_DATABASE_URL", "").strip(),
             database_path=os.environ.get("TZ_DATABASE_PATH", "data/three_zone.sqlite3"),
+            data_dir=os.environ.get("TZ_DATA_DIR", "data"),
             allowed_origins=allowed,
             token_secret=os.environ.get("TZ_TOKEN_SECRET", DEMO_TOKEN_SECRET),
             media_service_key=os.environ.get("TZ_MEDIA_SERVICE_KEY", DEMO_MEDIA_SERVICE_KEY),
@@ -255,6 +267,9 @@ class Config:
             photo_s3_secret_key=os.environ.get("TZ_PHOTO_S3_SECRET_KEY", ""),
             photo_s3_region=os.environ.get("TZ_PHOTO_S3_REGION", "auto"),
             photo_webhook_secret=os.environ.get("TZ_PHOTO_WEBHOOK_SECRET", ""),
+            moten_service_url=os.environ.get("TZ_MOTEN_SERVICE_URL", "").rstrip("/"),
+            moten_shared_secret=os.environ.get("TZ_MOTEN_SHARED_SECRET", ""),
+            moten_timeout_seconds=int(os.environ.get("TZ_MOTEN_TIMEOUT_SECONDS", "5")),
         )
         cfg.validate()
         return cfg
@@ -268,6 +283,14 @@ class Config:
         if not self.cf_customer_code:
             return None
         return f"https://customer-{self.cf_customer_code}.cloudflarestream.com"
+
+    @property
+    def database_locator(self) -> str:
+        return self.database_url or self.database_path
+
+    @property
+    def moten_enabled(self) -> bool:
+        return bool(self.moten_service_url)
 
     def validate(self) -> None:
         """Refuse to run in production with demo/weak secrets."""
@@ -317,6 +340,10 @@ class Config:
             problems.append("TZ_TOKEN_SECRET and TZ_MEDIA_SERVICE_KEY must be different")
         if not self.allowed_origins:
             problems.append("TZ_ALLOWED_ORIGINS must be set")
+        if not (self.database_url or self.database_path):
+            problems.append("TZ_DATABASE_URL or TZ_DATABASE_PATH must be set")
+        if self.moten_enabled and not self.moten_shared_secret:
+            problems.append("TZ_MOTEN_SHARED_SECRET is required when TZ_MOTEN_SERVICE_URL is set")
         if "*" in self.allowed_origins or "*" in self.cf_allowed_origins:
             problems.append("wildcard origins are refused in production")
         if live == "cloudflare" or ugc == "cloudflare":
