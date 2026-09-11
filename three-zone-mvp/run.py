@@ -16,7 +16,7 @@ import sys
 # Allow ``python run.py`` from inside the project directory.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from backend.config import Config
+from backend.config import Config, bind_separate_websocket
 from backend.control_plane import ControlPlane
 from backend.db import Database
 from backend.http_server import make_http_server
@@ -49,14 +49,24 @@ def main() -> int:
     media_dir = _media_dir(config.database_locator, config.data_dir)
     os.makedirs(media_dir, exist_ok=True)
 
-    ws_proc = multiprocessing.Process(target=run_ws_process, args=(config,), daemon=True)
+    bind_ws = bind_separate_websocket()
+    ws_proc = multiprocessing.Process(
+        target=run_ws_process, args=(config, bind_ws), daemon=True,
+    )
     ws_proc.start()
 
     httpd = make_http_server(config, cp, media_dir)
+    if bind_ws:
+        ws_line = f"  WS    ws://{config.ws_host}:{config.ws_port}/ws/events/<event_id>\n"
+    else:
+        ws_line = (
+            "  WS    same-origin HTTP on this port "
+            f"(separate :{config.ws_port} not bound; Render health-checks $PORT)\n"
+        )
     banner = (
         "\n  Three-Zone control-plane MVP\n"
         f"  HTTP  http://{config.http_host}:{config.http_port}\n"
-        f"  WS    ws://{config.ws_host}:{config.ws_port}/ws/events/<event_id>\n"
+        f"{ws_line}"
         f"  env   {config.env}   db {config.database_locator if '://' not in config.database_locator else 'configured remote database'}\n"
         f"  origins {', '.join(config.allowed_origins)}\n"
         "  sign in with username + password (see README)\n"

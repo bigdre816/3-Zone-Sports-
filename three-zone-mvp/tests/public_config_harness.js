@@ -23,7 +23,7 @@ function load(src, windowObj, extras) {
 }
 
 async function main() {
-  const production = 'https://three-zone-sports.onrender.com';
+  const production = 'https://three-zone-sports-1.onrender.com';
   const results = { origin: {}, memberAppUrl: {}, fetch: {}, site: {} };
 
   results.origin.noWindow = load(configSrc, undefined)._origin();

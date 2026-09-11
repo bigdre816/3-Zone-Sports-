@@ -43,6 +43,7 @@ CHROME_PAGES = (
 
 PUBLIC_PATHS = (
     "/api/health",
+    "/healthz",
     "/api/public/live",
     "/api/public/schedules",
     "/api/public/archives",
@@ -100,18 +101,18 @@ class PublicInputTests(unittest.TestCase):
 
     def test_config_origin_for_every_hostname(self):
         origin = self.harness["origin"]
-        self.assertEqual(origin["noWindow"], "https://three-zone-sports.onrender.com")
+        self.assertEqual(origin["noWindow"], "https://three-zone-sports-1.onrender.com")
         self.assertEqual(origin["localhost"], "http://localhost:8000")
         self.assertEqual(origin["loopback"], "http://127.0.0.1:8000")
-        self.assertEqual(origin["pages"], "https://three-zone-sports.onrender.com")
-        self.assertEqual(origin["www"], "https://three-zone-sports.onrender.com")
+        self.assertEqual(origin["pages"], "https://three-zone-sports-1.onrender.com")
+        self.assertEqual(origin["www"], "https://three-zone-sports-1.onrender.com")
         self.assertEqual(origin["override"], "https://example.test")
 
     def test_member_app_url_for_every_path_input(self):
         urls = self.harness["memberAppUrl"]
-        self.assertEqual(urls["empty"], "https://three-zone-sports.onrender.com/")
-        self.assertEqual(urls["root"], "https://three-zone-sports.onrender.com/")
-        self.assertEqual(urls["query"], "https://three-zone-sports.onrender.com/?event=evt_x")
+        self.assertEqual(urls["empty"], "https://three-zone-sports-1.onrender.com/")
+        self.assertEqual(urls["root"], "https://three-zone-sports-1.onrender.com/")
+        self.assertEqual(urls["query"], "https://three-zone-sports-1.onrender.com/?event=evt_x")
         self.assertIn("event=", urls["encoded"])
         self.assertNotIn("<", urls["encoded"])
         self.assertNotIn('"', urls["encoded"].split("event=", 1)[-1])
@@ -213,7 +214,7 @@ class PublicInputTests(unittest.TestCase):
                                 self.assertEqual(acao, origin, url)
                             else:
                                 self.assertIsNone(acao, url)
-                            if path == "/api/health":
+                            if path in ("/api/health", "/healthz"):
                                 self.assertEqual(payload["status"], "ok")
                             elif path.endswith("/live"):
                                 self.assertGreaterEqual(len(payload["events"]), 1)

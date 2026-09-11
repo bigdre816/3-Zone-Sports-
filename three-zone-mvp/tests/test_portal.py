@@ -179,7 +179,8 @@ class PortalTests(unittest.TestCase):
             blueprint = handle.read()
         self.assertIn("runtime: docker", blueprint)
         self.assertIn("dockerfilePath: ./Dockerfile", blueprint)
-        self.assertIn("healthCheckPath: /api/health", blueprint)
+        self.assertIn("healthCheckPath: /healthz", blueprint)
+        self.assertNotIn("healthCheckPath: /api/health", blueprint)
         self.assertIn("name: three-zone-sports", blueprint)
         self.assertIn("branch: main", blueprint)
         self.assertIn("autoDeployTrigger: commit", blueprint)
@@ -521,6 +522,41 @@ class AuthHttpTests(unittest.TestCase):
         })
         self.assertEqual(status, 400)
         self.assertEqual(reserved["code"], "bad_username")
+
+    def test_healthz_aliases_match_api_health(self):
+        for path in ("/healthz", "/health", "/api/health"):
+            status, body, _ = self._json("GET", path)
+            self.assertEqual(status, 200, body)
+            self.assertEqual(body["status"], "ok")
+        import urllib.request
+        req = urllib.request.Request(self.base + "/healthz", method="HEAD")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            self.assertEqual(resp.status, 200)
+            self.assertEqual(resp.read(), b"")
+
+    def test_password_login_sets_secure_lax_cookie_behind_proxy(self):
+        import json
+        import urllib.request
+
+        headers = {
+            "Content-Type": "application/json",
+            "X-Forwarded-Proto": "https",
+        }
+        data = json.dumps({
+            "username": "demo-viewer",
+            "password": self.DEMO_SEED_PASSWORDS["demo-viewer"],
+        }).encode()
+        req = urllib.request.Request(
+            self.base + "/api/auth/login", data=data, method="POST", headers=headers,
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            payload = json.loads(resp.read())
+            cookie = resp.headers.get("Set-Cookie") or ""
+        self.assertEqual(payload["home"], "/")
+        self.assertIn("tz_member_session=", cookie)
+        self.assertIn("HttpOnly", cookie)
+        self.assertRegex(cookie, r"SameSite=Lax")
+        self.assertIn("Secure", cookie)
 
 
 if __name__ == "__main__":

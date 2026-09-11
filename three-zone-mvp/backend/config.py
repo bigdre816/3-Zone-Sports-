@@ -34,6 +34,39 @@ def _truthy(raw: str | None, default: bool = False) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def running_on_render() -> bool:
+    """True when Render injects ``RENDER=true`` into the web service."""
+    return _truthy(os.environ.get("RENDER"), False)
+
+
+def bind_separate_websocket() -> bool:
+    """Whether to listen on ``TZ_WS_PORT`` (default 8765).
+
+    Render only exposes ``$PORT``. A second listen looks like HTTP to the
+    platform port scanner and can keep the internal ``/healthz`` check from
+    ever succeeding. On Render the member app is same-origin HTTP; live
+    sockets stay disabled until a same-port upgrade exists.
+    """
+    if running_on_render():
+        return False
+    raw = os.environ.get("TZ_WS_PORT", "8765").strip()
+    return raw not in ("", "0")
+
+
+def _render_service_origins() -> list[str]:
+    """Public HTTPS origins for this Render service, if the platform set them."""
+    origins: list[str] = []
+    url = os.environ.get("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
+    if url:
+        origins.append(url)
+    host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
+    if host:
+        https = f"https://{host}"
+        if https not in origins:
+            origins.append(https)
+    return origins
+
+
 def _first_env(*names: str) -> str:
     for name in names:
         raw = os.environ.get(name)
@@ -201,6 +234,9 @@ class Config:
             for extra in (f"http://127.0.0.1:{http_port}", f"http://localhost:{http_port}"):
                 if extra not in allowed:
                     allowed.append(extra)
+        for extra in _render_service_origins():
+            if extra not in allowed:
+                allowed.append(extra)
         cf_origins = _split_origins(os.environ.get("TZ_CLOUDFLARE_ALLOWED_ORIGINS", ",".join(allowed)))
         lease_raw = os.environ.get("TZ_PLAYBACK_LEASE_SECONDS") or os.environ.get("TZ_LEASE_TTL") or "60"
         xrpl_account = os.environ.get("TZ_XRPL_ACCOUNT") or os.environ.get("XRPL_AUDIT_ACCOUNT", "")

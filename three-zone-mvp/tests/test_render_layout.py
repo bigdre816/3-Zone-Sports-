@@ -36,6 +36,8 @@ class WorkspaceLayoutTests(unittest.TestCase):
         self.assertIn("mountPath: /data", text)
         self.assertIn("TZ_ENV", text)
         self.assertIn("demo", text)
+        self.assertIn("healthCheckPath: /healthz", text)
+        self.assertNotIn("healthCheckPath: /api/health", text)
 
     def test_member_app_is_not_nested_under_itself(self):
         self.assertFalse(
@@ -63,6 +65,9 @@ class WorkspaceLayoutTests(unittest.TestCase):
         dockerfile = (MVP / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn("COPY requirements.txt", dockerfile)
         self.assertNotIn("COPY three-zone-mvp/", dockerfile)
+        entry = (MVP / "docker-entrypoint.sh").read_text(encoding="utf-8")
+        self.assertIn('PORT="${PORT:-${TZ_HTTP_PORT:-8000}}"', entry)
+        self.assertIn("--http-port \"$PORT\"", entry)
 
 
 if __name__ == "__main__":

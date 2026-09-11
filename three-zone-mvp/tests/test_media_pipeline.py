@@ -605,6 +605,38 @@ class ConfigTests(unittest.TestCase):
         finally:
             os.environ.pop("PORT", None)
 
+    def test_27c_render_external_url_is_allowed_origin(self):
+        os.environ["RENDER_EXTERNAL_URL"] = "https://three-zone-sports-1.onrender.com"
+        os.environ["RENDER_EXTERNAL_HOSTNAME"] = "three-zone-sports-1.onrender.com"
+        os.environ["TZ_ALLOWED_ORIGINS"] = "https://3zonesports.com"
+        try:
+            cfg = Config.from_env()
+            self.assertIn("https://3zonesports.com", cfg.allowed_origins)
+            self.assertIn("https://three-zone-sports-1.onrender.com", cfg.allowed_origins)
+        finally:
+            os.environ.pop("RENDER_EXTERNAL_URL", None)
+            os.environ.pop("RENDER_EXTERNAL_HOSTNAME", None)
+            os.environ.pop("TZ_ALLOWED_ORIGINS", None)
+
+    def test_27d_render_does_not_bind_separate_ws(self):
+        from backend.config import bind_separate_websocket
+        saved = {k: os.environ.get(k) for k in ("RENDER", "TZ_WS_PORT")}
+        try:
+            os.environ["RENDER"] = "true"
+            os.environ.pop("TZ_WS_PORT", None)
+            self.assertFalse(bind_separate_websocket())
+            os.environ.pop("RENDER", None)
+            os.environ["TZ_WS_PORT"] = "8765"
+            self.assertTrue(bind_separate_websocket())
+            os.environ["TZ_WS_PORT"] = "0"
+            self.assertFalse(bind_separate_websocket())
+        finally:
+            for key, value in saved.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
     def test_27b_cloudflare_env_alias_is_not_public(self):
         os.environ["CLOUDFLARE"] = "cf-token-alias-value"
         try:

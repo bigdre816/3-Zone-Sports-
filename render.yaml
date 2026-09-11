@@ -17,7 +17,9 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     autoDeployTrigger: commit
-    healthCheckPath: /api/health
+    # Dashboard services have been probing /healthz on $PORT. Keep /api/health
+    # as an alias so GitHub Pages catalog health checks still work.
+    healthCheckPath: /healthz
     disk:
       name: three-zone-data
       mountPath: /data
@@ -34,7 +36,7 @@ services:
       - key: TZ_DATA_DIR
         value: /data
       - key: TZ_ALLOWED_ORIGINS
-        value: https://3zonesports.com,https://www.3zonesports.com,https://three-zone-sports.onrender.com
+        value: https://3zonesports.com,https://www.3zonesports.com,https://three-zone-sports.onrender.com,https://three-zone-sports-1.onrender.com
       - key: TZ_PUBLIC_BASE_URL
         value: https://3zonesports.com
       - key: TZ_LIVE_MEDIA_PROVIDER
