@@ -259,7 +259,7 @@ class Hub:
         self._stop.set()
 
 
-async def ws_main(config: Config) -> None:
+async def ws_main(config: Config, bind_socket: bool = True) -> None:
     db = Database(config.database_locator)
     cp = ControlPlane(db, config)
     hub = Hub(cp, PortalService(cp))
@@ -281,12 +281,15 @@ async def ws_main(config: Config) -> None:
              asyncio.create_task(hub.feed_loop()),
              asyncio.create_task(hub.metrics_loop())]
 
-    async with serve(
-        hub.handle, config.ws_host, config.ws_port,
-        subprotocols=[SUBPROTOCOL],
-        max_size=config.ws_max_message_bytes,
-        ping_interval=20, ping_timeout=20,
-    ):
+    if bind_socket:
+        async with serve(
+            hub.handle, config.ws_host, config.ws_port,
+            subprotocols=[SUBPROTOCOL],
+            max_size=config.ws_max_message_bytes,
+            ping_interval=20, ping_timeout=20,
+        ):
+            await stop
+    else:
         await stop
 
     hub.request_stop()
@@ -295,9 +298,13 @@ async def ws_main(config: Config) -> None:
     db.close()
 
 
-def run_ws_process(config: Config) -> None:
-    """Entry point for the separate WebSocket process."""
+def run_ws_process(config: Config, bind_socket: bool = True) -> None:
+    """Entry point for the WebSocket/outbox process.
+
+    ``bind_socket=False`` still runs feed/outbox loops but does not listen on
+    a second TCP port (Render only health-checks ``$PORT``).
+    """
     try:
-        asyncio.run(ws_main(config))
+        asyncio.run(ws_main(config, bind_socket=bind_socket))
     except KeyboardInterrupt:  # pragma: no cover
         pass

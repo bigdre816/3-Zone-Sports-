@@ -36,6 +36,8 @@ _EVENT_RE = r"(?P<event_id>evt_[a-z0-9_]+)"
 def _routes():
     return [
         ("GET", re.compile(r"^/api/health$"), "h_health", "none"),
+        ("GET", re.compile(r"^/healthz$"), "h_health", "none"),
+        ("GET", re.compile(r"^/health$"), "h_health", "none"),
         ("GET", re.compile(r"^/api/ops/live-readiness$"), "h_live_readiness", "operator"),
         ("GET", re.compile(r"^/api/config$"), "h_config", "none"),
         ("GET", re.compile(r"^/api/public/live$"), "h_public_live", "none"),
@@ -268,7 +270,10 @@ class _Handler(BaseHTTPRequestHandler):
         morsel["path"] = path
         morsel["max-age"] = str(max_age)
         morsel["httponly"] = True
-        morsel["samesite"] = "Strict"
+        morsel["samesite"] = "Lax"
+        proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+        if proto == "https":
+            morsel["secure"] = True
         return morsel.OutputString()
 
     def _send_json(self, status: int, payload: dict, set_cookie: tuple[str, str, str, int] | None = None) -> None:
@@ -369,6 +374,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        self._dispatch("GET")
+
+    def do_HEAD(self):
         self._dispatch("GET")
 
     def do_POST(self):

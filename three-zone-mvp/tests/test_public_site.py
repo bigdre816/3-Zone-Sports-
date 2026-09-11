@@ -64,7 +64,7 @@ class PublicSiteTests(unittest.TestCase):
     def test_config_has_one_production_render_origin(self):
         config = (DOCS / "config.js").read_text(encoding="utf-8")
         origins = re.findall(r"https://[a-z0-9.-]+\.onrender\.com", config)
-        self.assertEqual(origins, ["https://three-zone-sports.onrender.com"])
+        self.assertEqual(origins, ["https://three-zone-sports-1.onrender.com"])
         self.assertIn("const PRODUCTION_API_ORIGIN", config)
         self.assertNotIn("setMemberOrigin", config)
         self.assertNotIn("threezone_backend_url", config)

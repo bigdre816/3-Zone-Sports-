@@ -3,7 +3,7 @@
  * Do not surface this origin in page copy, forms, or status badges.
  */
 
-const PRODUCTION_API_ORIGIN = 'https://three-zone-sports.onrender.com';
+const PRODUCTION_API_ORIGIN = 'https://three-zone-sports-1.onrender.com';
 
 const ThreeZoneConfig = {
   PRODUCTION_API_ORIGIN,

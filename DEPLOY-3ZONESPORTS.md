@@ -14,9 +14,9 @@ Member portal and back portal run on **one** Render web service from `three-zone
 4. Apply Blueprint `render.yaml`
 5. If Render asks for a card, that is the **0.5 CPU / 512 MB** plan so the app stays up (~$7/month). Free instances sleep and then show 503.
 6. Wait until Status is **Live**
-7. Open https://three-zone-sports.onrender.com/api/health
+7. Open https://three-zone-sports-1.onrender.com/healthz (or `/api/health`)
 
-That health URL must return JSON with `"status": "ok"`.
+That health URL must return HTTP 200 JSON with `"status": "ok"`. Render’s internal check is `$PORT/healthz`. If a deploy is stuck on that probe, cancel it and redeploy this commit.
 
 Do **not** apply `three-zone-mvp/render.yaml`. That Python/production file is what created **3-Zone-Api**. Delete **3-Zone-Api** if it is still on the dashboard.
 
@@ -31,11 +31,11 @@ Do **not** apply `three-zone-mvp/render.yaml`. That Python/production file is wh
    - Root Directory `three-zone-mvp`
    - Dockerfile path `./Dockerfile`
    - Docker context `.`
-   - Health check `/api/health`
+   - Health check `/healthz`
    - `TZ_ENV=demo`
    - Disk mounted at `/data` (SQLite + demo media). Without it, every redeploy wipes accounts.
 5. Tap **Manual Deploy** → **Deploy latest commit**
-6. Wait until **Live**, then open the health URL
+6. Wait until **Live**, then open `https://<service>.onrender.com/healthz`
 
 Dockerfile path and Docker context are **relative to Root Directory**. If Root Directory is `three-zone-mvp`, both must stay `./Dockerfile` and `.`. Do not set either one to `three-zone-mvp` — that makes Render look for `three-zone-mvp/three-zone-mvp` and the build exits before Docker starts.
 
@@ -57,7 +57,7 @@ Camera: operator console → Event controls → **Start camera** → **Go live w
 
 ## If it is still down
 
-- Service settings must be **Docker**, Root Directory `three-zone-mvp`, Dockerfile path `./Dockerfile`, Docker context `.`, health check `/api/health`.
+- Service settings must be **Docker**, Root Directory `three-zone-mvp`, Dockerfile path `./Dockerfile`, Docker context `.`, health check `/healthz` ( `/api/health` is an alias).
 - `TZ_ENV` must be `demo`.
 - `TZ_ALLOWED_ORIGINS` must include `https://3zonesports.com` and `https://www.3zonesports.com`.
 - GitHub Pages must stay on `/docs` of **3-Zone-Sports-**. The repo-root `index.html` is not the public sports site.
