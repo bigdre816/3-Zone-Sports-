@@ -26,6 +26,7 @@ from .moten_adapter import MotenIntakeService
 from .network import NetworkService
 from .photo_storage import build_photo_storage
 from .portal import PortalService
+from .ai_gateway_routes import AiGatewayHandlers, extra_routes
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 _STATIC_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
@@ -175,10 +176,11 @@ def _routes():
         ("GET", re.compile(r"^/api/network/evidence/(?P<subject_type>game|clip|post)/(?P<subject_id>[A-Za-z0-9_-]+)\.csv$"), "h_net_evidence_csv", "owner"),
         ("GET", re.compile(r"^/api/network/evidence/(?P<subject_type>game|clip|post)/(?P<subject_id>[A-Za-z0-9_-]+)\.html$"), "h_net_evidence_html", "owner"),
         ("GET", re.compile(r"^/api/network/media/(?P<asset_id>med_[a-z0-9]+)$"), "h_net_media", "optional"),
+        *extra_routes(),
     ]
 
 
-class _Handler(BaseHTTPRequestHandler):
+class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
     server_version = "ThreeZone/1.0"
     protocol_version = "HTTP/1.1"
 

@@ -3,3 +3,4 @@
 # used to generate a nicer local demo video.
 websockets>=13
 psycopg[binary]>=3.2.1,<4
+httpx>=0.27
