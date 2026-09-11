@@ -1,8 +1,8 @@
 # Set up Render
 
-The public site is already live: https://3zonesports.com/
+The public site is already live from this repo (`bigdre816/3-Zone-Sports-`, GitHub Pages `/docs`): https://3zonesports.com/
 
-Member portal and back portal run on **one** Render web service. That service is currently **503 / suspended**. Set it up with the Blueprint in this repo.
+Member portal and back portal run on **one** Render web service from `three-zone-mvp/`. That hostname is currently **503 / suspended by its owner** (`x-render-routing: suspend-by-user`). Resume it, or replace it with the Blueprint in this repo.
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/bigdre816/3-Zone-Sports-)
 
@@ -33,6 +33,7 @@ Do **not** apply `three-zone-mvp/render.yaml`. That Python/production file is wh
    - Docker context `.`
    - Health check `/api/health`
    - `TZ_ENV=demo`
+   - Disk mounted at `/data` (SQLite + demo media). Without it, every redeploy wipes accounts.
 5. Tap **Manual Deploy** → **Deploy latest commit**
 6. Wait until **Live**, then open the health URL
 
@@ -50,7 +51,7 @@ The public site at https://3zonesports.com/ loads Live, Schedule, and Archive by
 | Member sign-in | https://3zonesports.com/app/ (redirects to the Render app) |
 | Operator console | Render app `/ops` — unlisted, not linked from the public site |
 
-Operator logins stay in the Render dashboard / local run notes. Do not print them on 3zonesports.com.
+Sign-in usernames and passwords for the demo rail live in `three-zone-mvp/README.md`. Do not print them on 3zonesports.com.
 
 Camera: operator console → Event controls → **Start camera** → **Go live with this camera**. Keep that tab open.
 
@@ -59,4 +60,5 @@ Camera: operator console → Event controls → **Start camera** → **Go live w
 - Service settings must be **Docker**, Root Directory `three-zone-mvp`, Dockerfile path `./Dockerfile`, Docker context `.`, health check `/api/health`.
 - `TZ_ENV` must be `demo`.
 - `TZ_ALLOWED_ORIGINS` must include `https://3zonesports.com` and `https://www.3zonesports.com`.
-- GitHub Pages must stay on `/docs`. The repo-root `index.html` is not the public sports site.
+- GitHub Pages must stay on `/docs` of **3-Zone-Sports-**. The repo-root `index.html` is not the public sports site.
+- If health is HTML that says **Service Suspended**, the owner paused Render. Tap **Resume**, then **Manual Deploy**.

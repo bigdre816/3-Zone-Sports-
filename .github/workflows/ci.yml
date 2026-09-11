@@ -32,9 +32,6 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pytest
       - name: Run Three-Zone tests
         run: python -m pytest -q
-      - name: Check live Render Blueprint
-        working-directory: ${{ github.workspace }}
-        run: python3 -c "from pathlib import Path; t=Path('render.yaml').read_text(); assert 'runtime: docker' in t; assert 'dockerfilePath: ./Dockerfile' in t; assert 'healthCheckPath: /api/health' in t; assert 'TZ_ENV' in t and 'demo' in t; assert 'name: three-zone-sports' in t; assert 'runtime: python' not in t; print('ok')"

@@ -187,6 +187,9 @@ class PortalTests(unittest.TestCase):
         self.assertIn("demo", blueprint)
         self.assertNotIn("runtime: python", blueprint)
         self.assertNotIn("TZ_ENV=production", blueprint)
+        self.assertIn("mountPath: /data", blueprint)
+        self.assertIn("TZ_DATABASE_PATH", blueprint)
+        self.assertIn("/data/three_zone.sqlite3", blueprint)
 
     def test_member_site_keeps_network_shell_and_wired_watch(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
