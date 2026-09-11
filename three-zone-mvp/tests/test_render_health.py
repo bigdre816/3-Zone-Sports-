@@ -64,6 +64,7 @@ class RenderHealthProcessTests(unittest.TestCase):
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            start_new_session=True,
         )
         try:
             _wait_http(f"http://127.0.0.1:{http_port}/healthz")
@@ -97,11 +98,17 @@ class RenderHealthProcessTests(unittest.TestCase):
                 probe.close()
             self.assertNotEqual(result, 0, "separate WS port should not listen on Render")
         finally:
-            proc.terminate()
+            try:
+                os.killpg(proc.pid, 15)
+            except ProcessLookupError:
+                proc.terminate()
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                proc.kill()
+                try:
+                    os.killpg(proc.pid, 9)
+                except ProcessLookupError:
+                    proc.kill()
                 proc.wait(timeout=5)
 
 
