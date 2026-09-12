@@ -6,6 +6,17 @@ on:
   pull_request:
 
 jobs:
+  forbid-direct-ai-providers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Forbid direct AI provider imports outside gateway
+        # Run from repository root. Nonzero scanner exit fails this job.
+        # Limitations: static heuristics only — see script header comments.
+        run: bash docs/multi-ai/ci/forbid_direct_ai_providers.sh "${GITHUB_WORKSPACE}"
+      - name: Scanner fixture self-test
+        run: bash docs/multi-ai/ci/test_forbid_direct_ai_providers.sh
+
   test:
     runs-on: ubuntu-latest
     defaults:

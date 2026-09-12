@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 DEFAULT_GATEWAY_CONFIG: dict[str, Any] = {
-    "enabled": True,
+    "enabled": False,
     "privacy_rules": {
         "public": {"block_providers": []},
         "member": {"block_providers": []},

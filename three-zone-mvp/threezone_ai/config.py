@@ -18,11 +18,52 @@ def _env(key: str, default: str | None = None) -> str | None:
     return value.strip()
 
 
+def coerce_enablement(value: object, *, default: bool = False) -> bool:
+    """Fail-closed enablement parse. Only explicit true-like values enable.
+
+    True-like: bool True; int 1; strings 1/true/yes/on (case-insensitive).
+    Everything else (None, "", 0, false, no, off, garbage, other types) → default
+    when value is None, else False.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        # Exact 1 enables; 0 and any other number disable (no truthiness).
+        return value == 1
+    if isinstance(value, str):
+        raw = value.strip().lower()
+        if raw == "":
+            return default
+        return raw in {"1", "true", "yes", "on"}
+    return False
+
+
 def _env_bool(key: str, default: bool = False) -> bool:
-    raw = _env(key)
+    raw = os.environ.get(key)
     if raw is None:
         return default
-    return raw.lower() in {"1", "true", "yes", "on"}
+    # Blank / whitespace → treat as unset → default (fail-closed default False for gate)
+    if raw.strip() == "":
+        return default
+    return coerce_enablement(raw, default=False)
+
+
+def process_ai_enabled() -> bool:
+    """Process-level kill switch: THREEZONE_AI_ENABLED must be explicitly true.
+
+    Unset, blank, false-like, or malformed → disabled. Settings/YAML cannot
+    satisfy this gate.
+    """
+    return _env_bool("THREEZONE_AI_ENABLED", False)
+
+
+def config_enabled(cfg: dict) -> bool:
+    """Interpret gateway config ``enabled`` fail-closed."""
+    if not isinstance(cfg, dict):
+        return False
+    return coerce_enablement(cfg.get("enabled"), default=False)
 
 
 def _default_yaml_path() -> Path:
@@ -54,7 +95,7 @@ def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]
 
 @dataclass
 class Settings:
-    ai_enabled: bool = True
+    ai_enabled: bool = False
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_chat_model: str = "qwen2.5-coder:7b"
     ollama_embed_model: str = "nomic-embed-text"
@@ -86,11 +127,9 @@ class Settings:
             DEFAULT_GATEWAY_CONFIG
         )
         lineage = gw.get("lineage") or {}
-        enabled_yaml = gw.get("enabled")
-        ai_enabled = _env_bool(
-            "THREEZONE_AI_ENABLED",
-            True if enabled_yaml is None else bool(enabled_yaml),
-        )
+        # Config-layer enablement from YAML/defaults only (fail-closed).
+        # Process kill switch is separate: process_ai_enabled().
+        ai_enabled = coerce_enablement(gw.get("enabled"), default=False)
         return cls(
             ai_enabled=ai_enabled,
             ollama_base_url=_env("OLLAMA_BASE_URL", "http://127.0.0.1:11434")

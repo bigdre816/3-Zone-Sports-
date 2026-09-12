@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from threezone_ai.config import get_settings, load_gateway_config
-from threezone_ai.lineage import record_generation
-from threezone_ai.providers.base import BaseProvider, get_provider_registry
+from threezone_ai.config import (
+    config_enabled,
+    get_settings,
+    load_gateway_config,
+    process_ai_enabled,
+)
 from threezone_ai.types import (
     AIRequest,
     AIResponse,
@@ -68,7 +71,7 @@ def _human_review_required(request: AIRequest, cfg: dict[str, Any], task: TaskTy
     return bool(tcfg.get("human_review_default", False))
 
 
-def _provider_cost_ok(provider: BaseProvider, ceiling: CostCeiling, cfg: dict[str, Any]) -> bool:
+def _provider_cost_ok(provider: object, ceiling: CostCeiling, cfg: dict[str, Any]) -> bool:
     allowed = _allowed_by_cost(cfg, ceiling)
     if allowed is not None:
         return provider.name in allowed
@@ -77,8 +80,13 @@ def _provider_cost_ok(provider: BaseProvider, ceiling: CostCeiling, cfg: dict[st
     return band <= _CEILING_RANK.get(ceiling, 2)
 
 
-def select_providers(request: AIRequest, cfg: dict[str, Any] | None = None) -> list[BaseProvider]:
-    """Resolve ordered provider list after privacy / cost / allowlist filters."""
+def select_providers(request: AIRequest, cfg: dict[str, Any] | None = None) -> list:
+    """Resolve ordered provider list after privacy / cost / allowlist filters.
+
+    Imports the provider registry lazily — call only after enablement gates pass.
+    """
+    from threezone_ai.providers.base import get_provider_registry
+
     cfg = cfg if cfg is not None else load_gateway_config()
     task = request.normalized_task()
     privacy = request.normalized_privacy()
@@ -86,7 +94,7 @@ def select_providers(request: AIRequest, cfg: dict[str, Any] | None = None) -> l
     blocked = _blocked_for_privacy(cfg, privacy)
     order = _resolve_order(request, cfg, task)
     registry = get_provider_registry()
-    selected: list[BaseProvider] = []
+    selected: list = []
     for name in order:
         if name in blocked:
             continue
@@ -113,22 +121,48 @@ def run(
     Execute an AI task via the sovereignty switchboard.
 
     Never raises for missing providers — returns degraded AIResponse(provider='no_ai').
-    """
-    settings = get_settings()
-    task = request.normalized_task()
-    cfg = load_gateway_config(overlay=config_overlay)
-    human_review = _human_review_required(request, cfg, task)
-    path_log: list[str] = []
 
-    if not settings.ai_enabled or cfg.get("enabled") is False:
+    Fail-closed: THREEZONE_AI_ENABLED process kill switch must be explicitly on.
+    Settings/YAML may further restrict but cannot bypass the process gate.
+    Provider registry/selection runs only after both gates pass.
+    """
+    task = request.normalized_task()
+    # Minimal review flag without loading settings/config when process gate is off.
+    human_review = (
+        bool(request.require_human_review)
+        if request.require_human_review is not None
+        else False
+    )
+
+    # 1) Process-level kill switch — before settings, credentials, or providers.
+    if not process_ai_enabled():
         return AIResponse.no_ai(
             task_type=task.value,
-            error="AI gateway disabled (THREEZONE_AI_ENABLED / config.enabled)",
+            error="AI gateway disabled (THREEZONE_AI_ENABLED process gate)",
             fallback_path=["no_ai"],
             human_review_required=human_review,
             trace_id=request.trace_id,
             metadata=dict(request.metadata or {}),
         )
+
+    settings = get_settings()
+    cfg = load_gateway_config(overlay=config_overlay)
+    human_review = _human_review_required(request, cfg, task)
+    path_log: list[str] = []
+
+    # 2) Config/Settings layer — further restriction only (cannot enable alone).
+    if not settings.ai_enabled or not config_enabled(cfg):
+        return AIResponse.no_ai(
+            task_type=task.value,
+            error="AI gateway disabled (Settings/config.enabled)",
+            fallback_path=["no_ai"],
+            human_review_required=human_review,
+            trace_id=request.trace_id,
+            metadata=dict(request.metadata or {}),
+        )
+
+    # Lazy: lineage import only on enabled path (providers via select_providers).
+    from threezone_ai.lineage import record_generation
 
     providers = select_providers(request, cfg)
     if not providers:
