@@ -114,7 +114,7 @@ class ExternalIntake(Base):
     payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     payload_sha256: Mapped[str] = mapped_column(String, nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="accepted")
+    status: Mapped[str] = mapped_column(String, nullable=False, default="intake_accepted")
     change_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

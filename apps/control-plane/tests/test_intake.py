@@ -19,7 +19,10 @@ def test_three_zone_intake_preserves_payload_and_chain(client, monkeypatch):
     res = client.post("/intake/event", headers={"X-Moten-Shared-Secret": "shared-secret"}, json=body)
     assert res.status_code == 202
     payload = res.json()
-    assert payload["accepted"] is True
+    assert payload["accepted"] is True  # legacy alias = intake_accepted only
+    assert payload["intake_accepted"] is True
+    assert payload["status"] == "intake_accepted"
+    assert payload["governance"] == "none"
     assert payload["intake_id"].startswith("EVD-")
     assert payload["source_object_id"] == "evt_mw_basketball"
     assert payload["chain_verified"] is True
@@ -30,12 +33,14 @@ def test_three_zone_intake_preserves_payload_and_chain(client, monkeypatch):
     assert record_body["handoff_type"] == "event"
     assert record_body["rights_version"] == "7"
     assert record_body["source_system"] == "three-zone-mvp"
+    assert record_body["status"] == "intake_accepted"
+    assert record_body["status"] != "released"
 
     audit = client.get("/audit")
     assert audit.status_code == 200
     audit_body = audit.json()
     assert audit_body["verified"] is True
-    assert any(item["event_type"] == "three-zone.intake.event.accepted" for item in audit_body["events"])
+    assert any(item["event_type"] == "three-zone.intake.event.intake_accepted" for item in audit_body["events"])
 
 
 def test_clip_handoff_types_round_trip(client, monkeypatch):

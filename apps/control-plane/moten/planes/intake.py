@@ -2,6 +2,10 @@
 
 The intake surface preserves an immutable copy of each received payload, links it
 into the Moten evidence chain, and never blocks Three-Zone runtime operations.
+
+Honesty (Y1c / G0-C): status ``intake_accepted`` means transport receipt into this
+control-plane intake store only. It is NOT Treasure Path A review, release, or a
+Treasure institution named Moten. See docs/multi-ai/TREASURE-EVIDENCE-VOCABULARY.md.
 """
 
 from __future__ import annotations
@@ -50,13 +54,13 @@ def ingest_external_payload(
         payload=payload,
         payload_sha256=canonical_payload_hash(payload),
         recorded_at=now(),
-        status="accepted",
+        status="intake_accepted",
     )
     session.add(intake)
     session.flush()
     event = evidence.append_event(
         session,
-        event_type=f"three-zone.intake.{handoff_type}.accepted",
+        event_type=f"three-zone.intake.{handoff_type}.intake_accepted",
         object_id=intake.intake_id,
         object_version=intake.source_version,
         actor_person_id=actor_person_id,
@@ -88,4 +92,7 @@ def intake_status(session: Session, intake_id: str) -> dict | None:
         "payload_sha256": record.payload_sha256,
         "recorded_at": record.recorded_at.isoformat(),
         "status": record.status,
+        # Transport receipt only — never Treasure Path A released / R1 / R2.
+        "governance": "none",
+        "means": "intake_accepted_transport_only",
     }
