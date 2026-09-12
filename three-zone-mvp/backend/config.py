@@ -460,7 +460,10 @@ class Config:
         host = self.cloudflare_playback_host
         return {
             "env": self.env,
-            "ws_url_base": f"ws://{self.ws_host}:{self.ws_port}/ws/events/",
+            "ws_url_base": (
+                ("wss" if (self.is_production or str(self.public_base_url).startswith("https://")) else "ws")
+                + f"://{self.ws_host}:{self.ws_port}/ws/events/"
+            ),
             "ws_enabled": self.ws_host not in ("0.0.0.0", "::"),
             "session_ttl": self.session_ttl,
             "lease_ttl": self.lease_ttl,

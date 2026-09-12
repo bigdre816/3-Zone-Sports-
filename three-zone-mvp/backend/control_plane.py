@@ -769,9 +769,18 @@ class ControlPlane(PipelineMixin):
         row = self.get_event_row(event_id)
         prev_source = self._effective_source(row)
         stamp = now() if healthy else None
-        col = "primary_last_seen" if source == "primary" else "backup_last_seen"
         if healthy:
-            self.db.execute(f"UPDATE events SET {col}=? WHERE event_id=?", (stamp, event_id))
+            # Column name is allowlisted (primary|backup only) — never interpolated from client input.
+            if source == "primary":
+                self.db.execute(
+                    "UPDATE events SET primary_last_seen=? WHERE event_id=?",
+                    (stamp, event_id),
+                )
+            else:
+                self.db.execute(
+                    "UPDATE events SET backup_last_seen=? WHERE event_id=?",
+                    (stamp, event_id),
+                )
         row = self.get_event_row(event_id)
         new_source = self._effective_source(row)
         if new_source != row["active_source"]:
