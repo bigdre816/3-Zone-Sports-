@@ -428,3 +428,15 @@ summary { cursor: pointer; font-weight: 600; }
   border-radius: 12px;
   background: #fff;
 }
+
+/* XRPL wallet connect inside /ops */
+.wallet-card { margin: 0 0 16px; padding: 14px; }
+.wallet-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; justify-content: space-between; }
+.wallet-field { display: grid; gap: 6px; font-size: 12px; color: var(--muted, #667085); }
+.wallet-field select { min-width: 140px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line, #d7dee8); }
+.wallet-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.wallet-hint { margin: 10px 0 0; font-size: 12px; }
+.wallet-summary { margin-top: 12px; display: grid; gap: 6px; font-size: 13px; }
+.wallet-summary code { font-size: 12px; }
+.moten-embed-details { margin-top: 18px; }
+.moten-embed-details > summary { cursor: pointer; font-weight: 600; margin-bottom: 10px; }
