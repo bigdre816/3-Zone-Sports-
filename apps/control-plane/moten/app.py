@@ -383,8 +383,14 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         record, event_id = intake.ingest_external_payload(
             s, handoff_type=handoff_type, payload=body, actor_person_id=actor,
         )
+        # Y1c: do not use bare "accepted" as governance. Transport receipt only.
         return {
-            "accepted": True,
+            "intake_accepted": True,
+            "accepted": True,  # legacy alias — means intake_accepted transport only, NOT released
+            "status": "intake_accepted",
+            "means": "transport_receipt_only",
+            "governance": "none",
+            "message": "Received into Moten control-plane intake storage only; not Treasure Path A release",
             "intake_id": record.intake_id,
             "source_object_id": record.source_object_id,
             "audit_event_id": event_id,
