@@ -1,7 +1,7 @@
 """V0b — Operator sports-check (read-only).
 
-Runs the V0 sports-vision library against synthetic source_asset_id only.
-Does not enable THREEZONE_AI_ENABLED, register gateway tasks, publish,
+Runs the V0 sports-vision library against synthetic or authorized archive
+source_asset_id values. Does not enable THREEZONE_AI_ENABLED, publish,
 touch rights/score/settlement, or invent Treasure Path A release.
 """
 
@@ -17,11 +17,33 @@ def list_synthetic_assets(cp: ControlPlane, operator: dict) -> dict[str, Any]:
     from threezone_ai.vision.assets import SyntheticAssetResolver
 
     resolver = SyntheticAssetResolver.default()
+    assets: list[dict[str, Any]] = list(resolver.list_catalog_summaries())
+    try:
+        rows = cp.db.query(
+            "SELECT archive_id, title, status, kind FROM archive_objects "
+            "WHERE status='ARCHIVED' ORDER BY archive_id"
+        )
+        for row in rows:
+            assets.append(
+                {
+                    "source_asset_id": f"asset:archive:{row['archive_id']}",
+                    "scenario": "archive",
+                    "input_privacy_class": "P1",
+                    "environment": "sandbox",
+                    "visibility_state": "clear",
+                    "title": row.get("title"),
+                }
+            )
+    except Exception:
+        pass
     return {
-        "assets": resolver.list_catalog_summaries(),
+        "assets": assets,
         "publish": False,
         "lane": "operator_sports_check_v0b",
-        "note": "Synthetic/offline only. Policy decision is not publication or Treasure release.",
+        "note": (
+            "Synthetic + authorized archive ids only. "
+            "Policy decision is not publication or Treasure release."
+        ),
     }
 
 
@@ -32,7 +54,8 @@ def run_sports_check(cp: ControlPlane, operator: dict, body: dict | None) -> dic
     if not isinstance(source_asset_id, str) or not source_asset_id.strip():
         raise ValidationError("source_asset_id required", "source_asset_id_required")
 
-    from threezone_ai.vision.assets import IllicitAssetReference
+    from threezone_ai.vision.archive_lookup import archive_lookup_from_db
+    from threezone_ai.vision.assets import IllicitAssetReference, UnknownArchiveAsset
     from threezone_ai.vision.pipeline import VisionPipelineDisabled, run_evidence_pipeline
     from threezone_ai.vision.policy import evaluate_sports_context
 
@@ -40,9 +63,12 @@ def run_sports_check(cp: ControlPlane, operator: dict, body: dict | None) -> dic
         bundle = run_evidence_pipeline(
             source_asset_id.strip(),
             allow_offline_synthetic=True,
+            archive_lookup=archive_lookup_from_db(cp.db),
         )
     except IllicitAssetReference as exc:
         raise ValidationError(str(exc), "illicit_asset_reference") from exc
+    except UnknownArchiveAsset as exc:
+        raise ValidationError(str(exc), "archive_not_authorized") from exc
     except VisionPipelineDisabled as exc:
         raise ValidationError(str(exc), "vision_pipeline_disabled") from exc
 

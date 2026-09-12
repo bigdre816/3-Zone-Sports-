@@ -1,6 +1,7 @@
 """Sports vision evidence pipeline — observations only.
 
-Does not register with the AI gateway, HTTP server, or workers.
+G3-B registers sports_vision on the AI gateway (kill-switch gated).
+G3-C may resolve asset:archive:<id> via archive_lookup.
 Does not fabricate provider versions (unknown if not observed).
 Does not import ControlPlane.
 """
@@ -15,6 +16,7 @@ from typing import Any, Callable
 from threezone_ai.vision.assets import (
     ResolvedAsset,
     SyntheticAssetResolver,
+    resolve_authorized_asset,
 )
 from threezone_ai.vision.providers import (
     EscalationLayerResult,
@@ -67,6 +69,7 @@ def run_evidence_pipeline(
     source_asset_id: str,
     *,
     resolver: SyntheticAssetResolver | None = None,
+    archive_lookup=None,
     sampler: EvidenceSampler | None = None,
     detector: ObjectDetectionProvider | None = None,
     scene: SceneReasoningProvider | None = None,
@@ -89,10 +92,17 @@ def run_evidence_pipeline(
             "AI flags off; sports-vision pipeline is not product-admitted"
         )
 
-    resolver = resolver or SyntheticAssetResolver.default()
-    asset = resolver.resolve(
-        source_asset_id, client_privacy_class=client_privacy_class
-    )
+    if resolver is not None and archive_lookup is None:
+        asset = resolver.resolve(
+            source_asset_id, client_privacy_class=client_privacy_class
+        )
+    else:
+        asset = resolve_authorized_asset(
+            source_asset_id,
+            client_privacy_class=client_privacy_class,
+            archive_lookup=archive_lookup,
+            synthetic_resolver=resolver,
+        )
     if asset.environment not in {"isolated_test", "sandbox"}:
         raise VisionPipelineDisabled(
             f"environment {asset.environment!r} is not admitted for V0"

@@ -612,7 +612,7 @@ def test_t22_scanner_scripts_present_and_y1_tests_untouched_paths():
 def test_basketball_eligible_and_bundle_immutable():
     bundle = _run("asset:synthetic:basketball-001")
     assert bundle.schema_version == EVIDENCE_SCHEMA_VERSION
-    assert bundle.gateway_task_version == GATEWAY_TASK_VERSION == "unregistered"
+    assert bundle.gateway_task_version == GATEWAY_TASK_VERSION == "sports-vision.gateway.v0"
     assert bundle.environment == "isolated_test"
     assert 8 <= len(bundle.frame_ids) <= 12
     assert len(bundle.frame_ids) == len(bundle.frame_hashes) == len(bundle.frame_timestamps)
