@@ -125,6 +125,8 @@ Four non-negotiable rules. Everything else is an implementation detail.
 
 ### Player is never the authority
 
+Rule in one line: player is never the authority.
+
 The browser video tag cannot decide if you may watch. Neither can a WebSocket message.
 
 Authorization happens twice:
