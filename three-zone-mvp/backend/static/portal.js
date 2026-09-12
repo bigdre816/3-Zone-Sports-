@@ -139,7 +139,7 @@ function setView(name) {
 }
 
 function mediaUnavailable(reason) {
-  return `<div class="media-ph">${escapeText(reason || "This moment is no longer available.")}</div>`;
+  return `<div class="media-ph"><span>${escapeText(reason || "This moment is no longer available.")}</span></div>`;
 }
 
 function routeName() {
@@ -197,7 +197,7 @@ function mediaTag(item) {
   }
   const photo = item.media && item.media.kind === "photo";
   return photo
-    ? `<img alt="" src="${src}" />`
+    ? `<img alt="Community sports moment" src="${src}" />`
     : `<video src="${src}" controls playsinline muted></video>`;
 }
 
@@ -205,14 +205,14 @@ function postCard(item) {
   const badge = item.author && item.author.verification_badge
     ? `<span class="pill">${escapeText(item.author.verification_badge.replaceAll("_", " "))}</span>` : "";
   const provenance = item.provenance
-    ? `<p class="prov">${escapeText(item.provenance.label)}</p>` : "";
+    ? `<span class="prov">${escapeText(item.provenance.label)}</span>` : "";
   const watch = item.watch_full_game && item.watch_full_game.authorized
     ? `<button type="button" class="quiet" data-open-game="${item.watch_full_game.game_id}">Watch Full Game</button>`
     : item.watch_full_game
-      ? `<p class="sub">${escapeText(item.watch_full_game.label)}</p>` : "";
+      ? `<p class="post-whisper">${escapeText(item.watch_full_game.label)}</p>` : "";
   const tags = (item.athlete_tags || []).map(tag =>
-    `<span class="pill">@${escapeText(tag.handle)}</span>`
-  ).join(" ");
+    `@${escapeText(tag.handle)}`
+  ).join(" · ");
   const blocked = item.content_state === "restricted" || item.content_state === "removed" || item.content_state === "unavailable";
   const liked = item.viewer_liked || (item.engagement && item.engagement.liked_by_me);
   const likeCount = (item.engagement && item.engagement.likes) || item.like_count || 0;
@@ -220,32 +220,50 @@ function postCard(item) {
     state.profile && item.author && state.profile.profile_id === item.author.profile_id
   );
   const deleteBtn = canDelete
-    ? `<button type="button" class="quiet danger" data-delete-post="${item.post_id}">Delete</button>`
+    ? `<button type="button" class="icon-action danger" data-delete-post="${item.post_id}" aria-label="Delete"><span class="ia-icon" aria-hidden="true">⌫</span></button>`
     : "";
-  const actions = blocked ? "" : `<div class="actions">
-      <button type="button" class="${liked ? "liked" : ""}" data-like="post:${item.post_id}">Like ${likeCount}</button>
-      <button type="button" data-save="post:${item.post_id}">Save</button>
-      <button type="button" data-share="post:${item.post_id}">Share</button>
-      <button type="button" data-send="post:${item.post_id}">Send</button>
+  const whisperParts = [item.sport, tags, provenance].filter(Boolean);
+  const whisper = whisperParts.length
+    ? `<p class="post-whisper">${item.sport ? escapeText(item.sport) : ""}${tags ? (item.sport ? " · " : "") + tags : ""}${provenance ? ((item.sport || tags) ? " · " : "") + provenance : ""}</p>`
+    : "";
+  const actions = blocked ? "" : `<div class="actions icon-row" role="group" aria-label="Post actions">
+      <button type="button" class="icon-action ${liked ? "liked" : ""}" data-like="post:${item.post_id}" aria-label="Like">
+        <span class="ia-icon" aria-hidden="true">♥</span><span class="ia-count">${likeCount}</span>
+      </button>
+      <button type="button" class="icon-action" data-save="post:${item.post_id}" aria-label="Save">
+        <span class="ia-icon" aria-hidden="true">🔖</span>
+      </button>
+      <button type="button" class="icon-action" data-share="post:${item.post_id}" aria-label="Share">
+        <span class="ia-icon" aria-hidden="true">↗</span>
+      </button>
+      <button type="button" class="icon-action" data-send="post:${item.post_id}" aria-label="Send">
+        <span class="ia-icon" aria-hidden="true">➤</span>
+      </button>
+      ${deleteBtn}
+    </div>
+    <div class="actions-more">
       <button type="button" class="quiet" data-follow="${escapeText(item.author.handle)}">Follow</button>
       <button type="button" class="quiet" data-report="post:${item.post_id}">Report</button>
       <button type="button" class="quiet" data-block="${escapeText(item.author.handle)}">Block</button>
-      ${deleteBtn}
     </div>
     <div class="comments" data-comments="post:${item.post_id}"></div>
     <form class="comment-form" data-subject="post:${item.post_id}">
-      <label>Comment <input name="body" maxlength="500" /></label>
+      <label>Comment <input name="body" maxlength="500" placeholder="Add a quiet note" /></label>
       <button type="submit">Comment</button>
     </form>`;
+  const caption = item.caption
+    ? `<p class="post-caption">${escapeText(item.caption)}</p>`
+    : "";
   return `<article class="post-card">
-    <header><strong>${escapeText(item.author.display_name)}</strong>
-      <span class="sub">@${escapeText(item.author.handle)} · ${escapeText(item.author.profile_type)}</span>
-      ${badge}</header>
-    ${mediaTag(item)}
-    <p>${escapeText(item.caption)}</p>
-    <p class="sub">${escapeText(item.sport)}${tags ? " · " + tags : ""}</p>
-    ${provenance}${watch}
-    ${actions}
+    <div class="post-media">${mediaTag(item)}</div>
+    <div class="post-body">
+      <header class="post-meta"><strong>${escapeText(item.author.display_name)}</strong>
+        <span class="sub">@${escapeText(item.author.handle)}</span>
+        ${badge}</header>
+      ${caption}
+      ${whisper}${watch}
+      ${actions}
+    </div>
   </article>`;
 }
 
@@ -277,17 +295,22 @@ function bindCards(root) {
   loadComments(root);
   root.querySelectorAll("[data-like]").forEach(btn => btn.onclick = async () => {
     const [type, id] = btn.dataset.like.split(":");
-    const prev = btn.textContent;
-    btn.textContent = "Like …";
+    const countEl = btn.querySelector(".ia-count");
+    const prevCount = countEl ? countEl.textContent : btn.textContent;
+    const prevHtml = btn.innerHTML;
+    if (countEl) countEl.textContent = "…";
+    else btn.textContent = "Like …";
     try {
       const liked = btn.classList.contains("liked");
       const res = liked
         ? await api("POST", `/api/member/posts/${id}/unlike`)
         : await api("PUT", `/api/member/posts/${id}/like`);
-      btn.textContent = "Like " + res.like_count;
+      if (countEl) countEl.textContent = String(res.like_count);
+      else btn.textContent = "Like " + res.like_count;
       btn.classList.toggle("liked", res.liked);
     } catch (error) {
-      btn.textContent = prev;
+      if (countEl) countEl.textContent = prevCount;
+      else btn.innerHTML = prevHtml;
       toast(error.message);
     }
   });
@@ -397,6 +420,7 @@ async function loadCatalog() {
         <h3>${escapeText(hero.title)}</h3>
         <div class="scoreboard"><span>${board.home ?? "—"}</span><small>${escapeText(board.period || "")} ${escapeText(board.clock || "")}</small><span>${board.away ?? "—"}</span></div>
         ${hero.status === "live" ? `<button type="button" data-event="${hero.event_id}">Watch live</button>` : "<p class='sub'>Watch live unlocks when the game starts.</p>"}
+        <p class="post-whisper">Community theater — the gym, the field, the stands.</p>
       </div>`;
       loadLiveMoments(hero.event_id);
     } else {
@@ -436,7 +460,7 @@ async function loadInbox() {
     `<article class="post-card"><strong>${escapeText(item.sender.display_name)}</strong>
      <p>${escapeText(item.message || "Shared a " + item.subject_type)}</p>
      <button type="button" data-read="${item.share_id}">Mark read</button></article>`
-  ).join("") : "<p class='empty'>No shared media yet.</p>";
+  ).join("") : "<div class='empty-frame'><span class='empty-kicker'>Inbox</span><p class='empty'>No shared media yet. When someone sends a moment from the stands, it shows up here.</p></div>";
   $$("#inbox-list [data-read]").forEach(btn => btn.onclick = async () => {
     await api("POST", `/api/network/inbox/${btn.dataset.read}/read`);
     loadInbox();
@@ -447,8 +471,8 @@ async function loadSaved() {
   try {
     const data = await api("GET", "/api/member/saved");
     $("#saved-list").innerHTML = data.items && data.items.length
-      ? data.items.map(item => item.post_id ? postCard(item) : `<article class="post-card"><p>${escapeText(item.caption || item.game_id || "Saved")}</p></article>`).join("")
-      : "<p class='empty'>Nothing saved yet.</p>";
+      ? data.items.map(item => item.post_id ? postCard(item) : `<article class="post-card"><div class="post-body"><p class="post-caption">${escapeText(item.caption || item.game_id || "Saved")}</p></div></article>`).join("")
+      : "<div class='empty-frame'><span class='empty-kicker'>Saved</span><p class='empty'>Keep a muddy-cleats moment or a packed-gym clip. It waits here.</p></div>";
     bindCards($("#saved-list"));
   } catch (error) { toast(error.message); }
 }
@@ -496,7 +520,7 @@ async function loadProfileTab() {
   form.bio.value = data.profile.bio;
   form.profile_type.value = data.profile.profile_type;
   if (!data.items.length) {
-    $("#profile-list").innerHTML = "<p class='empty'>Nothing here yet.</p>";
+    $("#profile-list").innerHTML = "<div class='empty-frame'><span class='empty-kicker'>Profile</span><p class='empty'>Nothing here yet. Your community moments will frame this space.</p></div>";
     return;
   }
   $("#profile-list").innerHTML = data.items.map(item => {
@@ -673,18 +697,18 @@ async function openGame(gameId) {
 
 async function loadFeed() {
   const root = $("#feed-list");
-  root.innerHTML = "<p class='empty'>Loading feed…</p>";
+  root.innerHTML = "<div class='empty-frame'><span class='empty-kicker'>Huddle</span><p class='empty'>Loading your community’s moments…</p></div>";
   try {
     const sport = state.sport ? `&sport=${encodeURIComponent(state.sport)}` : "";
     const data = await api("GET", `/api/member/feed?view=${state.mode}${sport}`);
     if (!data.items.length) {
-      root.innerHTML = "<p class='empty'>Nothing in this huddle yet.</p>";
+      root.innerHTML = "<div class='empty-frame'><span class='empty-kicker'>Awaiting a sideline shot</span><p class='empty'>Nothing in this huddle yet. Parent-shot moments and packed-gym energy land here.</p></div>";
       return;
     }
     root.innerHTML = data.items.map(postCard).join("");
     bindCards(root);
   } catch (error) {
-    root.innerHTML = "<p class='empty'>Could not load the huddle.</p>";
+    root.innerHTML = "<div class='empty-frame'><span class='empty-kicker'>Huddle</span><p class='empty'>Could not load the huddle.</p></div>";
     toast(error.message);
   }
 }

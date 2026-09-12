@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Three-Zone Sports Access</title>
+  <title>THREEZONE · Members</title>
+  <meta name="theme-color" content="#050505" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -23,7 +24,7 @@
         <div id="search-results" class="search-results hidden" role="listbox"></div>
       </div>
       <button id="notify-btn" class="icon-btn hidden" type="button" aria-label="Notifications">
-        <span>Bell</span><i id="notify-badge" class="badge hidden">0</i>
+        <span aria-hidden="true">◉</span><i id="notify-badge" class="badge hidden">0</i>
       </button>
       <button id="create-btn" class="icon-btn hidden" type="button" aria-label="Create">+</button>
       <span id="avatar-chip" class="avatar hidden">AM</span>
@@ -35,10 +36,12 @@
 
   <main>
     <section id="auth" class="auth">
-      <p class="eyebrow">MEMBERS PORTAL</p>
-      <h1>Three-Zone Sports Access</h1>
-      <p class="sub">Verified live games, team schedules, and school archives. Watch it. Save it. Clip it. Share it.</p>
-      <div id="public-feed" class="feed-col"></div>
+      <div class="auth-hero">
+        <p class="eyebrow">MEMBERS PORTAL</p>
+        <h1>Three-Zone Sports Access</h1>
+        <p class="sub">Verified live games, team schedules, and school archives. Watch it. Save it. Clip it. Share it.</p>
+      </div>
+      <div id="public-feed" class="feed-col" aria-label="Public moments"></div>
       <div class="auth-grid">
         <form id="login-form">
           <h2>Sign in</h2>
@@ -59,9 +62,11 @@
     </section>
 
     <section id="portal" class="hidden">
-      <p class="eyebrow" id="greeting-eyebrow">GOOD TO HAVE YOU COURTSIDE</p>
-      <h1 id="huddle-title">The Huddle.</h1>
-      <p class="sub">The game brings us together. The moments keep us here. Welcome back, <span id="member-name">Member</span>. <span id="member-handle"></span></p>
+      <header class="portal-intro">
+        <p class="eyebrow" id="greeting-eyebrow">GOOD TO HAVE YOU COURTSIDE</p>
+        <h1 id="huddle-title">The Huddle.</h1>
+        <p class="sub">The game brings us together. The moments keep us here. Welcome back, <span id="member-name">Member</span>. <span id="member-handle"></span></p>
+      </header>
 
       <section id="view-huddle" class="view">
         <div class="chip-row" role="tablist" aria-label="Feed mode">
@@ -81,11 +86,11 @@
       </section>
 
       <section id="view-live" class="view hidden">
-        <div class="section-title"><h2>Live</h2><span>Watch varsity and club games live.</span></div>
+        <div class="section-title"><h2>Live</h2><span>Theater for the game in front of you.</span></div>
         <div id="live-hero"></div>
-        <div class="section-title"><h2>Live Moments</h2><span>Detected from the authorized scoreboard and clock. Not a profile of any athlete.</span></div>
+        <div class="section-title"><h2>Moments</h2><span>Scoreboard and clock. Not a profile of any athlete.</span></div>
         <div id="live-moments" class="moments-list"></div>
-        <div class="section-title"><h2>Live now</h2></div>
+        <div class="section-title"><h2>In your zone</h2><span>Lists stay quiet under the hero.</span></div>
         <div id="live-list" class="cards"></div>
         <div class="columns">
           <section id="schedules">
@@ -251,7 +256,7 @@
 
   <dialog id="create-dialog" aria-labelledby="create-title">
     <form method="dialog" class="dialog-bar">
-      <strong id="create-title">Create</strong>
+      <strong id="create-title">Create.</strong>
       <button type="submit" class="quiet" value="close">Close</button>
     </form>
     <div class="create-choices">
@@ -316,7 +321,7 @@
 
   <dialog id="send-dialog" aria-labelledby="send-title">
     <form method="dialog" class="dialog-bar">
-      <strong id="send-title">Send</strong>
+      <strong id="send-title">Send.</strong>
       <button type="submit" class="quiet" value="close">Close</button>
     </form>
     <form id="send-form">
