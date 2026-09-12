@@ -3,14 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Three-Zone Control Plane</title>
+  <title>THREEZONE Admin · Concept A</title>
   <link rel="stylesheet" href="/ops.css" />
 </head>
 <body>
   <section id="auth-panel" class="auth-panel">
     <div class="auth-card">
-      <h1>Control plane</h1>
-      <p class="muted">Sign in with your username and password.</p>
+      <div class="auth-brand">THREEZONE<span class="dot">.</span></div>
+      <h1>Admin control plane</h1>
+      <p class="muted">Operator sign-in. Separate from the member app.</p>
       <form id="login-form">
         <label>Username <input name="username" id="login-username" autocomplete="username" required /></label>
         <label>Password <input name="password" id="login-password" type="password" autocomplete="current-password" required /></label>
@@ -22,29 +23,55 @@
   </section>
 
   <div id="shell" class="shell hidden">
-    <aside class="sidebar">
+    <aside class="sidebar" aria-label="Admin navigation">
       <div class="sidebar-brand">
-        <div class="brand-title">Three-Zone</div>
-        <div class="brand-sub">Control plane</div>
+        <div class="brand-mark">THREEZONE<span class="dot">.</span></div>
+        <div class="brand-sub">Admin · Concept A</div>
       </div>
       <nav class="side-nav">
-        <button type="button" class="nav-item active" data-pane="health">Health</button>
-        <button type="button" class="nav-item" data-pane="catalog">Catalog</button>
-        <button type="button" class="nav-item" data-pane="player">Player</button>
+        <button type="button" class="nav-item active" data-pane="dashboard">
+          <span class="nav-ico" aria-hidden="true">▣</span> Dashboard
+        </button>
+        <button type="button" class="nav-item" data-pane="catalog">
+          <span class="nav-ico" aria-hidden="true">▦</span> Events
+        </button>
+        <button type="button" class="nav-item" data-pane="live-ops">
+          <span class="nav-ico" aria-hidden="true">◉</span> Live Ops
+        </button>
+        <button type="button" class="nav-item" data-pane="schedule">
+          <span class="nav-ico" aria-hidden="true">☰</span> Schedule
+        </button>
+        <button type="button" class="nav-item" data-pane="network">
+          <span class="nav-ico" aria-hidden="true">✔</span> Verification
+        </button>
+        <button type="button" class="nav-item" data-pane="treasure">
+          <span class="nav-ico" aria-hidden="true">◆</span> Treasure
+        </button>
+        <button type="button" class="nav-item" data-pane="audit">
+          <span class="nav-ico" aria-hidden="true">◷</span> Activity
+        </button>
+
         <details id="nav-operations" class="nav-group" open>
-          <summary>Operations</summary>
+          <summary>Tools</summary>
           <button type="button" class="nav-item" data-pane="create">Create event</button>
           <button type="button" class="nav-item" data-pane="controls">Event controls</button>
-          <button type="button" class="nav-item" data-pane="schedule">Schedule import</button>
-          <button type="button" class="nav-item" data-pane="audit">Analytics and audit</button>
-          <button type="button" class="nav-item" data-pane="network">Network review</button>
+          <button type="button" class="nav-item" data-pane="player">Player</button>
+          <button type="button" class="nav-item" data-pane="health">System health</button>
           <button type="button" class="nav-item" data-pane="sports-check">Sports check</button>
         </details>
+
         <details id="nav-owner" class="nav-group hidden">
           <summary>Owner</summary>
           <button type="button" class="nav-item" data-pane="owner">Inventory</button>
           <button type="button" class="nav-item" data-pane="mastery">Mastery</button>
         </details>
+
+        <button type="button" class="nav-item nav-stub" data-pane="clips-stub" disabled title="Deferred — no fake revenue">
+          <span class="nav-ico" aria-hidden="true">✂</span> Clips <span class="stub-tag">soon</span>
+        </button>
+        <button type="button" class="nav-item nav-stub" data-pane="commerce-stub" disabled title="Deferred — Clip Commerce">
+          <span class="nav-ico" aria-hidden="true">$</span> Commerce <span class="stub-tag">soon</span>
+        </button>
       </nav>
       <div class="sidebar-account">
         <div id="who" class="who"></div>
@@ -56,16 +83,112 @@
     </aside>
 
     <div class="workspace">
+      <header class="topbar">
+        <div class="topbar-title">
+          <div class="eyebrow" id="topbar-eyebrow">Operator console</div>
+          <h1 id="topbar-title">Dashboard</h1>
+        </div>
+        <div class="topbar-actions">
+          <span id="health-generated" class="muted topbar-meta"></span>
+          <button id="health-refresh-btn" type="button" class="ghost">Refresh</button>
+          <kbd class="cmdk-fake" title="Cmd+K deferred">⌘K</kbd>
+        </div>
+      </header>
+
       <main id="app">
-        <section data-pane="health" class="panel">
-          <div class="panel-head">
-            <h2>Health / Back portal</h2>
-            <div class="filters">
-              <span id="health-generated" class="muted"></span>
-              <button id="health-refresh-btn" type="button">Refresh</button>
-            </div>
+        <!-- Concept A Dashboard home -->
+        <section data-pane="dashboard" class="panel dash-panel">
+          <div id="dash-status-strip" class="dash-status-strip" aria-label="Status strip"></div>
+
+          <div class="kpi-strip" id="kpi-strip" aria-label="KPI strip">
+            <article class="kpi-card" data-kpi="active_games">
+              <div class="kpi-label">Active games</div>
+              <div class="kpi-value" id="kpi-active-games">—</div>
+              <div class="kpi-hint muted">Events currently live</div>
+            </article>
+            <article class="kpi-card" data-kpi="streams_verifying">
+              <div class="kpi-label">Streams verifying</div>
+              <div class="kpi-value" id="kpi-streams-verifying">—</div>
+              <div class="kpi-hint muted">Live sessions + pending games</div>
+            </article>
+            <article class="kpi-card" data-kpi="pending_treasure">
+              <div class="kpi-label">Pending Treasure</div>
+              <div class="kpi-value" id="kpi-pending-treasure">—</div>
+              <div class="kpi-hint muted">Undelivered adapter outbox</div>
+            </article>
           </div>
-          <p class="muted">One pane for Andre: app health, live readiness, rights, sessions, media rails, network, Moten, and recent audit — no secrets.</p>
+
+          <div class="dash-grid">
+            <section class="dash-card dash-wide" aria-labelledby="sched-heading">
+              <div class="dash-card-head">
+                <h2 id="sched-heading">Today’s Live Schedule</h2>
+                <span id="sched-date" class="muted"></span>
+              </div>
+              <div class="filter-pills" id="sched-filters" role="toolbar" aria-label="Schedule filters"></div>
+              <div id="sched-list" class="sched-list"></div>
+            </section>
+
+            <section class="dash-card" aria-labelledby="vq-heading">
+              <div class="dash-card-head">
+                <h2 id="vq-heading">Live Stream Verification Queue</h2>
+                <button type="button" class="ghost small" data-goto="network">Open Verification</button>
+              </div>
+              <div id="vq-list" class="queue-list"></div>
+            </section>
+
+            <section class="dash-card" aria-labelledby="tr-heading">
+              <div class="dash-card-head">
+                <h2 id="tr-heading">Treasure Review</h2>
+                <button type="button" class="btn-accent small" data-goto="treasure" id="treasure-cta">Review</button>
+              </div>
+              <p id="treasure-note" class="muted dash-note"></p>
+              <div id="treasure-snap" class="queue-list"></div>
+            </section>
+
+            <section class="dash-card dash-wide" aria-labelledby="act-heading">
+              <div class="dash-card-head">
+                <h2 id="act-heading">Recent Activity</h2>
+                <button type="button" class="ghost small" data-goto="audit">Full activity</button>
+              </div>
+              <div id="activity-list" class="activity-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <!-- Honest stubs -->
+        <section data-pane="live-ops" class="panel hidden">
+          <div class="panel-head"><h2>Live Ops</h2></div>
+          <p class="muted">Operational controls for the selected event. Provisioning and camera stay on the demo live rail (Cloudflare cutover not required).</p>
+          <div class="stub-actions">
+            <button type="button" class="btn-accent" data-goto="controls">Open event controls</button>
+            <button type="button" class="ghost" data-goto="player">Open player</button>
+            <button type="button" class="ghost" data-goto="catalog">Pick an event</button>
+            <a class="nav-link-inline" href="/ops/private-capture">Private capture (local)</a>
+          </div>
+          <div class="stub-note card-lite">
+            <strong>What’s here:</strong> lifecycle, rights, scoreboard, camera, ingest token, hosted media provision/sync/rotate/end.
+            <br /><strong>Not here yet:</strong> reviewers-online presence, Cmd+K jump, clip commerce.
+          </div>
+        </section>
+
+        <section data-pane="treasure" class="panel hidden">
+          <div class="panel-head">
+            <h2>Treasure</h2>
+            <button type="button" class="ghost" id="treasure-refresh-btn">Refresh from dashboard</button>
+          </div>
+          <p class="muted">Treasure adapter outbox snapshot. This console does not submit XRPL transactions. Moten honesty vocabulary applies.</p>
+          <div id="treasure-panel-body" class="queue-list"></div>
+          <div class="stub-note card-lite">
+            <strong>Deferred:</strong> clip revenue KPIs, weekly sales chart, Clip Commerce. No fake dollar figures.
+          </div>
+        </section>
+
+        <!-- Existing System health (kept) -->
+        <section data-pane="health" class="panel hidden">
+          <div class="panel-head">
+            <h2>System health</h2>
+          </div>
+          <p class="muted">App health, live readiness, rights, sessions, media rails, network, Moten, and recent audit — no secrets.</p>
           <div id="health-status-strip" class="health-status-strip" aria-label="Status strip"></div>
           <div class="health-grid">
             <div class="card health-card">
@@ -127,7 +250,7 @@
 
         <section data-pane="catalog" class="panel hidden">
           <div class="panel-head">
-            <h2>Catalog</h2>
+            <h2>Events</h2>
             <div class="filters" id="zone-filters"></div>
           </div>
           <div id="events" class="events"></div>
@@ -135,7 +258,7 @@
 
         <section data-pane="player" class="panel hidden">
           <div class="panel-head"><h2>Player</h2><span id="player-mode" class="badge"></span></div>
-          <div id="player-empty" class="empty">Select an event in Catalog to request a playback lease.</div>
+          <div id="player-empty" class="empty">Select an event in Events to request a playback lease.</div>
           <div id="player" class="player hidden">
             <div class="player-title" id="player-title"></div>
             <video id="video" controls playsinline muted></video>
@@ -242,7 +365,7 @@ Lincoln High,Lincoln Freshman Basketball,basketball,freshman,West,2026-11-12,19:
         </section>
 
         <section data-pane="audit" class="panel hidden">
-          <div class="panel-head"><h2>Analytics and audit</h2></div>
+          <div class="panel-head"><h2>Activity · Analytics and audit</h2></div>
           <div class="btn-row">
             <button id="analytics-btn" type="button">Refresh analytics</button>
             <button id="audit-btn" type="button">Refresh audit</button>
@@ -252,7 +375,7 @@ Lincoln High,Lincoln Freshman Basketball,basketball,freshman,West,2026-11-12,19:
         </section>
 
         <section data-pane="network" class="panel hidden">
-          <div class="panel-head"><h2>Network review</h2></div>
+          <div class="panel-head"><h2>Verification · Network review</h2></div>
           <p class="muted">Pending games, failed uploads, member reports, and moderation cases. Workers review; they cannot impersonate the owner.</p>
           <div class="btn-row">
             <button id="network-refresh-btn" type="button">Refresh queue</button>
@@ -289,7 +412,6 @@ Lincoln High,Lincoln Freshman Basketball,basketball,freshman,West,2026-11-12,19:
           </form>
           <pre id="network-out" class="code hidden"></pre>
         </section>
-
 
         <section data-pane="sports-check" class="panel hidden">
           <div class="panel-head">
