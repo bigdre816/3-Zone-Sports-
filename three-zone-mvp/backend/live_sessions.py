@@ -1,4 +1,4 @@
-"""L1B — operator-only private live capture sessions.
+"""L1B / L1B+ — operator-only private live capture sessions + private ingest.
 
 Lifecycle (server-enforced):
   REQUESTED → CAPTURE_STARTING → VERIFYING_PRIVATE → STOP_REQUESTED → STOPPED
@@ -11,6 +11,10 @@ Server-forced truth on create (clients cannot override):
   safety_state=NOT_EVALUATED
   provider_name=local_browser (no Restream / Cloudflare live input)
 
+L1B+ / G4-A — private server-side ingest bound to an active live_session:
+  NONE → BOUND → RECEIVING → CLOSED
+  Media/handle stays private; distribution remains DISABLED; no public live input.
+
 Does NOT call media_provider, restream, AI, xrpl, settlement, Moten intake,
 or ControlPlane.transition(live). Audits via ControlPlane.audit_log only
 (no Moten outbox handoff for these events).
@@ -18,8 +22,11 @@ or ControlPlane.transition(live). Audits via ControlPlane.audit_log only
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import os
 import uuid
+from pathlib import Path
 from typing import Any
 
 from .config import private_live_capture_enabled
@@ -57,6 +64,15 @@ DISTRIBUTION_DISABLED = "DISABLED"
 SPORTS_UNVERIFIED = "UNVERIFIED"
 SAFETY_NOT_EVALUATED = "NOT_EVALUATED"
 
+# L1B+ private ingest states (server-assigned only).
+INGEST_NONE = "NONE"
+INGEST_BOUND = "BOUND"
+INGEST_RECEIVING = "RECEIVING"
+INGEST_CLOSED = "CLOSED"
+
+# Soft cap for private media body in one request (bytes). Keeps L1B+ small.
+_MAX_PRIVATE_MEDIA_BYTES = 256 * 1024
+
 # Fields clients may attempt to set maliciously — always stripped/ignored.
 _CLIENT_TRUTH_FIELDS = frozenset({
     "sports_status",
@@ -78,6 +94,12 @@ _CLIENT_TRUTH_FIELDS = frozenset({
     "live_session_id",
     "actor_id",
     "env",
+    "private_ingest_id",
+    "private_ingest_state",
+    "private_ingest_bound_at",
+    "private_ingest_closed_at",
+    "private_ingest_byte_count",
+    "publication",
 })
 
 _ALLOWED_TRANSITIONS = {
@@ -94,6 +116,8 @@ _ACTIVE_STATES = frozenset({
     STATE_CAPTURE_STARTING,
     STATE_VERIFYING_PRIVATE,
 })
+
+_INGEST_ACTIVE = frozenset({INGEST_BOUND, INGEST_RECEIVING})
 
 
 def _row_dict(row) -> dict[str, Any]:
@@ -115,12 +139,21 @@ def _fingerprint(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canon.encode()).hexdigest()
 
 
+def _row_get(row, key: str, default=None):
+    try:
+        val = row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+    return default if val is None and default is not None else val
+
+
 class LiveSessionService:
     """Private live_session lifecycle — operator/owner only."""
 
-    def __init__(self, cp: ControlPlane):
+    def __init__(self, cp: ControlPlane, media_dir: str | None = None):
         self.cp = cp
         self.db = cp.db
+        self.media_dir = media_dir or "data/media"
 
     # -- auth / flag -------------------------------------------------------
     def require_enabled(self) -> None:
@@ -138,8 +171,31 @@ class LiveSessionService:
         return raw
 
     # -- serialization -----------------------------------------------------
+    def _private_ingest_block(self, r: dict[str, Any]) -> dict[str, Any]:
+        state = r.get("private_ingest_state") or INGEST_NONE
+        bound = bool(r.get("private_ingest_id")) and state in _INGEST_ACTIVE
+        return {
+            "private_ingest_id": r.get("private_ingest_id"),
+            "private_ingest_state": state,
+            "private_ingest_bound_at": r.get("private_ingest_bound_at"),
+            "private_ingest_closed_at": r.get("private_ingest_closed_at"),
+            "private_ingest_byte_count": int(r.get("private_ingest_byte_count") or 0),
+            "published": False,
+            "distribution_state": DISTRIBUTION_DISABLED,
+            "label": (
+                "Private ingest bound — not published"
+                if bound or state == INGEST_RECEIVING
+                else (
+                    "Private ingest closed — not published"
+                    if state == INGEST_CLOSED
+                    else "No private ingest — Browser source not published"
+                )
+            ),
+        }
+
     def _session_dict(self, row) -> dict[str, Any]:
         r = _row_dict(row)
+        ingest = self._private_ingest_block(r)
         return {
             "live_session_id": r["live_session_id"],
             "actor_id": r["actor_id"],
@@ -172,11 +228,17 @@ class LiveSessionService:
             "failed_at": r.get("failed_at"),
             "created_at": r["created_at"],
             "updated_at": r["updated_at"],
+            "private_ingest": ingest,
             # Honest operator label — never implies publication.
             "publication": {
                 "browser_source_published": False,
                 "distribution_state": r["distribution_state"],
-                "label": "Private capture session — Browser source not published",
+                "private_ingest_state": ingest["private_ingest_state"],
+                "label": (
+                    "Private capture session — Private ingest bound — not published"
+                    if ingest["private_ingest_state"] in (INGEST_BOUND, INGEST_RECEIVING)
+                    else "Private capture session — Browser source not published"
+                ),
             },
         }
 
@@ -213,6 +275,23 @@ class LiveSessionService:
         self.db.execute(
             f"UPDATE live_sessions SET {', '.join(sets)} WHERE live_session_id=?",
             tuple(params),
+        )
+        return self._get_row(row["live_session_id"])
+
+    def _private_dir(self, live_session_id: str) -> Path:
+        root = Path(self.media_dir) / "private_ingest" / live_session_id
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _close_ingest_if_open(self, row) -> Any:
+        state = _row_get(row, "private_ingest_state") or INGEST_NONE
+        if state not in _INGEST_ACTIVE:
+            return row
+        ts = now()
+        self.db.execute(
+            "UPDATE live_sessions SET private_ingest_state=?, "
+            "private_ingest_closed_at=?, updated_at=? WHERE live_session_id=?",
+            (INGEST_CLOSED, ts, ts, row["live_session_id"]),
         )
         return self._get_row(row["live_session_id"])
 
@@ -285,9 +364,12 @@ class LiveSessionService:
             "restream_event_id, stop_reason, failure_reason, supersedes_session_id, "
             "idempotency_key, input_fingerprint, env, requested_at, "
             "capture_starting_at, verifying_private_at, stop_requested_at, "
-            "stopped_at, failed_at, created_at, updated_at"
+            "stopped_at, failed_at, "
+            "private_ingest_id, private_ingest_state, private_ingest_bound_at, "
+            "private_ingest_closed_at, private_ingest_byte_count, "
+            "created_at, updated_at"
             ") VALUES ("
-            "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
+            "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
             ")",
             (
                 sid, actor_id, event_id, property_id, team_id,
@@ -297,7 +379,10 @@ class LiveSessionService:
                 None, None, None, supersedes,
                 idem, fp, env, ts,
                 None, None, None,
-                None, None, ts, ts,
+                None, None,
+                None, INGEST_NONE, None,
+                None, 0,
+                ts, ts,
             ),
         )
         row = self._get_row(sid)
@@ -379,6 +464,150 @@ class LiveSessionService:
         _ = safe_fields
         return {"recent": recent, "by_session_state": by_state, "total": total}
 
+    def bind_private_ingest(self, operator: dict, live_session_id: str,
+                            data: dict | None = None) -> dict:
+        """L1B+: bind a private server-side ingest handle to an active session.
+
+        Does not call media_provider / Cloudflare live input / Restream.
+        Forces distribution_state=DISABLED and public_state=LIVE_PRIVATE.
+        """
+        self.cp.require_operator(operator)
+        self.require_enabled()
+        # Strip any client attempts to force public / restream truth.
+        self.strip_client_payload(data)
+        row = self._get_row(live_session_id)
+        if not row:
+            raise NotFoundError("live session not found", "live_session_not_found")
+        if row["session_state"] != STATE_VERIFYING_PRIVATE:
+            raise ConflictError(
+                f"private ingest requires VERIFYING_PRIVATE (got {row['session_state']})",
+                "illegal_private_ingest_state",
+            )
+        # Re-force truth even if a client somehow mutated (defense in depth).
+        if row["public_state"] != PUBLIC_STATE_LIVE_PRIVATE or row["distribution_state"] != DISTRIBUTION_DISABLED:
+            self.db.execute(
+                "UPDATE live_sessions SET public_state=?, distribution_state=?, "
+                "updated_at=? WHERE live_session_id=?",
+                (PUBLIC_STATE_LIVE_PRIVATE, DISTRIBUTION_DISABLED, now(), live_session_id),
+            )
+            row = self._get_row(live_session_id)
+
+        existing_state = _row_get(row, "private_ingest_state") or INGEST_NONE
+        existing_id = _row_get(row, "private_ingest_id")
+        if existing_id and existing_state in _INGEST_ACTIVE:
+            # Idempotent re-bind of the same active handle.
+            return self._session_dict(row)
+        if existing_state == INGEST_CLOSED:
+            raise ConflictError(
+                "private ingest already closed for this session",
+                "private_ingest_closed",
+            )
+
+        pid = "pi_" + uuid.uuid4().hex[:16]
+        ts = now()
+        # Ensure private directory exists (handle-only; no public URL).
+        self._private_dir(live_session_id)
+        self.db.execute(
+            "UPDATE live_sessions SET private_ingest_id=?, private_ingest_state=?, "
+            "private_ingest_bound_at=?, provider_name=?, provider_stream_id=?, "
+            "restream_event_id=?, public_state=?, distribution_state=?, "
+            "updated_at=? WHERE live_session_id=?",
+            (
+                pid, INGEST_BOUND, ts,
+                PROVIDER_NAME, None,  # never a Cloudflare/Restream public id
+                None,
+                PUBLIC_STATE_LIVE_PRIVATE, DISTRIBUTION_DISABLED,
+                ts, live_session_id,
+            ),
+        )
+        row = self._get_row(live_session_id)
+        self._audit(operator["user_id"], "live_session.private_ingest_bound", live_session_id, {
+            "private_ingest_id": pid,
+            "private_ingest_state": INGEST_BOUND,
+            "public_state": PUBLIC_STATE_LIVE_PRIVATE,
+            "distribution_state": DISTRIBUTION_DISABLED,
+            "published": False,
+        })
+        return self._session_dict(row)
+
+    def receive_private_media(self, operator: dict, live_session_id: str,
+                              data: dict | None = None) -> dict:
+        """L1B+: accept a small private media blob for a bound ingest.
+
+        Stores bytes under media_dir/private_ingest/<session>/ only.
+        Never provisions Cloudflare public live input or Restream.
+        """
+        self.cp.require_operator(operator)
+        self.require_enabled()
+        payload = self.strip_client_payload(data)
+        row = self._get_row(live_session_id)
+        if not row:
+            raise NotFoundError("live session not found", "live_session_not_found")
+        if row["session_state"] != STATE_VERIFYING_PRIVATE:
+            raise ConflictError(
+                f"private media requires VERIFYING_PRIVATE (got {row['session_state']})",
+                "illegal_private_ingest_state",
+            )
+        ingest_state = _row_get(row, "private_ingest_state") or INGEST_NONE
+        if ingest_state not in _INGEST_ACTIVE:
+            raise ConflictError(
+                "private ingest not bound",
+                "private_ingest_not_bound",
+            )
+
+        raw_b64 = payload.get("content_base64")
+        if raw_b64 is None:
+            raise ValidationError("content_base64 required", "missing_content")
+        if not isinstance(raw_b64, str):
+            raise ValidationError("content_base64 must be a string", "bad_content")
+        try:
+            blob = base64.b64decode(raw_b64, validate=True)
+        except Exception as exc:
+            raise ValidationError("invalid content_base64", "bad_content") from exc
+        if len(blob) == 0:
+            raise ValidationError("empty content", "bad_content")
+        if len(blob) > _MAX_PRIVATE_MEDIA_BYTES:
+            raise ValidationError(
+                f"content exceeds {_MAX_PRIVATE_MEDIA_BYTES} bytes",
+                "content_too_large",
+            )
+
+        asset_id = "priv_asset_" + uuid.uuid4().hex[:16]
+        digest = hashlib.sha256(blob).hexdigest()
+        dest = self._private_dir(live_session_id) / f"{asset_id}.bin"
+        dest.write_bytes(blob)
+        # Restrictive perms when supported (best-effort on all platforms).
+        try:
+            os.chmod(dest, 0o600)
+        except OSError:
+            pass
+
+        prev = int(_row_get(row, "private_ingest_byte_count") or 0)
+        ts = now()
+        self.db.execute(
+            "UPDATE live_sessions SET private_ingest_state=?, source_asset_id=?, "
+            "source_hash=?, private_ingest_byte_count=?, public_state=?, "
+            "distribution_state=?, provider_name=?, provider_stream_id=?, "
+            "restream_event_id=?, updated_at=? WHERE live_session_id=?",
+            (
+                INGEST_RECEIVING, asset_id, digest, prev + len(blob),
+                PUBLIC_STATE_LIVE_PRIVATE, DISTRIBUTION_DISABLED,
+                PROVIDER_NAME, None, None,
+                ts, live_session_id,
+            ),
+        )
+        row = self._get_row(live_session_id)
+        self._audit(operator["user_id"], "live_session.private_ingest_media", live_session_id, {
+            "private_ingest_id": row["private_ingest_id"],
+            "private_ingest_state": INGEST_RECEIVING,
+            "source_asset_id": asset_id,
+            "source_hash": digest,
+            "bytes": len(blob),
+            "published": False,
+            "distribution_state": DISTRIBUTION_DISABLED,
+        })
+        return self._session_dict(row)
+
     def stop(self, operator: dict, live_session_id: str, data: dict | None = None) -> dict:
         self.cp.require_operator(operator)
         self.require_enabled()
@@ -390,6 +619,7 @@ class LiveSessionService:
         # Idempotent stop: already terminal → return as-is.
         if row["session_state"] in (STATE_STOPPED, STATE_STOP_REQUESTED):
             if row["session_state"] == STATE_STOP_REQUESTED:
+                row = self._close_ingest_if_open(row)
                 row = self._transition(row, STATE_STOPPED, ts_field="stopped_at")
                 self._audit(operator["user_id"], "live_session.stopped", live_session_id, {
                     "session_state": STATE_STOPPED,
@@ -415,6 +645,13 @@ class LiveSessionService:
             "session_state": STATE_STOP_REQUESTED,
             "reason": reason,
         })
+        row = self._close_ingest_if_open(row)
+        if (_row_get(row, "private_ingest_state") or INGEST_NONE) == INGEST_CLOSED:
+            self._audit(operator["user_id"], "live_session.private_ingest_closed", live_session_id, {
+                "private_ingest_id": _row_get(row, "private_ingest_id"),
+                "private_ingest_state": INGEST_CLOSED,
+                "published": False,
+            })
         row = self._transition(row, STATE_STOPPED, ts_field="stopped_at")
         self._audit(operator["user_id"], "live_session.stopped", live_session_id, {
             "session_state": STATE_STOPPED,
@@ -437,6 +674,7 @@ class LiveSessionService:
                 "illegal_live_session_transition",
             )
         msg = (reason or "failed").strip()[:200] or "failed"
+        row = self._close_ingest_if_open(row)
         row = self._transition(
             row, STATE_FAILED,
             ts_field="failed_at",

@@ -8,6 +8,15 @@
     $("status").textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
   }
 
+  function syncBanner(session) {
+    const banner = $("banner");
+    if (!banner || !session) return;
+    const label = (session.publication && session.publication.label)
+      || (session.private_ingest && session.private_ingest.label)
+      || "Private capture session — Browser source not published";
+    banner.textContent = label;
+  }
+
   async function api(method, path, body) {
     const headers = { "Content-Type": "application/json" };
     const token = $("token").value.trim();
@@ -50,6 +59,19 @@
       sessionId = data.live_session.live_session_id;
       $("stop-btn").disabled = false;
       $("refresh-btn").disabled = false;
+      $("ingest-btn").disabled = false;
+      syncBanner(data.live_session);
+      setStatus(data.live_session);
+    } catch (e) {
+      setStatus({ error: e.message, status: e.status, payload: e.payload });
+    }
+  });
+
+  $("ingest-btn").addEventListener("click", async function () {
+    if (!sessionId) return;
+    try {
+      const data = await api("POST", "/api/live-sessions/" + sessionId + "/private-ingest", {});
+      syncBanner(data.live_session);
       setStatus(data.live_session);
     } catch (e) {
       setStatus({ error: e.message, status: e.status, payload: e.payload });
@@ -62,6 +84,8 @@
       const data = await api("POST", "/api/live-sessions/" + sessionId + "/stop", {
         reason: "operator_ui_stop",
       });
+      $("ingest-btn").disabled = true;
+      syncBanner(data.live_session);
       setStatus(data.live_session);
     } catch (e) {
       setStatus({ error: e.message, status: e.status, payload: e.payload });
@@ -72,6 +96,7 @@
     if (!sessionId) return;
     try {
       const data = await api("GET", "/api/live-sessions/" + sessionId);
+      syncBanner(data.live_session);
       setStatus(data.live_session);
     } catch (e) {
       setStatus({ error: e.message, status: e.status, payload: e.payload });
