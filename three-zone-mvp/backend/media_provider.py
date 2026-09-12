@@ -19,6 +19,7 @@ import urllib.error
 import urllib.request
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, urlparse
 
@@ -205,13 +206,21 @@ class MediaProvider:
 
 @dataclass
 class FakeProvider(MediaProvider):
-    """In-process video provider. Completions are metadata-only — never multi-GB buffers."""
+    """In-process video provider for CI/local demo.
+
+    When ``body`` is supplied to ``complete_upload``, bytes are stored (in-memory
+    and/or under ``root``) so Huddle can play the real upload instead of
+    ``demo_media`` color bars. Metadata-only completions still work for legacy
+    demo events that never POSTed file bytes.
+    """
 
     webhook_secret: str = "fake-webhook-secret"
     name: str = "fake"
+    root: str | None = None
     uploads: dict = field(default_factory=dict)
     assets: dict = field(default_factory=dict)
     render_jobs: dict = field(default_factory=dict)
+    blobs: dict = field(default_factory=dict)
 
     def create_direct_upload(self, kind: str, **kwargs) -> dict:
         if kind == "photo":
@@ -234,7 +243,40 @@ class FakeProvider(MediaProvider):
             "resumable": method == "tus",
         }
 
-    def complete_upload(self, token: str, meta: dict | None = None) -> dict:
+    def _root_path(self) -> Path | None:
+        return Path(self.root) if self.root else None
+
+    def _persist(self, uid: str, body: bytes, content_type: str, kind: str, duration: float) -> None:
+        ct = content_type or "video/mp4"
+        root = self._root_path()
+        if root is not None:
+            root.mkdir(parents=True, exist_ok=True)
+            # Keep a stable extension for range serving via demo_media.read_range
+            suffix = ".mp4"
+            if "webm" in ct:
+                suffix = ".webm"
+            elif "quicktime" in ct or ct.endswith("mov"):
+                suffix = ".mov"
+            (root / f"{uid}{suffix}").write_bytes(body)
+            # Also write bare uid for simple lookups
+            (root / uid).write_bytes(body)
+        else:
+            self.blobs[uid] = body
+        self.assets[uid] = {
+            "status": "ready",
+            "kind": kind,
+            "duration_seconds": duration,
+            "byte_size": len(body),
+            "content_type": ct,
+        }
+
+    def complete_upload(
+        self,
+        token: str,
+        meta: dict | None = None,
+        body: bytes | None = None,
+        content_type: str | None = None,
+    ) -> dict:
         session = self.uploads.get(token)
         if not session:
             raise ProviderError("unknown upload token", "unknown_upload")
@@ -243,22 +285,60 @@ class FakeProvider(MediaProvider):
         meta = meta or {}
         uid = session["provider_uid"]
         duration = float(meta.get("duration_seconds") or (600 if session["kind"] == "game" else 30))
+        ct = content_type or meta.get("content_type") or "video/mp4"
         self.uploads[token]["status"] = "uploaded"
-        self.assets[uid] = {
-            "status": "ready",
-            "kind": session["kind"],
-            "duration_seconds": duration,
-            "byte_size": meta.get("byte_size"),
-        }
+        if body is not None:
+            self._persist(uid, body, ct, session["kind"], duration)
+            size = len(body)
+        else:
+            size = meta.get("byte_size")
+            existing = self.assets.get(uid) or {}
+            self.assets[uid] = {
+                "status": "ready",
+                "kind": session["kind"],
+                "duration_seconds": duration,
+                "byte_size": size if size is not None else existing.get("byte_size"),
+                "content_type": existing.get("content_type") or ct,
+            }
         event_id = _uid("evt")
         return {
             "provider_event_id": event_id,
             "provider_uid": uid,
             "status": "ready",
             "duration_seconds": duration,
-            "byte_size": meta.get("byte_size"),
+            "byte_size": size,
             "signature": self._sign(event_id, uid, "ready"),
         }
+
+    def video_path(self, provider_uid: str) -> str | None:
+        """Return on-disk path for a stored upload, if present."""
+        if not provider_uid:
+            return None
+        root = self._root_path()
+        if root is None:
+            return None
+        bare = root / provider_uid
+        if bare.is_file():
+            return str(bare)
+        for suffix in (".mp4", ".webm", ".mov"):
+            candidate = root / f"{provider_uid}{suffix}"
+            if candidate.is_file():
+                return str(candidate)
+        return None
+
+    def read_video(self, provider_uid: str) -> tuple[bytes, str] | None:
+        """Return (bytes, content_type) for a stored upload, or None."""
+        if not provider_uid:
+            return None
+        asset = self.assets.get(provider_uid) or {}
+        ct = asset.get("content_type") or "video/mp4"
+        path = self.video_path(provider_uid)
+        if path:
+            return Path(path).read_bytes(), ct
+        blob = self.blobs.get(provider_uid)
+        if blob is None:
+            return None
+        return blob, ct
 
     def remember_asset(self, provider_uid: str, kind: str = "clip",
                        duration_seconds=None, status: str = "ready") -> None:
@@ -542,4 +622,8 @@ def build_provider(config, http_request=None) -> MediaProvider:
             max_game_bytes=getattr(config, "max_game_bytes", 8 * 1024 * 1024 * 1024),
             max_clip_seconds=getattr(config, "max_post_video_seconds", 90),
         )
-    return FakeProvider(webhook_secret=getattr(config, "fake_webhook_secret", "fake-webhook-secret"))
+    root = getattr(config, "fake_video_root", None) or getattr(config, "ugc_video_root", None) or None
+    return FakeProvider(
+        webhook_secret=getattr(config, "fake_webhook_secret", "fake-webhook-secret"),
+        root=root,
+    )

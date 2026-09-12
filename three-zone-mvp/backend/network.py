@@ -655,7 +655,9 @@ class NetworkService(HuddleExtensions):
     ) -> dict:
         payload = None
         if hasattr(self.provider, "uploads") and token in getattr(self.provider, "uploads", {}):
-            payload = self.provider.complete_upload(token, meta or {})
+            payload = self.provider.complete_upload(
+                token, meta or {}, body=body, content_type=content_type,
+            )
         elif hasattr(self.photo_storage, "uploads") and token in getattr(self.photo_storage, "uploads", {}):
             payload = self.photo_storage.complete_upload(
                 token, meta or {}, body=body, content_type=content_type,
@@ -686,6 +688,35 @@ class NetworkService(HuddleExtensions):
             url = url_fn(uid)
             if url:
                 result["redirect_url"] = url
+                return result
+        return result
+
+    def open_video_asset(self, viewer, asset_id: str) -> dict:
+        """Resolve a clip/game media asset to stored upload bytes and/or path.
+
+        Returns empty bytes/path when only legacy demo_media fallback applies.
+        """
+        asset, _seconds = self.asset_for_playback(viewer, asset_id)
+        kind = asset.get("kind") or ""
+        if kind == "photo":
+            raise ValidationError("asset is not a video", "not_video")
+        uid = asset.get("provider_uid") or ""
+        result = {"bytes": None, "path": None, "content_type": "video/mp4"}
+        path_fn = getattr(self.provider, "video_path", None)
+        if callable(path_fn):
+            path = path_fn(uid)
+            if path:
+                result["path"] = path
+                asset_meta = getattr(self.provider, "assets", {}).get(uid) or {}
+                result["content_type"] = asset_meta.get("content_type") or "video/mp4"
+                return result
+        reader = getattr(self.provider, "read_video", None)
+        if callable(reader):
+            loaded = reader(uid)
+            if loaded is not None:
+                data, ctype = loaded
+                result["bytes"] = data
+                result["content_type"] = ctype or "video/mp4"
                 return result
         return result
 
