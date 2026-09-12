@@ -1,0 +1,43 @@
+{
+  "duration_s": 20,
+  "environment": "isolated_test",
+  "frame_descriptors": [
+    {
+      "t": 0.0,
+      "text": "office interior, desk and monitor, no court"
+    },
+    {
+      "t": 2.857143,
+      "text": "office interior, desk and monitor, no court"
+    },
+    {
+      "t": 5.714286,
+      "text": "office interior, desk and monitor, no court"
+    },
+    {
+      "t": 8.571429,
+      "text": "office interior, desk and monitor, no court"
+    },
+    {
+      "t": 11.428571,
+      "text": "office interior, desk and monitor, no court"
+    },
+    {
+      "t": 14.285714,
+      "text": "office interior, desk and monitor, no court"
+    },
+    {
+      "t": 17.142857,
+      "text": "office interior, desk and monitor, no court"
+    },
+    {
+      "t": 20.0,
+      "text": "office interior, desk and monitor, no court"
+    }
+  ],
+  "input_privacy_class": "P0",
+  "sample_frame_count": 8,
+  "scenario": "non_sports",
+  "source_asset_id": "asset:synthetic:non-sports-001",
+  "visibility_state": "clear"
+}

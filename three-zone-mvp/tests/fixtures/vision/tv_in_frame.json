@@ -1,0 +1,51 @@
+{
+  "duration_s": 20,
+  "environment": "isolated_test",
+  "frame_descriptors": [
+    {
+      "t": 0.0,
+      "text": "living room TV showing a basketball broadcast"
+    },
+    {
+      "t": 2.222222,
+      "text": "living room TV showing a basketball broadcast"
+    },
+    {
+      "t": 4.444444,
+      "text": "living room TV showing a basketball broadcast"
+    },
+    {
+      "t": 6.666667,
+      "text": "living room TV showing a basketball broadcast"
+    },
+    {
+      "t": 8.888889,
+      "text": "living room TV showing a basketball broadcast"
+    },
+    {
+      "t": 11.111111,
+      "text": "living room TV showing a basketball broadcast"
+    },
+    {
+      "t": 13.333333,
+      "text": "living room TV showing a basketball broadcast"
+    },
+    {
+      "t": 15.555556,
+      "text": "living room TV showing a basketball broadcast"
+    },
+    {
+      "t": 17.777778,
+      "text": "living room TV showing a basketball broadcast"
+    },
+    {
+      "t": 20.0,
+      "text": "living room TV showing a basketball broadcast"
+    }
+  ],
+  "input_privacy_class": "P0",
+  "sample_frame_count": 10,
+  "scenario": "tv_in_frame",
+  "source_asset_id": "asset:synthetic:tv-in-frame-001",
+  "visibility_state": "partial"
+}
