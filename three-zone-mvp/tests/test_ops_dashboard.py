@@ -33,7 +33,17 @@ REQUIRED_TOP_KEYS = {
     "moten",
     "audit_recent",
     "sockets",
+    # Concept A admin home (additive)
+    "kpis",
+    "today_schedule",
+    "verification_queue",
+    "treasure_review",
+    "activity",
+    "deferred",
+    "concept",
 }
+
+CONCEPT_A_KPI_KEYS = {"active_games", "streams_verifying", "pending_treasure"}
 
 SECRET_FRAGMENTS = (
     "stream_key",
@@ -93,6 +103,45 @@ class OpsDashboardUnitTests(unittest.TestCase):
         row = next(r for r in SITE_ROUTES if r["path"] == "/api/ops/dashboard")
         self.assertEqual(row["method"], "GET")
         self.assertEqual(row["tier"], "worker")
+
+
+
+    def test_concept_a_kpis_and_home_shape(self):
+        payload = self.cp.ops_dashboard(self.operator)
+        self.assertEqual(payload.get("concept"), "A")
+        self.assertTrue(CONCEPT_A_KPI_KEYS.issubset(payload["kpis"].keys()), payload["kpis"])
+        for key in CONCEPT_A_KPI_KEYS:
+            self.assertIsInstance(payload["kpis"][key], int)
+            self.assertGreaterEqual(payload["kpis"][key], 0)
+        sched = payload["today_schedule"]
+        self.assertIn("date", sched)
+        self.assertIn("items", sched)
+        self.assertIn("filters", sched)
+        self.assertIsInstance(payload["verification_queue"], list)
+        tr = payload["treasure_review"]
+        self.assertIn("pending", tr)
+        self.assertIn("items", tr)
+        self.assertIn("cta", tr)
+        self.assertIsInstance(payload["activity"], list)
+        self.assertIn("clip_revenue_kpis", payload["deferred"])
+        # Seed has live events → active_games should be > 0
+        self.assertGreaterEqual(payload["kpis"]["active_games"], 1)
+        self.assertGreaterEqual(payload["kpis"]["pending_treasure"], 0)
+
+    def test_pending_treasure_counts_undelivered_outbox(self):
+        self.cp.audit_log("demo-worker", "event.transition", "evt_mw_basketball",
+                          {"from": "green", "to": "live"})
+        payload = self.cp.ops_dashboard(self.operator)
+        self.assertGreaterEqual(payload["kpis"]["pending_treasure"], 1)
+        self.assertTrue(any(i.get("action") for i in payload["treasure_review"]["items"]))
+
+    def test_concept_a_schedule_includes_live_seed_events(self):
+        payload = self.cp.ops_dashboard(self.operator)
+        titles = {i["title"] for i in payload["today_schedule"]["items"]}
+        self.assertTrue(
+            any("Lincoln" in t or "Prairie" in t or "Lakeside" in t for t in titles),
+            titles,
+        )
 
 
 class OpsDashboardHttpTests(unittest.TestCase):
@@ -172,6 +221,18 @@ class OpsDashboardHttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["live_sessions"]["recent"], [])
         self.assertEqual(payload["live_sessions"]["total"], 0)
+
+    def test_concept_a_home_fields_on_http(self):
+        status, payload = self._call("GET", "/api/ops/dashboard", token=self.op_token)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload.get("concept"), "A")
+        self.assertTrue(CONCEPT_A_KPI_KEYS.issubset(payload["kpis"].keys()))
+        self.assertIn("today_schedule", payload)
+        self.assertIn("verification_queue", payload)
+        self.assertIn("treasure_review", payload)
+        blob = json.dumps(payload).lower()
+        for frag in SECRET_FRAGMENTS:
+            self.assertNotIn(frag, blob, f"secret-looking key leaked: {frag}")
 
 
 if __name__ == "__main__":
