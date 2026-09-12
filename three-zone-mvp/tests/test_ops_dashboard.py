@@ -235,5 +235,50 @@ class OpsDashboardHttpTests(unittest.TestCase):
             self.assertNotIn(frag, blob, f"secret-looking key leaked: {frag}")
 
 
+
+class OpsMotenBridgeTests(unittest.TestCase):
+    def setUp(self):
+        self.cp = _build_cp()
+        self.operator = self.cp.get_user("demo-worker")
+        self.member = self.cp.get_user("demo-viewer")
+
+    def test_member_forbidden(self):
+        from backend.control_plane import ForbiddenError
+        with self.assertRaises(ForbiddenError):
+            self.cp.ops_moten_bridge(self.member)
+
+    def test_unconfigured_bridge_shape(self):
+        payload = self.cp.ops_moten_bridge(self.operator)
+        self.assertIn("control_plane", payload)
+        self.assertIn("onchain_audit", payload)
+        self.assertIn("honesty", payload)
+        self.assertIsNone(payload["control_plane"]["embed_url"])
+        self.assertIsNone(payload["onchain_audit"]["embed_url"])
+        self.assertFalse(payload["control_plane"]["health"]["configured"])
+        self.assertFalse(payload["onchain_audit"]["health"]["configured"])
+        blob = json.dumps(payload).lower()
+        for frag in SECRET_FRAGMENTS:
+            self.assertNotIn(frag, blob)
+
+    def test_configured_embed_urls_without_secret_leak(self):
+        self.cp.config.moten_service_url = "https://moten-control-plane.example"
+        self.cp.config.moten_onchain_url = "https://moten-onchain-audit.example"
+        # Probes will fail (unreachable) but configured+embed_url must still appear.
+        payload = self.cp.ops_moten_bridge(self.operator)
+        self.assertEqual(
+            payload["control_plane"]["embed_url"],
+            "https://moten-control-plane.example/",
+        )
+        self.assertEqual(
+            payload["onchain_audit"]["embed_url"],
+            "https://moten-onchain-audit.example/",
+        )
+        self.assertTrue(payload["control_plane"]["health"]["configured"])
+        self.assertTrue(payload["onchain_audit"]["health"]["configured"])
+        blob = json.dumps(payload).lower()
+        self.assertNotIn("shared_secret", blob)
+        self.assertNotIn("moten_shared_secret", blob)
+
+
 if __name__ == "__main__":
     unittest.main()

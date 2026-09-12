@@ -1162,6 +1162,76 @@ class ControlPlane(PipelineMixin):
             "media_assets": count("media_assets"),
         }
 
+
+    def ops_moten_bridge(self, operator: dict) -> dict:
+        """Secret-free Moten department links + status for /ops panes.
+
+        Embeds Moten control-plane and on-chain audit UIs inside the Concept A
+        back portal. Does not return shared secrets. XRPL honesty: simulation
+        labels come from the remote health payloads when reachable.
+        """
+        self.require_operator(operator)
+        import urllib.error
+        import urllib.request
+
+        control_url = (getattr(self.config, "moten_service_url", "") or "").rstrip("/")
+        onchain_url = (getattr(self.config, "moten_onchain_url", "") or "").rstrip("/")
+        timeout = min(int(getattr(self.config, "moten_timeout_seconds", 5) or 5), 5)
+
+        def _probe(base: str, path: str) -> dict:
+            if not base:
+                return {"configured": False, "reachable": False, "status": None, "error": "not_configured"}
+            url = base + path
+            try:
+                req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    body = resp.read().decode("utf-8", errors="replace")
+                    try:
+                        data = json.loads(body)
+                    except Exception:
+                        data = {"raw": body[:200]}
+                    return {
+                        "configured": True,
+                        "reachable": True,
+                        "http_status": resp.status,
+                        "status": data,
+                        "error": None,
+                    }
+            except urllib.error.HTTPError as exc:
+                return {
+                    "configured": True,
+                    "reachable": False,
+                    "http_status": exc.code,
+                    "status": None,
+                    "error": f"http_{exc.code}",
+                }
+            except Exception as exc:
+                return {
+                    "configured": True,
+                    "reachable": False,
+                    "http_status": None,
+                    "status": None,
+                    "error": type(exc).__name__,
+                }
+
+        control = _probe(control_url, "/health")
+        onchain = _probe(onchain_url, "/api/onchain/health")
+        return {
+            "control_plane": {
+                "embed_url": control_url + "/" if control_url else None,
+                "health": control,
+            },
+            "onchain_audit": {
+                "embed_url": onchain_url + "/" if onchain_url else None,
+                "health": onchain,
+            },
+            "honesty": {
+                "intake": "transport_receipt_only",
+                "xrpl": "ops_console_does_not_submit_ledger_transactions",
+                "treasure": "not_path_a_release",
+            },
+        }
+
     def ops_dashboard(self, operator: dict, *, live_sessions=None, moten=None) -> dict:
         """Consolidated operator Health / Back portal payload — secret-free.
 
