@@ -297,7 +297,7 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             pass
 
     # -- request parsing ---------------------------------------------------
-    def _read_body(self, max_bytes: int | None = None) -> dict | None:
+    def _read_body(self, max_bytes: int | None = None, *, allow_raw: bool = False) -> dict | None:
         length = int(self.headers.get("Content-Length") or 0)
         self._raw_body = b""
         if length <= 0:
@@ -312,10 +312,14 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             return {}
         try:
             data = json.loads(raw)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+            if allow_raw:
+                return {}
             self._send_json(400, {"error": "invalid JSON body", "code": "bad_json"})
             return None
         if not isinstance(data, dict):
+            if allow_raw:
+                return {}
             self._send_json(400, {"error": "JSON object required", "code": "bad_json"})
             return None
         return data
@@ -430,10 +434,14 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             body = {}
             if method in ("POST", "PUT", "DELETE"):
                 limit = None
+                allow_raw = False
                 if func == "h_cf_webhook":
                     limit = self.cp.config.webhook_max_body_bytes
+                elif func == "h_net_fake_upload":
+                    limit = getattr(self.cp.config, "max_photo_bytes", None) or (8 * 1024 * 1024)
+                    allow_raw = True
                 if method != "DELETE" or int(self.headers.get("Content-Length") or 0) > 0:
-                    body = self._read_body(limit)
+                    body = self._read_body(limit, allow_raw=allow_raw)
                     if body is None:
                         return  # error already sent
                 else:
@@ -1017,6 +1025,29 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         ))
 
     def h_net_fake_upload(self, p, b, u):
+        raw = getattr(self, "_raw_body", b"") or b""
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        q = self._qs()
+        use_bytes = False
+        if ctype.startswith("image/"):
+            use_bytes = True
+        elif raw:
+            try:
+                parsed = json.loads(raw)
+                use_bytes = not isinstance(parsed, dict)
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+                use_bytes = True
+        if use_bytes:
+            content_type = q.get("content_type") or (
+                ctype if ctype.startswith("image/") else "image/jpeg"
+            )
+            meta = dict(b or {})
+            meta.setdefault("byte_size", len(raw))
+            meta.setdefault("content_type", content_type)
+            self._send_json(200, self.network.complete_fake_upload(
+                p["token"], meta, body=raw, content_type=content_type,
+            ))
+            return
         self._send_json(200, self.network.complete_fake_upload(p["token"], b or {}))
 
     def h_net_post_create(self, p, b, u):
@@ -1147,13 +1178,21 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
     def h_net_media(self, p, b, u):
         asset, seconds = self.network.asset_for_playback(u, p["asset_id"])
         if asset["kind"] == "photo":
-            svg = (
-                "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 640 360'>"
-                "<rect width='640' height='360' fill='#171e27'/>"
-                "<text x='320' y='180' fill='#6ea8ff' text-anchor='middle' "
-                "font-size='28' font-family='sans-serif'>Sports photo</text></svg>"
-            )
-            self._send_bytes(200, "image/svg+xml; charset=utf-8", svg.encode("utf-8"))
+            opened = self.network.open_photo_asset(u, p["asset_id"])
+            redirect = opened.get("redirect_url")
+            if redirect:
+                self.send_response(302)
+                self._base_headers(no_store=True)
+                self.send_header("Location", redirect)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            data = opened.get("bytes")
+            if data is not None:
+                ctype = opened.get("content_type") or "image/jpeg"
+                self._send_bytes(200, ctype, data)
+                return
+            self._send_json(404, {"error": "photo not found", "code": "photo_missing"})
             return
         path = demo_media.ensure_media(self.media_dir, asset["media_asset_id"], seconds=seconds)
         status, headers, body = demo_media.read_range(path, self.headers.get("Range"))

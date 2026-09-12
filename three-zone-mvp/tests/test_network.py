@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+import threading
 import unittest
+import urllib.error
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -15,6 +19,7 @@ from backend.control_plane import (
 from backend.db import Database
 from backend.identity import resolve_identity, resolve_identity_optional
 from backend.media_provider import FakeProvider, build_provider
+from backend.http_server import make_http_server
 from backend.network import NetworkService, RateLimitError
 from backend.portal import PortalService
 from backend.seed import seed_if_empty
@@ -521,6 +526,127 @@ class FakeProviderE2ETests(unittest.TestCase):
         asset, seconds = net.asset_for_playback(user, ready["source_media_asset_id"])
         self.assertEqual(asset["media_asset_id"], ready["source_media_asset_id"])
         self.assertGreaterEqual(seconds, 2)
+
+
+
+class PhotoMediaAndDeleteTests(unittest.TestCase):
+    def setUp(self):
+        self.cp, self.portal, self.net, self.provider = build_net()
+        self.member = self.cp.get_user("demo-viewer")
+        self.other = self.cp.register_viewer("photodel", "password123", "Photo Del")["user"]
+
+    def _publish_photo_with_bytes(self, user, payload=b"\xff\xd8\xff fake-jpeg-bytes", content_type="image/jpeg"):
+        upload = self.net.create_upload(user, {"kind": "photo"})
+        token = upload["upload_url"].rsplit("/", 1)[-1]
+        self.net.complete_fake_upload(
+            token,
+            {"byte_size": len(payload), "filename": "sideline.jpg"},
+            body=payload,
+            content_type=content_type,
+        )
+        job = self.cp.db.query_one(
+            "SELECT provider_uid FROM upload_jobs WHERE upload_job_id=?",
+            (upload["upload_job_id"],),
+        )
+        asset = self.cp.db.query_one(
+            "SELECT media_asset_id FROM media_assets WHERE provider_uid=?",
+            (job["provider_uid"],),
+        )
+        post = self.net.create_post(user, {
+            "media_asset_id": asset["media_asset_id"],
+            "caption": "Sideline snap",
+            "sport": "basketball",
+            "visibility": "public",
+        })
+        return post, asset["media_asset_id"], payload, content_type
+
+    def test_fake_photo_bytes_served_via_media_route(self):
+        post, asset_id, payload, content_type = self._publish_photo_with_bytes(self.member)
+        opened = self.net.open_photo_asset(self.member, asset_id)
+        self.assertEqual(opened["bytes"], payload)
+        self.assertTrue(str(opened["content_type"]).startswith("image/"))
+        self.assertIsNone(opened["redirect_url"])
+
+        httpd = make_http_server(
+            self.cp.config, self.cp, "/tmp",
+            provider=self.provider, photo_storage=self.net.photo_storage,
+        )
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            with urllib.request.urlopen(
+                f"http://{host}:{port}/api/network/media/{asset_id}", timeout=5,
+            ) as resp:
+                body = resp.read()
+                ctype = resp.headers.get("Content-Type", "")
+            self.assertEqual(body, payload)
+            self.assertTrue(ctype.startswith("image/"))
+            self.assertNotIn("svg", ctype.lower())
+            self.assertNotIn(b"Sports photo", body)
+            card = self.net.post_view(self.member, post["post_id"])
+            self.assertEqual(card["media"]["playback_url"], f"/api/network/media/{asset_id}")
+            self.assertTrue(card["viewer_can_delete"])
+        finally:
+            httpd.shutdown()
+
+    def test_owner_can_delete_post_other_forbidden(self):
+        post, _asset_id, _payload, _ct = self._publish_photo_with_bytes(self.member)
+        deleted = self.net.delete_post(self.member, post["post_id"])
+        self.assertTrue(deleted["ok"])
+        self.assertEqual(deleted["publication_status"], "removed")
+
+        again, _a, _p, _c = self._publish_photo_with_bytes(self.member, payload=b"\xff\xd8 second")
+        with self.assertRaises(ForbiddenError) as ctx:
+            self.net.delete_post(self.other, again["post_id"])
+        self.assertEqual(ctx.exception.code, "post_forbidden")
+        still = self.net.post_view(self.member, again["post_id"])
+        self.assertEqual(still["publication_status"], "published")
+
+    def test_http_fake_upload_accepts_raw_image_bytes(self):
+        upload = self.net.create_upload(self.member, {"kind": "photo"})
+        token = upload["upload_url"].rsplit("/", 1)[-1]
+        payload = b"\xff\xd8\xff raw-upload-bytes"
+        httpd = make_http_server(
+            self.cp.config, self.cp, "/tmp",
+            provider=self.provider, photo_storage=self.net.photo_storage,
+        )
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            req = urllib.request.Request(
+                f"http://{host}:{port}/api/network/provider/fake/upload/{token}",
+                data=payload,
+                method="POST",
+                headers={"Content-Type": "image/jpeg"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                body = json.loads(resp.read().decode())
+            self.assertTrue(body.get("ok"))
+            self.assertEqual(body.get("status"), "ready")
+            job = self.cp.db.query_one(
+                "SELECT provider_uid, status FROM upload_jobs WHERE upload_job_id=?",
+                (upload["upload_job_id"],),
+            )
+            self.assertEqual(job["status"], "ready")
+            asset = self.cp.db.query_one(
+                "SELECT media_asset_id FROM media_assets WHERE provider_uid=?",
+                (job["provider_uid"],),
+            )
+            self.net.create_post(self.member, {
+                "media_asset_id": asset["media_asset_id"],
+                "caption": "HTTP raw upload",
+                "sport": "basketball",
+                "visibility": "public",
+            })
+            with urllib.request.urlopen(
+                f"http://{host}:{port}/api/network/media/{asset['media_asset_id']}", timeout=5,
+            ) as media:
+                self.assertEqual(media.read(), payload)
+                self.assertTrue(media.headers.get("Content-Type", "").startswith("image/"))
+        finally:
+            httpd.shutdown()
 
 
 if __name__ == "__main__":

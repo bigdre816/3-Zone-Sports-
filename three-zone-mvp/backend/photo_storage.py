@@ -1,7 +1,8 @@
 """Provider-neutral photo object-storage adapter.
 
-Photos never go to Cloudflare Stream and never send image bytes through the
-application JSON API. The client PUTs directly to a one-time object-store URL.
+Photos never go to Cloudflare Stream. Clients PUT directly to a one-time
+object-store URL when configured (S3/R2). The fake adapter can also accept
+bytes through the app's fake-upload route for local/demo use.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import hmac
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import quote, urlparse
 
 from .media_provider import (
@@ -49,16 +51,24 @@ class PhotoStorage:
     def playback_metadata(self, provider_uid: str) -> dict:
         return {"provider_uid": provider_uid, "playback_kind": "object_get", "status": "ready"}
 
+    def read_photo(self, provider_uid: str) -> tuple[bytes, str] | None:
+        return None
+
+    def playback_url(self, provider_uid: str) -> str | None:
+        return None
+
 
 class FakePhotoStorage(PhotoStorage):
-    """In-process photo store. Completion is metadata-only — no image buffers."""
+    """In-process / on-disk photo store for demo and tests."""
 
     name = "fake-photo"
 
-    def __init__(self, webhook_secret: str = "fake-webhook-secret"):
+    def __init__(self, webhook_secret: str = "fake-webhook-secret", root=None):
         self.webhook_secret = webhook_secret
+        self.root = Path(root) if root else None
         self.uploads: dict = {}
         self.assets: dict = {}
+        self.blobs: dict[str, bytes] = {}
 
     def create_direct_upload(self, kind: str = "photo", **kwargs) -> dict:
         if kind != "photo":
@@ -69,8 +79,12 @@ class FakePhotoStorage(PhotoStorage):
         self.uploads[token] = {
             "provider_uid": uid, "status": "authorized", "expiry": expiry,
         }
-        self.assets[uid] = {"status": "authorized", "kind": "photo", "byte_size": None}
-        # External PUT target: the app never receives the image body.
+        self.assets[uid] = {
+            "status": "authorized", "kind": "photo",
+            "byte_size": None, "content_type": "image/jpeg",
+        }
+        # External PUT target: production clients hit object storage; localFake
+        # portal uploads go through /api/network/provider/fake/upload/{token}.
         url = f"https://photos.test/put/{token}"
         return {
             "provider_uid": uid,
@@ -81,7 +95,26 @@ class FakePhotoStorage(PhotoStorage):
             "resumable": False,
         }
 
-    def complete_upload(self, token: str, meta: dict | None = None) -> dict:
+    def _persist(self, uid: str, body: bytes, content_type: str) -> None:
+        if self.root is not None:
+            self.root.mkdir(parents=True, exist_ok=True)
+            (self.root / uid).write_bytes(body)
+        else:
+            self.blobs[uid] = body
+        self.assets[uid] = {
+            "status": "ready",
+            "kind": "photo",
+            "byte_size": len(body),
+            "content_type": content_type or "image/jpeg",
+        }
+
+    def complete_upload(
+        self,
+        token: str,
+        meta: dict | None = None,
+        body: bytes | None = None,
+        content_type: str | None = None,
+    ) -> dict:
         session = self.uploads.get(token)
         if not session:
             raise ProviderError("unknown upload token", "unknown_upload")
@@ -89,9 +122,20 @@ class FakePhotoStorage(PhotoStorage):
             raise ProviderError("upload expired", "upload_expired")
         meta = meta or {}
         uid = session["provider_uid"]
-        size = meta.get("byte_size")
+        ct = content_type or meta.get("content_type") or "image/jpeg"
+        if body is not None:
+            self._persist(uid, body, ct)
+            size = len(body)
+        else:
+            size = meta.get("byte_size")
+            existing = self.assets.get(uid) or {}
+            self.assets[uid] = {
+                "status": "ready",
+                "kind": "photo",
+                "byte_size": size if size is not None else existing.get("byte_size"),
+                "content_type": existing.get("content_type") or ct,
+            }
         self.uploads[token]["status"] = "uploaded"
-        self.assets[uid] = {"status": "ready", "kind": "photo", "byte_size": size}
         event_id = _uid("pevt")
         return {
             "provider_event_id": event_id,
@@ -101,6 +145,27 @@ class FakePhotoStorage(PhotoStorage):
             "byte_size": size,
             "signature": self._sign(event_id, uid, "ready"),
         }
+
+    def store_photo(self, token: str, body: bytes, content_type: str = "image/jpeg") -> dict:
+        return self.complete_upload(
+            token,
+            meta={"byte_size": len(body), "content_type": content_type},
+            body=body,
+            content_type=content_type,
+        )
+
+    def read_photo(self, provider_uid: str) -> tuple[bytes, str] | None:
+        asset = self.assets.get(provider_uid) or {}
+        ct = asset.get("content_type") or "image/jpeg"
+        if self.root is not None:
+            path = self.root / provider_uid
+            if path.is_file():
+                return path.read_bytes(), ct
+            return None
+        blob = self.blobs.get(provider_uid)
+        if blob is None:
+            return None
+        return blob, ct
 
     def verify_webhook(self, headers: dict, body: dict, raw_body: bytes | None = None) -> bool:
         secret = ""
@@ -123,7 +188,7 @@ class FakePhotoStorage(PhotoStorage):
 
 
 class S3CompatiblePhotoStorage(PhotoStorage):
-    """Presigned PUT to an S3-compatible bucket (R2, MinIO, AWS). No Stream."""
+    """Presigned PUT/GET to an S3-compatible bucket (R2, MinIO, AWS). No Stream."""
 
     name = "s3"
 
@@ -175,7 +240,7 @@ class S3CompatiblePhotoStorage(PhotoStorage):
                 break
         return bool(secret) and hmac.compare_digest(secret, self.webhook_secret)
 
-    def _presign_put(self, key: str, expires: int = 3600) -> str:
+    def _presign(self, method: str, key: str, expires: int = 3600) -> str:
         now = datetime.now(timezone.utc)
         amz_date = now.strftime("%Y%m%dT%H%M%SZ")
         datestamp = now.strftime("%Y%m%d")
@@ -195,7 +260,7 @@ class S3CompatiblePhotoStorage(PhotoStorage):
         canonical_query = "&".join(f"{quote(k, safe='-_.~')}={quote(v, safe='-_.~')}"
                                    for k, v in query_items)
         canonical_request = (
-            f"PUT\n{canonical_uri}\n{canonical_query}\n"
+            f"{method.upper()}\n{canonical_uri}\n{canonical_query}\n"
             f"host:{host}\n\nhost\nUNSIGNED-PAYLOAD"
         )
         string_to_sign = (
@@ -212,6 +277,37 @@ class S3CompatiblePhotoStorage(PhotoStorage):
         signature = hmac.new(k_signing, string_to_sign.encode(), hashlib.sha256).hexdigest()
         return f"{scheme}://{host}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}"
 
+    def _presign_put(self, key: str, expires: int = 3600) -> str:
+        return self._presign("PUT", key, expires=expires)
+
+    def _presign_get(self, key: str, expires: int = 3600) -> str:
+        return self._presign("GET", key, expires=expires)
+
+    def playback_url(self, provider_uid: str) -> str:
+        return self._presign_get(f"photos/{provider_uid}")
+
+    def read_photo(self, provider_uid: str) -> tuple[bytes, str] | None:
+        url = self.playback_url(provider_uid)
+        try:
+            resp = self.http_request("GET", url)
+        except Exception:
+            return None
+        if getattr(resp, "status", 500) >= 400:
+            return None
+        body = getattr(resp, "body", None)
+        if body is None:
+            return None
+        ct = "image/jpeg"
+        if hasattr(resp, "header"):
+            ct = resp.header("Content-Type", "image/jpeg") or "image/jpeg"
+        else:
+            headers = getattr(resp, "headers", {}) or {}
+            for key, value in headers.items():
+                if key.lower() == "content-type":
+                    ct = value or "image/jpeg"
+                    break
+        return body, ct.split(";")[0].strip() or "image/jpeg"
+
 
 def build_photo_storage(config, http_request=None) -> PhotoStorage:
     name = (getattr(config, "photo_storage", "fake") or "fake").strip().lower()
@@ -225,6 +321,8 @@ def build_photo_storage(config, http_request=None) -> PhotoStorage:
             webhook_secret=getattr(config, "photo_webhook_secret", "") or "",
             http_request=http_request,
         )
+    root = getattr(config, "photo_storage_root", None) or None
     return FakePhotoStorage(
         webhook_secret=getattr(config, "fake_webhook_secret", "fake-webhook-secret"),
+        root=root,
     )

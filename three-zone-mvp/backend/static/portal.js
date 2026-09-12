@@ -216,6 +216,12 @@ function postCard(item) {
   const blocked = item.content_state === "restricted" || item.content_state === "removed" || item.content_state === "unavailable";
   const liked = item.viewer_liked || (item.engagement && item.engagement.liked_by_me);
   const likeCount = (item.engagement && item.engagement.likes) || item.like_count || 0;
+  const canDelete = item.viewer_can_delete || (
+    state.profile && item.author && state.profile.profile_id === item.author.profile_id
+  );
+  const deleteBtn = canDelete
+    ? `<button type="button" class="quiet danger" data-delete-post="${item.post_id}">Delete</button>`
+    : "";
   const actions = blocked ? "" : `<div class="actions">
       <button type="button" class="${liked ? "liked" : ""}" data-like="post:${item.post_id}">Like ${likeCount}</button>
       <button type="button" data-save="post:${item.post_id}">Save</button>
@@ -224,6 +230,7 @@ function postCard(item) {
       <button type="button" class="quiet" data-follow="${escapeText(item.author.handle)}">Follow</button>
       <button type="button" class="quiet" data-report="post:${item.post_id}">Report</button>
       <button type="button" class="quiet" data-block="${escapeText(item.author.handle)}">Block</button>
+      ${deleteBtn}
     </div>
     <div class="comments" data-comments="post:${item.post_id}"></div>
     <form class="comment-form" data-subject="post:${item.post_id}">
@@ -321,6 +328,15 @@ function bindCards(root) {
     try {
       await api("POST", "/api/network/reports", { subject_type: type, subject_id: id, reason: "needs review" });
       toast("Reported for review");
+    } catch (error) { toast(error.message); }
+  });
+  root.querySelectorAll("[data-delete-post]").forEach(btn => btn.onclick = async () => {
+    const id = btn.dataset.deletePost;
+    if (!window.confirm("Delete this photo post?")) return;
+    try {
+      await api("POST", `/api/network/posts/${id}/delete`);
+      toast("Post deleted");
+      loadFeed();
     } catch (error) { toast(error.message); }
   });
   root.querySelectorAll("[data-open-game]").forEach(btn => btn.onclick = () => openGame(btn.dataset.openGame));
@@ -873,14 +889,33 @@ $("#composer").onsubmit = async event => {
       status.textContent = "Uploading photo to object storage…";
       const url = String(upload.upload_url || "");
       const localFake = url.includes("photos.test") || url.startsWith("/");
+      const token = (upload.upload_token || url.split("?")[0].split("/").pop());
       if (file && upload.upload_method === "put" && !localFake) {
         await fetch(url, { method: "PUT", body: file, credentials: "include" });
+        await api("POST", `/api/network/provider/fake/upload/${token}`, {
+          filename: file.name,
+          byte_size: file.size,
+        });
+      } else if (file && localFake) {
+        const ctype = (file.type && file.type.startsWith("image/")) ? file.type : "image/jpeg";
+        const resp = await fetch(`/api/network/provider/fake/upload/${token}`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": ctype },
+          body: file,
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const err = Error(data.error || "Photo upload failed");
+          err.code = data.code;
+          throw err;
+        }
+      } else {
+        await api("POST", `/api/network/provider/fake/upload/${token}`, {
+          filename: file && file.name,
+          byte_size: file && file.size,
+        });
       }
-      const token = url.split("?")[0].split("/").pop();
-      await api("POST", `/api/network/provider/fake/upload/${token}`, {
-        filename: file && file.name,
-        byte_size: file && file.size,
-      });
     } else {
       status.textContent = "Uploading clip…";
       await api("POST", upload.upload_url, {
