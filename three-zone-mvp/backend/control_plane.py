@@ -118,6 +118,8 @@ SITE_ROUTES = [
      "purpose": "Liveness probe alias"},
     {"method": "GET", "path": "/api/ops/live-readiness", "tier": "worker",
      "purpose": "Live publication readiness flags (no secrets)"},
+    {"method": "GET", "path": "/api/ops/dashboard", "tier": "worker",
+     "purpose": "Operator health / back-portal consolidated dashboard (secret-free)"},
     {"method": "GET", "path": "/api/config", "tier": "public",
      "purpose": "Public runtime config (ports, TTLs, demo accounts)"},
     {"method": "GET", "path": "/api/public/live", "tier": "public",
@@ -1152,6 +1154,154 @@ class ControlPlane(PipelineMixin):
             "comments": count("comments"),
             "follows": count("follows"),
             "media_assets": count("media_assets"),
+        }
+
+    def ops_dashboard(self, operator: dict, *, live_sessions=None, moten=None) -> dict:
+        """Consolidated operator Health / Back portal payload — secret-free.
+
+        Never includes stream keys, passwords, tokens, API tokens, or signing secrets.
+        """
+        self.require_operator(operator)
+
+        from .config import (
+            live_continuous_verify_enabled,
+            live_publication_enabled,
+            member_live_enabled,
+            sports_verify_enabled,
+        )
+        from .live_readiness import readiness as live_readiness_fn
+
+        analytics = self.analytics()
+        ready_raw = live_readiness_fn(self.config)
+        live_readiness = {
+            "ready_to_publish_live": bool(ready_raw.get("ready_to_publish_live")),
+            "blockers": list(ready_raw.get("blockers") or []),
+            "warnings": list(ready_raw.get("warnings") or []),
+        }
+
+        # Rights counts
+        active_row = self.db.query_one(
+            "SELECT COUNT(*) AS c FROM rights WHERE active=1 AND revoked=0"
+        )
+        revoked_row = self.db.query_one(
+            "SELECT COUNT(*) AS c FROM rights WHERE revoked=1"
+        )
+        total_row = self.db.query_one("SELECT COUNT(*) AS c FROM rights")
+        rights = {
+            "active": int(active_row["c"] if active_row else 0),
+            "revoked": int(revoked_row["c"] if revoked_row else 0),
+            "total_versions": int(total_row["c"] if total_row else 0),
+        }
+
+        # Live sessions (prefer service helper)
+        if live_sessions is not None:
+            live_payload = live_sessions.list_recent(operator, limit=20)
+        else:
+            try:
+                from .live_sessions import LiveSessionService
+                live_payload = LiveSessionService(self).list_recent(operator, limit=20)
+            except Exception:
+                live_payload = {"recent": [], "by_session_state": {}, "total": 0}
+
+        # Network + moderation open
+        network = dict(self.network_inventory_safe())
+        try:
+            mod = self.db.query_one(
+                "SELECT COUNT(*) AS c FROM moderation_cases WHERE policy_decision IS NULL"
+            )
+            network["moderation_open"] = int(mod["c"] if mod else 0)
+        except Exception:
+            network["moderation_open"] = 0
+
+        # Media names only
+        media = {
+            "live_provider": self.config.live_provider_name(),
+            "ugc_provider": self.config.ugc_provider_name(),
+            "photo_storage": self.config.photo_storage,
+        }
+
+        # Fail-closed feature flags (read only — never enable)
+        ai_flag = False
+        try:
+            from threezone_ai.config import process_ai_enabled
+            ai_flag = bool(process_ai_enabled())
+        except Exception:
+            ai_flag = False
+        flags = {
+            "MEMBER_LIVE": bool(member_live_enabled()),
+            "SPORTS_VERIFY": bool(sports_verify_enabled()),
+            "LIVE_PUBLICATION": bool(live_publication_enabled()),
+            "LIVE_CONTINUOUS_VERIFY": bool(live_continuous_verify_enabled()),
+            "AI": ai_flag,
+        }
+
+        # Moten outbox status counts
+        moten_payload = {"enabled": bool(getattr(self.config, "moten_enabled", False)), "outbox": {}}
+        if moten is not None:
+            try:
+                disc = moten.discovery()
+                moten_payload = {
+                    "enabled": bool(disc.get("enabled")),
+                    "outbox": dict(disc.get("outbox") or {}),
+                }
+            except Exception:
+                pass
+        else:
+            try:
+                rows = self.db.query(
+                    "SELECT status, COUNT(*) AS total FROM moten_outbox "
+                    "GROUP BY status ORDER BY status ASC"
+                )
+                moten_payload["outbox"] = {r["status"]: r["total"] for r in rows}
+            except Exception:
+                pass
+
+        # Recent audit — keys only for detail (no secret values)
+        audit_recent = []
+        try:
+            rows = self.db.query(
+                "SELECT id, ts, actor, action, event_id, detail FROM audit "
+                "ORDER BY id DESC LIMIT 25"
+            )
+            for r in rows:
+                detail = loads(r["detail"], {}) if r["detail"] else {}
+                keys = sorted(detail.keys())[:24] if isinstance(detail, dict) else []
+                audit_recent.append({
+                    "id": r["id"],
+                    "ts": r["ts"],
+                    "actor": r["actor"],
+                    "action": r["action"],
+                    "event_id": r["event_id"],
+                    "detail_keys": keys,
+                })
+        except Exception:
+            audit_recent = []
+
+        return {
+            "generated_at": now(),
+            "health": {
+                "ok": True,
+                "path": "/healthz",
+                "note": "liveness probe alias of /api/health",
+            },
+            "live_readiness": live_readiness,
+            "events": {
+                "total": analytics.get("events_total", 0),
+                "by_status": dict(analytics.get("events_by_status") or {}),
+                "by_zone": dict(analytics.get("events_by_zone") or {}),
+            },
+            "rights": rights,
+            "live_sessions": live_payload,
+            "network": network,
+            "media": media,
+            "flags": flags,
+            "moten": moten_payload,
+            "audit_recent": audit_recent,
+            "sockets": {
+                "connections": analytics.get("socket_connections", 0),
+                "per_event": dict(analytics.get("socket_per_event") or {}),
+                "metrics_fresh": bool(analytics.get("socket_metrics_fresh")),
+            },
         }
 
     def owner_inventory(self, owner: dict) -> dict:

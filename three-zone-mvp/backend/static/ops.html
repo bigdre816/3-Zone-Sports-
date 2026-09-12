@@ -28,7 +28,8 @@
         <div class="brand-sub">Control plane</div>
       </div>
       <nav class="side-nav">
-        <button type="button" class="nav-item active" data-pane="catalog">Catalog</button>
+        <button type="button" class="nav-item active" data-pane="health">Health</button>
+        <button type="button" class="nav-item" data-pane="catalog">Catalog</button>
         <button type="button" class="nav-item" data-pane="player">Player</button>
         <details id="nav-operations" class="nav-group" open>
           <summary>Operations</summary>
@@ -55,7 +56,75 @@
 
     <div class="workspace">
       <main id="app">
-        <section data-pane="catalog" class="panel">
+        <section data-pane="health" class="panel">
+          <div class="panel-head">
+            <h2>Health / Back portal</h2>
+            <div class="filters">
+              <span id="health-generated" class="muted"></span>
+              <button id="health-refresh-btn" type="button">Refresh</button>
+            </div>
+          </div>
+          <p class="muted">One pane for Andre: app health, live readiness, rights, sessions, media rails, network, Moten, and recent audit — no secrets.</p>
+          <div id="health-status-strip" class="health-status-strip" aria-label="Status strip"></div>
+          <div class="health-grid">
+            <div class="card health-card">
+              <h3>Event lifecycle</h3>
+              <div id="health-events" class="health-kv muted">Loading…</div>
+            </div>
+            <div class="card health-card">
+              <h3>Rights</h3>
+              <div id="health-rights" class="health-kv muted">Loading…</div>
+            </div>
+            <div class="card health-card">
+              <h3>Media rails + flags</h3>
+              <div id="health-media-flags" class="health-kv muted">Loading…</div>
+            </div>
+            <div class="card health-card">
+              <h3>Network</h3>
+              <div id="health-network" class="health-kv muted">Loading…</div>
+            </div>
+            <div class="card health-card">
+              <h3>Sockets</h3>
+              <div id="health-sockets" class="health-kv muted">Loading…</div>
+            </div>
+            <div class="card health-card">
+              <h3>Moten outbox</h3>
+              <div id="health-moten" class="health-kv muted">Loading…</div>
+            </div>
+          </div>
+          <div class="card health-card health-wide" style="margin-top:12px">
+            <h3>Live sessions (recent)</h3>
+            <div id="health-sessions-counts" class="muted" style="margin-bottom:8px"></div>
+            <div class="table-wrap">
+              <table class="health-table" id="health-sessions-table">
+                <thead>
+                  <tr>
+                    <th>ID</th><th>Actor</th><th>Event</th><th>State</th>
+                    <th>Public</th><th>Dist</th><th>Safety</th><th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card health-card health-wide" style="margin-top:12px">
+            <h3>Recent audit</h3>
+            <div class="table-wrap">
+              <table class="health-table" id="health-audit-table">
+                <thead>
+                  <tr><th>ID</th><th>When</th><th>Actor</th><th>Action</th><th>Event</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <details style="margin-top:12px">
+            <summary class="muted">Live readiness detail (blockers / warnings)</summary>
+            <pre id="health-readiness-out" class="code"></pre>
+          </details>
+        </section>
+
+        <section data-pane="catalog" class="panel hidden">
           <div class="panel-head">
             <h2>Catalog</h2>
             <div class="filters" id="zone-filters"></div>

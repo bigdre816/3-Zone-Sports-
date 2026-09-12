@@ -331,6 +331,54 @@ class LiveSessionService:
             raise NotFoundError("live session not found", "live_session_not_found")
         return self._session_dict(row)
 
+    def list_recent(self, operator: dict, limit: int = 20) -> dict:
+        """Secret-free recent sessions for the ops health dashboard.
+
+        Does not require the private-capture feature flag (read-only inventory).
+        Returns empty lists/counts when the table is missing.
+        """
+        self.cp.require_operator(operator)
+        limit = max(1, min(int(limit or 20), 100))
+        safe_fields = (
+            "id", "actor_id", "event_id", "session_state", "public_state",
+            "distribution_state", "safety_state", "capture_started_at",
+            "updated_at", "stop_reason",
+        )
+        try:
+            rows = self.db.query(
+                "SELECT live_session_id, actor_id, event_id, session_state, "
+                "public_state, distribution_state, safety_state, "
+                "capture_starting_at, updated_at, stop_reason "
+                "FROM live_sessions ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            )
+            counts_rows = self.db.query(
+                "SELECT session_state, COUNT(*) AS c FROM live_sessions "
+                "GROUP BY session_state"
+            )
+        except Exception:
+            return {"recent": [], "by_session_state": {}, "total": 0}
+
+        recent = []
+        for r in rows:
+            recent.append({
+                "id": r["live_session_id"],
+                "actor_id": r["actor_id"],
+                "event_id": r["event_id"],
+                "session_state": r["session_state"],
+                "public_state": r["public_state"],
+                "distribution_state": r["distribution_state"],
+                "safety_state": r["safety_state"],
+                "capture_started_at": r["capture_starting_at"],
+                "updated_at": r["updated_at"],
+                "stop_reason": r["stop_reason"],
+            })
+        by_state = {row["session_state"]: int(row["c"]) for row in counts_rows}
+        total = sum(by_state.values())
+        # Keep key order stable for callers that inspect field names.
+        _ = safe_fields
+        return {"recent": recent, "by_session_state": by_state, "total": total}
+
     def stop(self, operator: dict, live_session_id: str, data: dict | None = None) -> dict:
         self.cp.require_operator(operator)
         self.require_enabled()

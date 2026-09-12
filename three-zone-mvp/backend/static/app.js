@@ -136,7 +136,7 @@ function afterAuth() {
   $("#who").textContent = `${state.user.display_name} · ${state.user.role}`;
   $("#nav-owner").classList.toggle("hidden", !canOwn(state.user));
   $("#nav-operations").classList.toggle("hidden", !canOperate(state.user));
-  showPane("catalog");
+  showPane("health");
   loadEvents();
 }
 
@@ -147,6 +147,12 @@ function showPane(name) {
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.classList.toggle("active", item.getAttribute("data-pane") === name);
   });
+  if (name === "health") {
+    refreshHealthDashboard();
+    startHealthAutoRefresh();
+  } else {
+    stopHealthAutoRefresh();
+  }
   if (name === "audit") {
     refreshAnalytics();
     refreshAudit();
@@ -157,6 +163,226 @@ function showPane(name) {
   if (name === "network") {
     refreshNetwork();
     $("#network-evidence-form").classList.toggle("hidden", !canOwn(state.user));
+  }
+}
+
+
+// -- health / back portal ----------------------------------------------
+let _healthTimer = null;
+
+function stopHealthAutoRefresh() {
+  if (_healthTimer) {
+    clearInterval(_healthTimer);
+    _healthTimer = null;
+  }
+}
+
+function startHealthAutoRefresh() {
+  stopHealthAutoRefresh();
+  _healthTimer = setInterval(() => {
+    const pane = document.querySelector('#app [data-pane="health"]');
+    if (pane && !pane.classList.contains("hidden")) {
+      refreshHealthDashboard({ silent: true });
+    } else {
+      stopHealthAutoRefresh();
+    }
+  }, 15000);
+}
+
+function _pill(label, tone) {
+  const wrap = el("span", "health-pill " + (tone || ""));
+  wrap.appendChild(el("span", "dot", ""));
+  wrap.appendChild(document.createTextNode(label));
+  return wrap;
+}
+
+function _kv(box, rows) {
+  if (!box) return;
+  box.innerHTML = "";
+  box.classList.remove("muted");
+  rows.forEach(([k, v]) => {
+    const row = el("div", "kv-row");
+    row.appendChild(el("span", null, k));
+    row.appendChild(el("span", null, String(v)));
+    box.appendChild(row);
+  });
+}
+
+function _fmtTs(ts) {
+  if (ts == null || ts === "") return "—";
+  const n = Number(ts);
+  if (!Number.isFinite(n)) return String(ts);
+  try {
+    return new Date(n * 1000).toLocaleString();
+  } catch (_) {
+    return String(ts);
+  }
+}
+
+async function refreshHealthDashboard(opts) {
+  const silent = opts && opts.silent;
+  try {
+    const data = await api("GET", "/api/ops/dashboard");
+    renderHealthDashboard(data);
+  } catch (e) {
+    if (!silent) toast("Health dashboard failed: " + (e.code || e.message), "bad");
+  }
+}
+
+function renderHealthDashboard(data) {
+  const gen = $("#health-generated");
+  if (gen) {
+    const when = data.generated_at != null ? _fmtTs(data.generated_at) : "";
+    gen.textContent = when ? ("Updated " + when) : "";
+  }
+
+  const strip = $("#health-status-strip");
+  if (strip) {
+    strip.innerHTML = "";
+    const healthOk = data.health && data.health.ok;
+    const ready = data.live_readiness || {};
+    const blockers = (ready.blockers || []).length;
+    const warnings = (ready.warnings || []).length;
+    let liveTone = "ok";
+    let liveLabel = "Live ready";
+    if (!ready.ready_to_publish_live || blockers) {
+      liveTone = "bad";
+      liveLabel = "Live blocked (" + blockers + ")";
+    } else if (warnings) {
+      liveTone = "warn";
+      liveLabel = "Live ready · " + warnings + " warn";
+    }
+    const flags = data.flags || {};
+    const aiOn = !!flags.AI;
+    const moten = data.moten || {};
+    const outbox = moten.outbox || {};
+    const failed = Number(outbox.failed || outbox.error || 0);
+    let motenTone = moten.enabled ? "ok" : "warn";
+    let motenLabel = moten.enabled ? "Moten on" : "Moten off";
+    if (failed) { motenTone = "bad"; motenLabel = "Moten · " + failed + " failed"; }
+    strip.appendChild(_pill(healthOk ? "App ok" : "App down", healthOk ? "ok" : "bad"));
+    strip.appendChild(_pill(liveLabel, liveTone));
+    strip.appendChild(_pill(aiOn ? "AI on" : "AI off", aiOn ? "warn" : "ok"));
+    strip.appendChild(_pill(motenLabel, motenTone));
+  }
+
+  const ev = data.events || {};
+  const byStatus = ev.by_status || {};
+  const byZone = ev.by_zone || {};
+  _kv($("#health-events"), [
+    ["Total", ev.total != null ? ev.total : "—"],
+    ...Object.keys(byStatus).sort().map((k) => ["status · " + k, byStatus[k]]),
+    ...Object.keys(byZone).sort().map((k) => ["zone · " + k, byZone[k]]),
+  ]);
+
+  const rights = data.rights || {};
+  _kv($("#health-rights"), [
+    ["Active", rights.active != null ? rights.active : "—"],
+    ["Revoked", rights.revoked != null ? rights.revoked : "—"],
+    ["Total versions", rights.total_versions != null ? rights.total_versions : "—"],
+  ]);
+
+  const media = data.media || {};
+  const flags = data.flags || {};
+  const mediaBox = $("#health-media-flags");
+  if (mediaBox) {
+    mediaBox.innerHTML = "";
+    mediaBox.classList.remove("muted");
+    [
+      ["Live provider", media.live_provider || "—"],
+      ["UGC provider", media.ugc_provider || "—"],
+      ["Photo storage", media.photo_storage || "—"],
+    ].forEach(([k, v]) => {
+      const row = el("div", "kv-row");
+      row.appendChild(el("span", null, k));
+      row.appendChild(el("span", null, String(v)));
+      mediaBox.appendChild(row);
+    });
+    const flagRow = el("div", null);
+    flagRow.style.marginTop = "8px";
+    Object.keys(flags).sort().forEach((name) => {
+      const on = !!flags[name];
+      flagRow.appendChild(el("span", "flag-chip " + (on ? "on" : "off"), name + (on ? "·ON" : "·off")));
+    });
+    mediaBox.appendChild(flagRow);
+  }
+
+  const net = data.network || {};
+  _kv($("#health-network"), Object.keys(net).sort().map((k) => [k, net[k]]));
+
+  const socks = data.sockets || {};
+  _kv($("#health-sockets"), [
+    ["Connections", socks.connections != null ? socks.connections : "—"],
+    ["Metrics fresh", socks.metrics_fresh ? "yes" : "no"],
+  ]);
+
+  const moten = data.moten || {};
+  const outbox = moten.outbox || {};
+  const motenRows = [["Enabled", moten.enabled ? "yes" : "no"]];
+  Object.keys(outbox).sort().forEach((k) => motenRows.push([k, outbox[k]]));
+  if (Object.keys(outbox).length === 0) motenRows.push(["outbox", "empty"]);
+  _kv($("#health-moten"), motenRows);
+
+  const ls = data.live_sessions || {};
+  const counts = ls.by_session_state || {};
+  const countsEl = $("#health-sessions-counts");
+  if (countsEl) {
+    const parts = Object.keys(counts).sort().map((k) => k + "=" + counts[k]);
+    countsEl.textContent = parts.length
+      ? ("By state: " + parts.join(" · ") + " · total " + (ls.total != null ? ls.total : "—"))
+      : "No live sessions yet.";
+  }
+  const tbody = document.querySelector("#health-sessions-table tbody");
+  if (tbody) {
+    tbody.innerHTML = "";
+    (ls.recent || []).forEach((row) => {
+      const tr = document.createElement("tr");
+      [row.id, row.actor_id, row.event_id || "—", row.session_state,
+       row.public_state, row.distribution_state, row.safety_state,
+       _fmtTs(row.updated_at)].forEach((val) => {
+        const td = document.createElement("td");
+        td.textContent = val == null ? "—" : String(val);
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    if (!(ls.recent || []).length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 8;
+      td.className = "muted";
+      td.textContent = "No recent sessions.";
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+  }
+
+  const auditBody = document.querySelector("#health-audit-table tbody");
+  if (auditBody) {
+    auditBody.innerHTML = "";
+    (data.audit_recent || []).forEach((row) => {
+      const tr = document.createElement("tr");
+      [row.id, _fmtTs(row.ts), row.actor, row.action, row.event_id || "—"].forEach((val) => {
+        const td = document.createElement("td");
+        td.textContent = val == null ? "—" : String(val);
+        tr.appendChild(td);
+      });
+      auditBody.appendChild(tr);
+    });
+    if (!(data.audit_recent || []).length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 5;
+      td.className = "muted";
+      td.textContent = "No audit rows.";
+      tr.appendChild(td);
+      auditBody.appendChild(tr);
+    }
+  }
+
+  const readyOut = $("#health-readiness-out");
+  if (readyOut) {
+    readyOut.textContent = JSON.stringify(data.live_readiness || {}, null, 2);
   }
 }
 
@@ -904,6 +1130,8 @@ async function init() {
   window.addEventListener("pagehide", () => stopMedia("pagehide"));
   $("#analytics-btn").addEventListener("click", refreshAnalytics);
   $("#audit-btn").addEventListener("click", refreshAudit);
+  const healthRefresh = $("#health-refresh-btn");
+  if (healthRefresh) healthRefresh.addEventListener("click", () => refreshHealthDashboard());
   $("#owner-load-btn").addEventListener("click", ownerLoad);
   $("#owner-print-btn").addEventListener("click", ownerPrint);
   $("#owner-export-btn").addEventListener("click", ownerExport);
