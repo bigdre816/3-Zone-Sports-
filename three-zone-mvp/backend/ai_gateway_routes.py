@@ -65,6 +65,10 @@ def extra_routes() -> list[tuple[str, re.Pattern[str], str, str]]:
         # Y5 — Treasure delivery + reconcile (transport only; ≠ Path A release)
         ("POST", re.compile(r"^/api/ai-proposals/(?P<proposal_id>aip_[a-z0-9]+)/deliver$"), "h_ai_proposal_deliver", "operator"),
         ("GET", re.compile(r"^/api/ai-proposals/(?P<proposal_id>aip_[a-z0-9]+)/reconcile$"), "h_ai_proposal_reconcile", "operator"),
+        # Y6 — Treasure status projections / revision list (read-only; seats in Treasure)
+        ("GET", re.compile(r"^/api/ai-proposals/(?P<proposal_id>aip_[a-z0-9]+)/treasure-projections$"), "h_ai_proposal_treasure_projections", "operator"),
+        ("GET", re.compile(r"^/api/ai-proposals/(?P<proposal_id>aip_[a-z0-9]+)/revisions$"), "h_ai_proposal_treasure_projections", "operator"),
+        ("POST", re.compile(r"^/api/ai-proposals/(?P<proposal_id>aip_[a-z0-9]+)/treasure-receipt$"), "h_ai_proposal_treasure_receipt", "operator"),
         ("GET", re.compile(r"^/api/ai-proposals/(?P<proposal_id>aip_[a-z0-9]+)$"), "h_ai_proposal_get", "operator"),
     ]
 
@@ -760,3 +764,111 @@ class AiGatewayHandlers:
                 raise err
             self._ai_error(exc)
 
+
+    def h_ai_proposal_treasure_projections(self, p, b, u):
+        """Y6 — list Treasure revision projections for a proposal (read-only).
+
+        Seats stay in Treasure; this is a mirror of status receipts only.
+        """
+        if not self._require_ai():
+            return
+        try:
+            from threezone_ai.proposals import (
+                get_delivery_service,
+                get_projection_service,
+                get_propose_service,
+            )
+            from threezone_ai.proposals.projections import ProjectionError
+            from threezone_ai.proposals.types import ProposalError
+
+            proposal_id = (p or {}).get("proposal_id")
+            proposer = get_propose_service()
+            prop = proposer.get(proposal_id)
+            try:
+                delivery = get_delivery_service(propose_get=proposer.get)
+                outbox = delivery.outbox
+            except Exception:
+                outbox = None
+            proj = get_projection_service(
+                propose_get=proposer.get, delivery_outbox=outbox
+            )
+            summary = proj.projection_summary(prop.proposal_id)
+            self._send_json(
+                200,
+                {
+                    "ok": True,
+                    **summary,
+                    "treasure_release": False,
+                    "note": "Receipt projections only — not seat assignment or approve",
+                },
+            )
+        except Exception as exc:
+            from threezone_ai.proposals.projections import ProjectionError
+            from threezone_ai.proposals.types import ProposalError
+
+            if isinstance(exc, (ProposalError, ProjectionError)):
+                err = ControlError(str(exc), getattr(exc, "code", "projection_error"))
+                err.status = int(getattr(exc, "status", 400) or 400)
+                raise err
+            self._ai_error(exc)
+
+    def h_ai_proposal_treasure_receipt(self, p, b, u):
+        """Y6 — ingest a Treasure status receipt (mock/webhook apply).
+
+        Operator receipt ingest — **not** a seat action / approve endpoint.
+        Appends an immutable revision projection and mirrors canonical_* fields.
+        """
+        if not self._require_ai():
+            return
+        try:
+            from threezone_ai.proposals import (
+                get_delivery_service,
+                get_projection_service,
+                get_propose_service,
+            )
+            from threezone_ai.proposals.projections import (
+                InvalidTreasureReceipt,
+                ProjectionError,
+            )
+            from threezone_ai.proposals.types import ProposalError
+
+            proposal_id = (p or {}).get("proposal_id")
+            body = b or {}
+            receipt = body.get("receipt") if isinstance(body.get("receipt"), dict) else body
+            if not isinstance(receipt, dict):
+                raise InvalidTreasureReceipt("JSON receipt object required")
+
+            proposer = get_propose_service()
+            prop = proposer.get(proposal_id)
+            try:
+                delivery = get_delivery_service(propose_get=proposer.get)
+                outbox = delivery.outbox
+            except Exception:
+                outbox = None
+            proj = get_projection_service(
+                propose_get=proposer.get, delivery_outbox=outbox
+            )
+            row = proj.apply_treasure_receipt(prop.proposal_id, receipt)
+            self._send_json(
+                202,
+                {
+                    "ok": True,
+                    "projection": row.to_dict(),
+                    "treasure_release": False,
+                    "local_release_authority": False,
+                    "projection_only": True,
+                    "path_a_seats_in_threezone": False,
+                    "governance": "treasure_path_a_projection",
+                    "means": "receipt_ingest_not_seat_action",
+                    "note": "Treasure receipt ingest only — does not assign R1/R2/Release seats",
+                },
+            )
+        except Exception as exc:
+            from threezone_ai.proposals.projections import ProjectionError
+            from threezone_ai.proposals.types import ProposalError
+
+            if isinstance(exc, (ProposalError, ProjectionError)):
+                err = ControlError(str(exc), getattr(exc, "code", "projection_error"))
+                err.status = int(getattr(exc, "status", 400) or 400)
+                raise err
+            self._ai_error(exc)

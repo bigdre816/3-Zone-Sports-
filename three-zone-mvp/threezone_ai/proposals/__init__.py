@@ -1,6 +1,7 @@
-"""Immutable transcription proposals (Y4) + Treasure delivery (Y5).
+"""Immutable transcription proposals (Y4) + Treasure delivery (Y5) + projections (Y6).
 
 Proposal ≠ Treasure release. Delivery ≠ Path A review/release.
+Projections = read-only mirrors of Treasure status; seats stay in Treasure.
 """
 
 from threezone_ai.proposals.delivery import (
@@ -23,6 +24,20 @@ from threezone_ai.proposals.delivery import (
     get_delivery_service,
     reset_delivery_service,
 )
+from threezone_ai.proposals.projections import (
+    CANONICAL_STATUSES,
+    PROJECTION_SCHEMA_REF,
+    InvalidTreasureReceipt,
+    ProjectionError,
+    ProjectionImmutable,
+    RevisionProjection,
+    TreasureProjectionService,
+    TreasureRevisionProjectionStore,
+    get_projection_service,
+    receipt_hash_for,
+    reset_projection_service,
+    validate_treasure_receipt,
+)
 from threezone_ai.proposals.service import (
     ProposeService,
     get_propose_service,
@@ -43,10 +58,12 @@ from threezone_ai.proposals.types import (
 )
 
 __all__ = [
+    "CANONICAL_STATUSES",
     "DELIVERY_SCHEMA",
     "HANDOFF_TYPE",
     "PACKET_FAMILY",
     "PACKET_TYPE",
+    "PROJECTION_SCHEMA_REF",
     "PROPOSAL_SCHEMA_REF",
     "STATUS_FAILED",
     "STATUS_INTAKE_ACCEPTED",
@@ -58,21 +75,31 @@ __all__ = [
     "AiProposalStore",
     "DeliveryError",
     "DeliveryReceipt",
+    "InvalidTreasureReceipt",
     "MotenDisabled",
     "ProposeNotReady",
     "ProposeService",
+    "ProjectionError",
+    "ProjectionImmutable",
     "ProposalConflict",
     "ProposalError",
     "ProposalImmutable",
     "ProposalNotFound",
+    "RevisionProjection",
     "TranscriptionProposal",
     "TreasureDeliveryOutbox",
     "TreasureDeliveryService",
+    "TreasureProjectionService",
+    "TreasureRevisionProjectionStore",
     "build_delivery_payload",
     "canonical_json",
     "content_hash_for_segments",
     "get_delivery_service",
+    "get_projection_service",
     "get_propose_service",
+    "receipt_hash_for",
     "reset_delivery_service",
+    "reset_projection_service",
     "reset_propose_service",
+    "validate_treasure_receipt",
 ]

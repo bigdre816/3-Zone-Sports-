@@ -482,6 +482,7 @@ class TreasureDeliveryService:
         moten_timeout_seconds: float = 5.0,
         async_deliver: bool = False,
         http_post: Callable[..., tuple[int, Any]] | None = None,
+        projection_service: Any | None = None,
     ) -> None:
         self.outbox = outbox or TreasureDeliveryOutbox(":memory:")
         self._propose_get = propose_get
@@ -490,6 +491,7 @@ class TreasureDeliveryService:
         self.moten_timeout_seconds = float(moten_timeout_seconds or 5)
         self.async_deliver = bool(async_deliver)
         self._http_post = http_post
+        self.projection_service = projection_service
 
     @property
     def moten_enabled(self) -> bool:
@@ -720,6 +722,40 @@ class TreasureDeliveryService:
             # Keep legacy alias visible only under means — do not elevate.
             pass
 
+        # Y6 — prefer latest Treasure revision projection over delivery-only fields.
+        proj_latest = None
+        proj_dict = None
+        try:
+            proj_svc = self.projection_service
+            if proj_svc is None:
+                from threezone_ai.proposals.projections import get_projection_service
+
+                proj_svc = get_projection_service(propose_get=self._propose_get)
+                if getattr(proj_svc, "delivery_outbox", None) is None:
+                    proj_svc.delivery_outbox = self.outbox
+            proj_latest = proj_svc.latest(prop.proposal_id)
+            if proj_latest is not None:
+                proj_dict = proj_latest.to_dict()
+        except Exception:
+            proj_latest = None
+            proj_dict = None
+
+        canonical_packet_id = (
+            proj_latest.canonical_packet_id
+            if proj_latest is not None
+            else (latest.canonical_packet_id if latest else None)
+        )
+        canonical_revision_id = (
+            proj_latest.canonical_revision_id
+            if proj_latest is not None
+            else (latest.canonical_revision_id if latest else None)
+        )
+        canonical_status = (
+            proj_latest.canonical_status
+            if proj_latest is not None
+            else (latest.canonical_status if latest else None)
+        )
+
         return {
             "proposal_id": prop.proposal_id,
             "job_id": prop.job_id,
@@ -730,6 +766,7 @@ class TreasureDeliveryService:
             "moten_enabled": self.moten_enabled,
             "publish": False,
             "treasure_release": False,
+            "local_release_authority": False,
             "packet_family": PACKET_FAMILY,
             "packet_type": PACKET_TYPE,
             "intake_accepted": status == STATUS_INTAKE_ACCEPTED,
@@ -738,9 +775,11 @@ class TreasureDeliveryService:
             if status == STATUS_INTAKE_ACCEPTED
             else "local_reconcile_only",
             "last_delivery": receipt_dict,
-            "canonical_packet_id": latest.canonical_packet_id if latest else None,
-            "canonical_revision_id": latest.canonical_revision_id if latest else None,
-            "canonical_status": latest.canonical_status if latest else None,
+            "canonical_packet_id": canonical_packet_id,
+            "canonical_revision_id": canonical_revision_id,
+            "canonical_status": canonical_status,
+            "latest_revision_projection": proj_dict,
+            "projection_only": True if proj_latest is not None else None,
             # Explicit: seats are NOT in THREEZONE
             "path_a_seats_in_threezone": False,
             "reviewer_1": None,
