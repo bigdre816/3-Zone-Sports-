@@ -54,6 +54,13 @@ def extra_routes() -> list[tuple[str, re.Pattern[str], str, str]]:
         ("POST", re.compile(r"^/api/ai/lineage/edit$"), "h_ai_lineage_edit", "member"),
         ("POST", re.compile(r"^/api/ai/lineage/approve$"), "h_ai_lineage_approve", "member"),
         ("GET", re.compile(r"^/api/ai/status$"), "h_ai_status", "none"),
+        # Y3 — operator/internal AI work jobs (NOT playback leases)
+        ("POST", re.compile(r"^/api/ai-jobs$"), "h_ai_jobs_admit", "operator"),
+        ("GET", re.compile(r"^/api/ai-jobs/(?P<job_id>aij_[a-z0-9]+)$"), "h_ai_jobs_get", "operator"),
+        ("POST", re.compile(r"^/api/ai-jobs/(?P<job_id>aij_[a-z0-9]+)/claim$"), "h_ai_jobs_claim", "operator"),
+        ("POST", re.compile(r"^/api/ai-jobs/(?P<job_id>aij_[a-z0-9]+)/heartbeat$"), "h_ai_jobs_heartbeat", "operator"),
+        ("POST", re.compile(r"^/api/ai-jobs/(?P<job_id>aij_[a-z0-9]+)/run$"), "h_ai_jobs_run", "operator"),
+        ("POST", re.compile(r"^/api/ai-jobs/(?P<job_id>aij_[a-z0-9]+)/complete$"), "h_ai_jobs_complete", "operator"),
     ]
 
 
@@ -422,4 +429,148 @@ class AiGatewayHandlers:
         except ControlError:
             raise
         except Exception as exc:
+            self._ai_error(exc)
+
+    def _job_service(self):
+        from threezone_ai.jobs import get_job_service
+
+        return get_job_service()
+
+    def _raise_job(self, exc: BaseException) -> None:
+        from threezone_ai.jobs.types import AiJobError
+
+        if isinstance(exc, AiJobError):
+            err = ControlError(str(exc), exc.code)
+            err.status = int(getattr(exc, "status", 400) or 400)
+            raise err
+        raise exc
+
+    def _job_worker(self, body: dict[str, Any] | None, user: Any) -> str:
+        body = body or {}
+        worker = body.get("worker_id") or body.get("lease_owner")
+        if worker is None and isinstance(user, dict):
+            worker = user.get("user_id") or user.get("display_name")
+        return str(worker or "").strip()
+
+    def h_ai_jobs_admit(self, p, b, u):
+        if not self._require_ai():
+            return
+        try:
+            body = b or {}
+            task = body.get("task_type") or "transcription"
+            source = body.get("source_asset_id") or body.get("asset_ref")
+            job = self._job_service().admit(
+                task,
+                source,
+                payload=dict(body.get("payload") or {}),
+            )
+            self._send_json(200, {"ok": True, "job": job.to_dict()})
+        except ControlError:
+            raise
+        except Exception as exc:
+            from threezone_ai.jobs.types import AiJobError
+
+            if isinstance(exc, AiJobError):
+                self._raise_job(exc)
+            self._ai_error(exc)
+
+    def h_ai_jobs_get(self, p, b, u):
+        if not self._require_ai():
+            return
+        try:
+            job = self._job_service().get((p or {}).get("job_id"))
+            self._send_json(200, {"ok": True, "job": job.to_dict()})
+        except ControlError:
+            raise
+        except Exception as exc:
+            from threezone_ai.jobs.types import AiJobError
+
+            if isinstance(exc, AiJobError):
+                self._raise_job(exc)
+            self._ai_error(exc)
+
+    def h_ai_jobs_claim(self, p, b, u):
+        if not self._require_ai():
+            return
+        try:
+            body = b or {}
+            worker = self._job_worker(body, u)
+            job = self._job_service().claim(
+                (p or {}).get("job_id"),
+                worker,
+                ttl_s=body.get("ttl_s") or body.get("ttl"),
+            )
+            self._send_json(200, {"ok": True, "job": job.to_dict()})
+        except ControlError:
+            raise
+        except Exception as exc:
+            from threezone_ai.jobs.types import AiJobError
+
+            if isinstance(exc, AiJobError):
+                self._raise_job(exc)
+            self._ai_error(exc)
+
+    def h_ai_jobs_heartbeat(self, p, b, u):
+        if not self._require_ai():
+            return
+        try:
+            body = b or {}
+            worker = self._job_worker(body, u)
+            job = self._job_service().heartbeat(
+                (p or {}).get("job_id"),
+                worker,
+                ttl_s=body.get("ttl_s") or body.get("ttl"),
+            )
+            self._send_json(200, {"ok": True, "job": job.to_dict()})
+        except ControlError:
+            raise
+        except Exception as exc:
+            from threezone_ai.jobs.types import AiJobError
+
+            if isinstance(exc, AiJobError):
+                self._raise_job(exc)
+            self._ai_error(exc)
+
+    def h_ai_jobs_run(self, p, b, u):
+        if not self._require_ai():
+            return
+        try:
+            body = b or {}
+            worker = self._job_worker(body, u)
+            job = self._job_service().run(
+                (p or {}).get("job_id"),
+                worker,
+                record_lineage=bool(body.get("record_lineage")),
+            )
+            self._send_json(200, {"ok": True, "job": job.to_dict()})
+        except ControlError:
+            raise
+        except Exception as exc:
+            from threezone_ai.jobs.types import AiJobError
+
+            if isinstance(exc, AiJobError):
+                self._raise_job(exc)
+            self._ai_error(exc)
+
+    def h_ai_jobs_complete(self, p, b, u):
+        if not self._require_ai():
+            return
+        try:
+            body = b or {}
+            worker = self._job_worker(body, u)
+            job = self._job_service().complete(
+                (p or {}).get("job_id"),
+                worker,
+                result=dict(body.get("result") or {}),
+                result_schema_ref=body.get("result_schema_ref"),
+                lineage_id=body.get("lineage_id"),
+            )
+            self._send_json(200, {"ok": True, "job": job.to_dict()})
+        except ControlError:
+            raise
+        except Exception as exc:
+            from threezone_ai.jobs.types import AiJobError
+
+            if isinstance(exc, AiJobError):
+                self._raise_job(exc)
             self._ai_error(exc)
