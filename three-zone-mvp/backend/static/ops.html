@@ -205,14 +205,47 @@
         <section data-pane="xrpl" class="panel hidden embed-panel">
           <div class="panel-head">
             <h2>XRPL / on-chain audit</h2>
-            <button type="button" class="ghost" id="xrpl-refresh-btn">Refresh status</button>
+            <button type="button" class="ghost" id="xrpl-refresh-btn">Refresh</button>
           </div>
-          <p class="muted">On-chain audit department. This console does not submit XRPL ledger transactions; simulation labels stay honest.</p>
-          <div id="xrpl-status" class="embed-status muted">Loading on-chain bridge…</div>
-          <div id="xrpl-unconfigured" class="stub-note card-lite hidden">
-            <strong>Not wired:</strong> set <code>TZ_MOTEN_ONCHAIN_URL</code> on the sports service to embed the XRPL department here.
+          <p class="muted">Connect your audit wallet here — approve in Crossmark or GemWallet. No seed paste. No coding. Testnet first.</p>
+
+          <div class="wallet-card card-lite" id="xrpl-wallet-card">
+            <div class="wallet-row">
+              <label class="wallet-field">Network
+                <select id="xrpl-network">
+                  <option value="testnet" selected>Testnet</option>
+                  <option value="mainnet">Mainnet</option>
+                </select>
+              </label>
+              <div class="wallet-actions">
+                <button type="button" class="primary" id="xrpl-connect-crossmark">Connect Crossmark</button>
+                <button type="button" class="primary" id="xrpl-connect-gemwallet">Connect GemWallet</button>
+                <button type="button" class="ghost hidden" id="xrpl-disconnect">Disconnect</button>
+              </div>
+            </div>
+            <p class="muted wallet-hint">Need a wallet? Install <a href="https://crossmark.io" target="_blank" rel="noopener">Crossmark</a> or <a href="https://gemwallet.app" target="_blank" rel="noopener">GemWallet</a>, then come back to this pane.</p>
+            <div id="xrpl-wallet-status" class="embed-status muted">Not connected</div>
+            <div id="xrpl-wallet-summary" class="wallet-summary hidden"></div>
+            <div class="table-wrap">
+              <table class="health-table" id="xrpl-tx-table">
+                <thead>
+                  <tr><th>Type</th><th>Hash</th><th>Result</th><th>Amount</th><th>Ledger</th></tr>
+                </thead>
+                <tbody id="xrpl-tx-body">
+                  <tr><td colspan="5" class="muted">Connect a wallet to load every recent transaction.</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-          <iframe id="xrpl-frame" class="dept-frame hidden" title="XRPL on-chain audit" referrerpolicy="no-referrer"></iframe>
+
+          <details class="moten-embed-details" id="xrpl-moten-details">
+            <summary>Moten on-chain department embed</summary>
+            <div id="xrpl-status" class="embed-status muted">Loading on-chain bridge…</div>
+            <div id="xrpl-unconfigured" class="stub-note card-lite hidden">
+              <strong>Not wired:</strong> set <code>TZ_MOTEN_ONCHAIN_URL</code> on the sports service to embed the Moten XRPL department here.
+            </div>
+            <iframe id="xrpl-frame" class="dept-frame hidden" title="XRPL on-chain audit" referrerpolicy="no-referrer"></iframe>
+          </details>
         </section>
 
         <!-- Existing System health (kept) -->

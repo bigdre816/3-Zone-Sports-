@@ -229,6 +229,9 @@ function showPane(name) {
   if (name === "moten" || name === "xrpl") {
     loadMotenBridge();
   }
+  if (name === "xrpl") {
+    restoreXrplWallet();
+  }
   if (name === "audit") {
     refreshAnalytics();
     refreshAudit();
@@ -243,6 +246,313 @@ function showPane(name) {
   }
 }
 
+
+// -- XRPL wallet connect (Crossmark / GemWallet, no seed) --------------
+const XRPL_WALLET_KEY = "tz_ops_xrpl_wallet_v1";
+let _xrplWallet = null; // { address, network, provider }
+
+function _loadScriptOnce(src, id) {
+  return new Promise((resolve, reject) => {
+    if (id && document.getElementById(id)) {
+      resolve();
+      return;
+    }
+    const existing = Array.from(document.scripts).find((s) => s.src === src);
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () => reject(new Error("script_failed")));
+      if (existing.dataset.loaded === "1") resolve();
+      return;
+    }
+    const el = document.createElement("script");
+    el.src = src;
+    el.async = true;
+    if (id) el.id = id;
+    el.onload = () => { el.dataset.loaded = "1"; resolve(); };
+    el.onerror = () => reject(new Error("script_failed"));
+    document.head.appendChild(el);
+  });
+}
+
+function _saveXrplWallet(state) {
+  _xrplWallet = state;
+  try {
+    if (state) localStorage.setItem(XRPL_WALLET_KEY, JSON.stringify(state));
+    else localStorage.removeItem(XRPL_WALLET_KEY);
+  } catch (_) {}
+}
+
+function _readXrplWallet() {
+  try {
+    const raw = localStorage.getItem(XRPL_WALLET_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.address) return null;
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function connectCrossmark() {
+  await _loadScriptOnce(
+    "https://cdn.jsdelivr.net/npm/@crossmarkio/sdk@0.4.0/pack/umd/index.js",
+    "tz-crossmark-sdk"
+  );
+  const sdk = window.default || window.crossmark || window.Crossmark || null;
+  if (!sdk) throw new Error("Crossmark SDK did not load");
+  const installed = sdk.sync && typeof sdk.sync.isInstalled === "function"
+    ? !!(await Promise.resolve(sdk.sync.isInstalled()))
+    : true;
+  if (!installed) {
+    throw new Error("Install the Crossmark extension, then try Connect again");
+  }
+  if (typeof sdk.signInAndWait === "function") {
+    await sdk.signInAndWait();
+  } else if (sdk.async && typeof sdk.async.signInAndWait === "function") {
+    await sdk.async.signInAndWait();
+  } else {
+    throw new Error("Crossmark sign-in is unavailable in this browser");
+  }
+  let address = null;
+  if (sdk.sync && typeof sdk.sync.getAddress === "function") {
+    address = await Promise.resolve(sdk.sync.getAddress());
+  }
+  if (!address && sdk.session && sdk.session.address) address = sdk.session.address;
+  if (!address) throw new Error("Crossmark did not return an address");
+  return { address: String(address), provider: "crossmark" };
+}
+
+async function connectGemWallet() {
+  await _loadScriptOnce(
+    "https://unpkg.com/@gemwallet/api@3.8.0/umd/gemwallet-api.js",
+    "tz-gemwallet-api"
+  );
+  const api = window.GemWalletApi;
+  if (!api) throw new Error("GemWallet API did not load");
+  const installedResp = await api.isInstalled;
+  const installed = !!(installedResp && installedResp.result && installedResp.result.isInstalled);
+  if (!installed) {
+    throw new Error("Install the GemWallet extension, then try Connect again");
+  }
+  const addrResp = await api.getAddress;
+  const address = addrResp && addrResp.result && addrResp.result.address;
+  if (!address) throw new Error("GemWallet did not share an address (or request was rejected)");
+  return { address: String(address), provider: "gemwallet" };
+}
+
+async function refreshXrplAccountView() {
+  const status = $("#xrpl-wallet-status");
+  const summary = $("#xrpl-wallet-summary");
+  const body = $("#xrpl-tx-body");
+  const disconnectBtn = $("#xrpl-disconnect");
+  if (!_xrplWallet || !_xrplWallet.address) {
+    if (status) status.textContent = "Not connected";
+    if (summary) { summary.classList.add("hidden"); summary.innerHTML = ""; }
+    if (disconnectBtn) disconnectBtn.classList.add("hidden");
+    if (body) {
+      body.innerHTML = "";
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 5;
+      td.className = "muted";
+      td.textContent = "Connect a wallet to load every recent transaction.";
+      tr.appendChild(td);
+      body.appendChild(tr);
+    }
+    return;
+  }
+  if (disconnectBtn) disconnectBtn.classList.remove("hidden");
+  const network = ($("#xrpl-network") && $("#xrpl-network").value) || _xrplWallet.network || "testnet";
+  _xrplWallet.network = network;
+  _saveXrplWallet(_xrplWallet);
+  if (status) {
+    status.textContent = "Connected · " + _xrplWallet.provider + " · " + network + " · loading ledger…";
+  }
+  try {
+    const q = "/api/ops/xrpl/account?address=" + encodeURIComponent(_xrplWallet.address)
+      + "&network=" + encodeURIComponent(network) + "&limit=50";
+    const data = await api("GET", q);
+    if (status) {
+      status.textContent = "Connected · " + _xrplWallet.provider + " · " + network;
+    }
+    if (summary) {
+      summary.classList.remove("hidden");
+      const bal = data.balance_xrp != null ? (data.balance_xrp + " XRP") : "unfunded / not found";
+      summary.innerHTML = "";
+      const lines = [
+        ["Address", data.address],
+        ["Balance", bal],
+        ["Sequence", data.sequence != null ? String(data.sequence) : "—"],
+        ["Owner count", data.owner_count != null ? String(data.owner_count) : "—"],
+      ];
+      lines.forEach(([k, v]) => {
+        const row = document.createElement("div");
+        const strong = document.createElement("strong");
+        strong.textContent = k + ": ";
+        const code = document.createElement("code");
+        code.textContent = v;
+        row.appendChild(strong);
+        row.appendChild(code);
+        summary.appendChild(row);
+      });
+      if (data.honesty && data.honesty.note) {
+        const note = document.createElement("p");
+        note.className = "muted";
+        note.textContent = data.honesty.note;
+        summary.appendChild(note);
+      }
+    }
+    if (body) {
+      body.innerHTML = "";
+      const txs = data.transactions || [];
+      if (!txs.length) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 5;
+        td.className = "muted";
+        td.textContent = data.account_found
+          ? "No transactions returned for this account yet."
+          : "Account not funded on this network yet — connect worked; fund testnet to see txs.";
+        tr.appendChild(td);
+        body.appendChild(tr);
+      } else {
+        txs.forEach((tx) => {
+          const tr = document.createElement("tr");
+          const cells = [
+            tx.transaction_type || "—",
+            (tx.hash || "—").slice(0, 12) + (tx.hash && tx.hash.length > 12 ? "…" : ""),
+            tx.result || "—",
+            tx.amount_xrp != null ? (tx.amount_xrp + " XRP") : "—",
+            tx.ledger_index != null ? String(tx.ledger_index) : "—",
+          ];
+          cells.forEach((val, idx) => {
+            const td = document.createElement("td");
+            if (idx === 1 && tx.hash) {
+              const code = document.createElement("code");
+              code.title = tx.hash;
+              code.textContent = val;
+              td.appendChild(code);
+            } else {
+              td.textContent = val;
+            }
+            tr.appendChild(td);
+          });
+          body.appendChild(tr);
+        });
+      }
+    }
+  } catch (e) {
+    if (status) status.textContent = "Connected, but ledger read failed: " + (e.code || e.message);
+    toast("XRPL account read failed: " + (e.code || e.message), "bad");
+  }
+}
+
+async function onXrplConnect(provider) {
+  const status = $("#xrpl-wallet-status");
+  if (status) status.textContent = "Waiting for " + provider + " approval…";
+  try {
+    const connected = provider === "gemwallet"
+      ? await connectGemWallet()
+      : await connectCrossmark();
+    const network = ($("#xrpl-network") && $("#xrpl-network").value) || "testnet";
+    _saveXrplWallet({
+      address: connected.address,
+      provider: connected.provider,
+      network,
+      connected_at: Date.now(),
+    });
+    toast("Wallet connected", "ok");
+    await refreshXrplAccountView();
+  } catch (e) {
+    if (status) status.textContent = "Connect failed: " + (e.message || e);
+    toast(String(e.message || e), "bad");
+  }
+}
+
+function disconnectXrplWallet() {
+  _saveXrplWallet(null);
+  refreshXrplAccountView();
+  toast("Wallet disconnected", "ok");
+}
+
+function restoreXrplWallet() {
+  const saved = _readXrplWallet();
+  if (saved && saved.address) {
+    _xrplWallet = saved;
+    const net = $("#xrpl-network");
+    if (net && saved.network) net.value = saved.network;
+  }
+  refreshXrplAccountView();
+}
+
+// -- Moten / XRPL department panes (merged into /ops) -------------------
+let _motenBridge = null;
+
+async function loadMotenBridge() {
+  const motenStatus = $("#moten-status");
+  const xrplStatus = $("#xrpl-status");
+  const motenFrame = $("#moten-frame");
+  const xrplFrame = $("#xrpl-frame");
+  const motenMiss = $("#moten-unconfigured");
+  const xrplMiss = $("#xrpl-unconfigured");
+  try {
+    _motenBridge = await api("GET", "/api/ops/moten-bridge");
+  } catch (e) {
+    const msg = "Moten bridge failed: " + (e.code || e.message);
+    if (motenStatus) motenStatus.textContent = msg;
+    if (xrplStatus) xrplStatus.textContent = msg;
+    toast(msg, "bad");
+    return;
+  }
+  const honesty = (_motenBridge && _motenBridge.honesty) || {};
+  const control = (_motenBridge && _motenBridge.control_plane) || {};
+  const onchain = (_motenBridge && _motenBridge.onchain_audit) || {};
+
+  function describe(label, block) {
+    const health = (block && block.health) || {};
+    if (!health.configured) return label + ": not configured";
+    if (!health.reachable) return label + ": unreachable (" + (health.error || "error") + ")";
+    const st = health.status || {};
+    const bits = [label + ": reachable"];
+    if (st.status) bits.push(String(st.status));
+    if (st.xrpl) bits.push(String(st.xrpl));
+    if (st.service) bits.push(String(st.service));
+    if (honesty.intake) bits.push("intake=" + honesty.intake);
+    return bits.join(" · ");
+  }
+
+  if (motenStatus) motenStatus.textContent = describe("Moten", control);
+  if (xrplStatus) xrplStatus.textContent = describe("XRPL", onchain);
+
+  if (control.embed_url && motenFrame) {
+    if (motenMiss) motenMiss.classList.add("hidden");
+    motenFrame.classList.remove("hidden");
+    if (motenFrame.getAttribute("src") !== control.embed_url) {
+      motenFrame.setAttribute("src", control.embed_url);
+    }
+  } else {
+    if (motenFrame) {
+      motenFrame.classList.add("hidden");
+      motenFrame.removeAttribute("src");
+    }
+    if (motenMiss) motenMiss.classList.remove("hidden");
+  }
+
+  if (onchain.embed_url && xrplFrame) {
+    if (xrplMiss) xrplMiss.classList.add("hidden");
+    xrplFrame.classList.remove("hidden");
+    if (xrplFrame.getAttribute("src") !== onchain.embed_url) {
+      xrplFrame.setAttribute("src", onchain.embed_url);
+    }
+  } else {
+    if (xrplFrame) {
+      xrplFrame.classList.add("hidden");
+      xrplFrame.removeAttribute("src");
+    }
+    if (xrplMiss) xrplMiss.classList.remove("hidden");
+  }
+}
 
 // -- health / back portal ----------------------------------------------
 let _healthTimer = null;
@@ -1441,7 +1751,20 @@ async function init() {
   const motenRefresh = $("#moten-refresh-btn");
   if (motenRefresh) motenRefresh.addEventListener("click", () => loadMotenBridge());
   const xrplRefresh = $("#xrpl-refresh-btn");
-  if (xrplRefresh) xrplRefresh.addEventListener("click", () => loadMotenBridge());
+  if (xrplRefresh) xrplRefresh.addEventListener("click", () => {
+    loadMotenBridge();
+    refreshXrplAccountView();
+  });
+  const xrplCrossmark = $("#xrpl-connect-crossmark");
+  if (xrplCrossmark) xrplCrossmark.addEventListener("click", () => onXrplConnect("crossmark"));
+  const xrplGem = $("#xrpl-connect-gemwallet");
+  if (xrplGem) xrplGem.addEventListener("click", () => onXrplConnect("gemwallet"));
+  const xrplDisconnect = $("#xrpl-disconnect");
+  if (xrplDisconnect) xrplDisconnect.addEventListener("click", disconnectXrplWallet);
+  const xrplNetwork = $("#xrpl-network");
+  if (xrplNetwork) xrplNetwork.addEventListener("change", () => {
+    if (_xrplWallet) refreshXrplAccountView();
+  });
   document.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const pane = btn.getAttribute("data-goto");
