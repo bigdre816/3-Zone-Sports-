@@ -13,6 +13,7 @@ class TaskType(str, Enum):
     MODERATION = "moderation"
     DESCRIPTION = "description"
     SPORTS_VISION = "sports_vision"
+    TRANSCRIPTION = "transcription"
 
 
 class PrivacyClass(str, Enum):
