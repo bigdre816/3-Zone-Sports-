@@ -215,6 +215,7 @@ class Config:
     photo_s3_region: str = "auto"
     photo_webhook_secret: str = ""
     moten_service_url: str = ""
+    moten_onchain_url: str = ""
     moten_shared_secret: str = ""
     moten_timeout_seconds: int = 5
 
@@ -350,6 +351,7 @@ class Config:
             photo_s3_region=os.environ.get("TZ_PHOTO_S3_REGION", "auto"),
             photo_webhook_secret=os.environ.get("TZ_PHOTO_WEBHOOK_SECRET", ""),
             moten_service_url=os.environ.get("TZ_MOTEN_SERVICE_URL", "").rstrip("/"),
+            moten_onchain_url=os.environ.get("TZ_MOTEN_ONCHAIN_URL", "").rstrip("/"),
             moten_shared_secret=os.environ.get("TZ_MOTEN_SHARED_SECRET", ""),
             moten_timeout_seconds=int(os.environ.get("TZ_MOTEN_TIMEOUT_SECONDS", "5")),
         )
@@ -373,6 +375,26 @@ class Config:
     @property
     def moten_enabled(self) -> bool:
         return bool(self.moten_service_url)
+
+    def moten_embed_frame_sources(self) -> list[str]:
+        """Origins allowed in CSP frame-src for Moten panes inside /ops."""
+        origins = []
+        for url in (self.moten_service_url, self.moten_onchain_url):
+            if not url:
+                continue
+            # Allow exact origin (scheme + host [+port])
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            if parsed.scheme and parsed.netloc:
+                origins.append(f"{parsed.scheme}://{parsed.netloc}")
+        # de-dupe preserve order
+        seen = set()
+        out = []
+        for o in origins:
+            if o not in seen:
+                seen.add(o)
+                out.append(o)
+        return out
 
     def validate(self) -> None:
         """Refuse to run in production with demo/weak secrets."""
