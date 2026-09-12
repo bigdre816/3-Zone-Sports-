@@ -666,6 +666,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_live_sessions_actor_idempotency
     WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_live_sessions_actor_created
     ON live_sessions(actor_id, created_at);
+-- G4-B: bounded private rewind ring (NOT full DVR). Cleared on stop/fail.
+CREATE TABLE IF NOT EXISTS private_rewind_chunks (
+    chunk_id TEXT PRIMARY KEY,
+    live_session_id TEXT NOT NULL,
+    private_ingest_id TEXT,
+    asset_id TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    byte_count INTEGER NOT NULL,
+    file_name TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_private_rewind_session_created
+    ON private_rewind_chunks(live_session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_profiles_handle ON profiles(handle);
 CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_profile_id, published_at);
 CREATE INDEX IF NOT EXISTS idx_posts_feed ON posts(publication_status, published_at);
@@ -846,6 +859,22 @@ class Database:
             for name, decl in live_alters.items():
                 if name not in live_cols:
                     self._conn.execute(f"ALTER TABLE live_sessions ADD COLUMN {name} {decl}")
+        # G4-B: private rewind ring table (bounded; not DVR).
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS private_rewind_chunks ("
+            "chunk_id TEXT PRIMARY KEY,"
+            "live_session_id TEXT NOT NULL,"
+            "private_ingest_id TEXT,"
+            "asset_id TEXT NOT NULL,"
+            "source_hash TEXT NOT NULL,"
+            "byte_count INTEGER NOT NULL,"
+            "file_name TEXT NOT NULL,"
+            "created_at REAL NOT NULL)"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_private_rewind_session_created "
+            "ON private_rewind_chunks(live_session_id, created_at)"
+        )
         self._conn.commit()
 
     def _init_postgres_schema(self) -> None:
@@ -880,6 +909,25 @@ class Database:
                 self._conn.execute(stmt)
             except Exception:
                 pass
+        # G4-B rewind ring (postgres).
+        try:
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS private_rewind_chunks ("
+                "chunk_id TEXT PRIMARY KEY,"
+                "live_session_id TEXT NOT NULL,"
+                "private_ingest_id TEXT,"
+                "asset_id TEXT NOT NULL,"
+                "source_hash TEXT NOT NULL,"
+                "byte_count INTEGER NOT NULL,"
+                "file_name TEXT NOT NULL,"
+                "created_at DOUBLE PRECISION NOT NULL)"
+            )
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_private_rewind_session_created "
+                "ON private_rewind_chunks(live_session_id, created_at)"
+            )
+        except Exception:
+            pass
         self._conn.commit()
 
     def _dedupe_open_view_sessions(self) -> None:

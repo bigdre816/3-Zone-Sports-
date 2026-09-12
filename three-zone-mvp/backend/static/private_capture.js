@@ -60,6 +60,7 @@
       $("stop-btn").disabled = false;
       $("refresh-btn").disabled = false;
       $("ingest-btn").disabled = false;
+      $("rewind-btn").disabled = false;
       syncBanner(data.live_session);
       setStatus(data.live_session);
     } catch (e) {
@@ -85,8 +86,19 @@
         reason: "operator_ui_stop",
       });
       $("ingest-btn").disabled = true;
+      $("rewind-btn").disabled = true;
       syncBanner(data.live_session);
       setStatus(data.live_session);
+    } catch (e) {
+      setStatus({ error: e.message, status: e.status, payload: e.payload });
+    }
+  });
+
+  $("rewind-btn").addEventListener("click", async function () {
+    if (!sessionId) return;
+    try {
+      const data = await api("GET", "/api/live-sessions/" + sessionId + "/private-rewind");
+      setStatus(data.private_rewind);
     } catch (e) {
       setStatus({ error: e.message, status: e.status, payload: e.payload });
     }
