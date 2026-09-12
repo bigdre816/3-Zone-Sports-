@@ -21,6 +21,7 @@ cost_tiers:
     - ollama_chat
     - local_classifier_stub
     - sports_vision_offline
+    - transcription_offline
   low:
     - local_faster_whisper
     - ollama_nomic
@@ -29,6 +30,7 @@ cost_tiers:
     - groq
     - groq_whisper
     - sports_vision_offline
+    - transcription_offline
   any:
     - local_faster_whisper
     - ollama_nomic
@@ -39,6 +41,7 @@ cost_tiers:
     - gemini
     - cloudflare
     - sports_vision_offline
+    - transcription_offline
 
 tasks:
   caption:
@@ -65,6 +68,11 @@ tasks:
     # G3-B: kill-switch gated; local offline evidence only — no auto cloud / YOLO lock-in
     default_order:
       - sports_vision_offline
+    human_review_default: true
+  transcription:
+    # Y2: typed segments via fake/offline provider; real Whisper path is Y4
+    default_order:
+      - transcription_offline
     human_review_default: true
 
 providers:
@@ -93,6 +101,9 @@ providers:
     tier: local_first
     cost: free
   sports_vision_offline:
+    tier: local_first
+    cost: free
+  transcription_offline:
     tier: local_first
     cost: free
 
