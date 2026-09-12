@@ -62,6 +62,10 @@ def extra_routes() -> list[tuple[str, re.Pattern[str], str, str]]:
         ("POST", re.compile(r"^/api/ai-jobs/(?P<job_id>aij_[a-z0-9]+)/run$"), "h_ai_jobs_run", "operator"),
         ("POST", re.compile(r"^/api/ai-jobs/(?P<job_id>aij_[a-z0-9]+)/complete$"), "h_ai_jobs_complete", "operator"),
         ("POST", re.compile(r"^/api/ai-jobs/(?P<job_id>aij_[a-z0-9]+)/propose$"), "h_ai_jobs_propose", "operator"),
+        # Y5 — Treasure delivery + reconcile (transport only; ≠ Path A release)
+        ("POST", re.compile(r"^/api/ai-proposals/(?P<proposal_id>aip_[a-z0-9]+)/deliver$"), "h_ai_proposal_deliver", "operator"),
+        ("GET", re.compile(r"^/api/ai-proposals/(?P<proposal_id>aip_[a-z0-9]+)/reconcile$"), "h_ai_proposal_reconcile", "operator"),
+        ("GET", re.compile(r"^/api/ai-proposals/(?P<proposal_id>aip_[a-z0-9]+)$"), "h_ai_proposal_get", "operator"),
     ]
 
 
@@ -614,3 +618,145 @@ class AiGatewayHandlers:
             if isinstance(exc, AiJobError):
                 self._raise_job(exc)
             self._ai_error(exc)
+
+    def h_ai_proposal_get(self, p, b, u):
+        """Y4/Y5 — fetch immutable proposal (never Treasure release)."""
+        if not self._require_ai():
+            return
+        try:
+            from threezone_ai.proposals import get_propose_service
+            from threezone_ai.proposals.types import ProposalError
+
+            prop = get_propose_service().get((p or {}).get("proposal_id"))
+            self._send_json(
+                200,
+                {
+                    "ok": True,
+                    "proposal": prop.to_dict(),
+                    "treasure_release": False,
+                    "publish": False,
+                },
+            )
+        except Exception as exc:
+            from threezone_ai.proposals.types import ProposalError
+
+            if isinstance(exc, ProposalError):
+                err = ControlError(str(exc), exc.code)
+                err.status = int(getattr(exc, "status", 400) or 400)
+                raise err
+            self._ai_error(exc)
+
+    def h_ai_proposal_deliver(self, p, b, u):
+        """Y5 — deliver proposal to Treasure/Moten intake (transport only).
+
+        Fail-closed when Moten disabled (skipped honest). Never sets
+        treasure_release. Status on success is intake_accepted.
+        """
+        if not self._require_ai():
+            return
+        try:
+            import os
+
+            from threezone_ai.proposals import (
+                TreasureDeliveryService,
+                get_delivery_service,
+                get_propose_service,
+            )
+            from threezone_ai.proposals.delivery import DeliveryError
+            from threezone_ai.proposals.types import ProposalError
+
+            proposal_id = (p or {}).get("proposal_id")
+            body = b or {}
+            proposer = get_propose_service()
+            prop = proposer.get(proposal_id)
+
+            try:
+                delivery = get_delivery_service(propose_get=proposer.get)
+            except Exception:
+                delivery = TreasureDeliveryService(
+                    propose_get=proposer.get,
+                    moten_service_url=(os.environ.get("TZ_MOTEN_SERVICE_URL") or "").rstrip("/"),
+                    moten_shared_secret=os.environ.get("TZ_MOTEN_SHARED_SECRET") or "",
+                    moten_timeout_seconds=float(os.environ.get("TZ_MOTEN_TIMEOUT_SECONDS") or "5"),
+                )
+
+            producer = body.get("producer") if isinstance(body.get("producer"), dict) else None
+            if producer is None and u and isinstance(u, dict):
+                producer = {
+                    "actor": u.get("username") or u.get("user_id") or u.get("sub"),
+                    "role": "producer",
+                }
+            lineage = body.get("lineage") if isinstance(body.get("lineage"), dict) else None
+            force = bool(body.get("force"))
+
+            receipt = delivery.deliver(
+                prop, producer=producer, lineage=lineage, force=force, sync=True
+            )
+            http_status = 202
+            if receipt.status == "skipped":
+                http_status = 503
+            elif receipt.status == "failed":
+                http_status = 502
+            self._send_json(
+                http_status,
+                {
+                    "ok": receipt.status in ("intake_accepted", "queued", "skipped"),
+                    "delivery": receipt.to_dict(),
+                    "intake_accepted": receipt.status == "intake_accepted",
+                    "treasure_release": False,
+                    "publish": False,
+                    "governance": "none",
+                    "means": "intake_accepted_transport_only"
+                    if receipt.status == "intake_accepted"
+                    else "transport_pending_or_disabled",
+                    "note": "Delivery is transport only; Path A review/release stay in Treasure",
+                },
+            )
+        except Exception as exc:
+            from threezone_ai.proposals.delivery import DeliveryError
+            from threezone_ai.proposals.types import ProposalError
+
+            if isinstance(exc, (ProposalError, DeliveryError)):
+                err = ControlError(str(exc), getattr(exc, "code", "delivery_error"))
+                err.status = int(getattr(exc, "status", 400) or 400)
+                raise err
+            self._ai_error(exc)
+
+    def h_ai_proposal_reconcile(self, p, b, u):
+        """Y5 — reconcile local proposal vs last delivery receipt."""
+        if not self._require_ai():
+            return
+        try:
+            import os
+
+            from threezone_ai.proposals import (
+                TreasureDeliveryService,
+                get_delivery_service,
+                get_propose_service,
+            )
+            from threezone_ai.proposals.delivery import DeliveryError
+            from threezone_ai.proposals.types import ProposalError
+
+            proposal_id = (p or {}).get("proposal_id")
+            proposer = get_propose_service()
+            prop = proposer.get(proposal_id)
+            try:
+                delivery = get_delivery_service(propose_get=proposer.get)
+            except Exception:
+                delivery = TreasureDeliveryService(
+                    propose_get=proposer.get,
+                    moten_service_url=(os.environ.get("TZ_MOTEN_SERVICE_URL") or "").rstrip("/"),
+                    moten_shared_secret=os.environ.get("TZ_MOTEN_SHARED_SECRET") or "",
+                )
+            report = delivery.reconcile(prop)
+            self._send_json(200, {"ok": True, **report})
+        except Exception as exc:
+            from threezone_ai.proposals.delivery import DeliveryError
+            from threezone_ai.proposals.types import ProposalError
+
+            if isinstance(exc, (ProposalError, DeliveryError)):
+                err = ControlError(str(exc), getattr(exc, "code", "delivery_error"))
+                err.status = int(getattr(exc, "status", 400) or 400)
+                raise err
+            self._ai_error(exc)
+

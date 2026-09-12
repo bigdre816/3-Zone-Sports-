@@ -30,6 +30,7 @@ def ingest_external_payload(
     source_object_id = str(
         payload.get("event_id")
         or payload.get("settlement_id")
+        or payload.get("proposal_id")
         or payload.get("object_id")
         or f"{source_system}:{handoff_type}"
     )

@@ -119,6 +119,31 @@ class MotenIntakeService:
         }
         return self._enqueue("settlement", event_id, payload)
 
+    def handoff_transcription_proposal(self, operator: dict, proposal_payload: dict) -> dict:
+        """Y5 — queue a Path A producer handoff for a transcription proposal.
+
+        Moten is adapter/outbox name only. Local transport success is recorded as
+        ``intake_accepted`` (not bare accepted governance; never treasure_release).
+        """
+        self.cp.require_operator(operator)
+        payload = dict(proposal_payload or {})
+        proposal_id = str(payload.get("proposal_id") or payload.get("object_id") or "")
+        if not proposal_id:
+            raise ValueError("proposal_id required")
+        payload.setdefault("schema", "three-zone.moten.transcription-proposal.v1")
+        payload.setdefault("source_system", "three-zone-mvp")
+        payload.setdefault("source_service", "three-zone-api")
+        payload.setdefault("handoff_type", "transcription-proposal")
+        payload.setdefault("packet_family", "THREEZONE")
+        payload.setdefault("packet_type", "THREEZONE_MEDIA_TRANSCRIPT")
+        payload.setdefault("object_id", proposal_id)
+        payload["publish"] = False
+        payload["treasure_release"] = False
+        payload.setdefault(
+            "occurred_at", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        )
+        return self._enqueue("transcription-proposal", proposal_id, payload)
+
     def enqueue_runtime(self, handoff_type: str, source_object_id: str, payload: dict) -> dict:
         """Queue an evidence handoff from the member runtime (non-blocking)."""
         payload = dict(payload or {})
@@ -195,10 +220,12 @@ class MotenIntakeService:
         try:
             with urllib.request.urlopen(request, timeout=self.config.moten_timeout_seconds) as resp:
                 response_body = resp.read().decode("utf-8")
+                # Y5 / Y1c: transcription-proposal transport → intake_accepted (not bare accepted).
+                final_status = "intake_accepted" if row["handoff_type"] == "transcription-proposal" else "delivered"
                 self.db.execute(
                     "UPDATE moten_outbox SET status=?, attempts=?, response_status=?, response_body=?, "
                     "last_error=?, updated_at=?, delivered_at=? WHERE job_id=?",
-                    ("delivered", attempts, resp.status, response_body, None, time.time(), time.time(), job_id),
+                    (final_status, attempts, resp.status, response_body, None, time.time(), time.time(), job_id),
                 )
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -215,11 +242,12 @@ class MotenIntakeService:
 
     @staticmethod
     def _public_row(row) -> dict:
-        return {
+        status = row["status"]
+        out = {
             "job_id": row["job_id"],
             "handoff_type": row["handoff_type"],
             "source_object_id": row["source_object_id"],
-            "status": row["status"],
+            "status": status,
             "attempts": row["attempts"],
             "response_status": row["response_status"],
             "response_body": loads(row["response_body"], row["response_body"]),
@@ -227,4 +255,10 @@ class MotenIntakeService:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "delivered_at": row["delivered_at"],
+            "treasure_release": False,
+            "governance": "none",
         }
+        if status == "intake_accepted":
+            out["intake_accepted"] = True
+            out["means"] = "intake_accepted_transport_only"
+        return out
