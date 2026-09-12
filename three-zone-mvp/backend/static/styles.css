@@ -81,7 +81,7 @@ img, video, canvas, svg {
 }
 
 /* ——— Chrome ——— */
-.topbar, header.topbar, header {
+.topbar, header.topbar {
   display: flex;
   align-items: center;
   gap: var(--space-md);

@@ -1073,7 +1073,7 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
         q = self._qs()
         use_bytes = False
-        if ctype.startswith("image/"):
+        if ctype.startswith("image/") or ctype.startswith("video/"):
             use_bytes = True
         elif raw:
             try:
@@ -1082,10 +1082,17 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
                 use_bytes = True
         if use_bytes:
-            content_type = q.get("content_type") or (
-                ctype if ctype.startswith("image/") else "image/jpeg"
-            )
-            meta = dict(b or {})
+            if q.get("content_type"):
+                content_type = q.get("content_type")
+            elif ctype.startswith("image/") or ctype.startswith("video/"):
+                content_type = ctype
+            elif len(raw) > 8 and raw[4:8] == b"ftyp":
+                content_type = "video/mp4"
+            elif raw[:3] == b"\xff\xd8\xff":
+                content_type = "image/jpeg"
+            else:
+                content_type = "application/octet-stream"
+            meta = dict(b or {}) if isinstance(b, dict) else {}
             meta.setdefault("byte_size", len(raw))
             meta.setdefault("content_type", content_type)
             self._send_json(200, self.network.complete_fake_upload(
@@ -1237,6 +1244,32 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
                 self._send_bytes(200, ctype, data)
                 return
             self._send_json(404, {"error": "photo not found", "code": "photo_missing"})
+            return
+        # Prefer real uploaded bytes from FakeProvider (or on-disk path) over testsrc.
+        opened = self.network.open_video_asset(u, p["asset_id"])
+        path = opened.get("path")
+        if not path and opened.get("bytes") is not None:
+            os.makedirs(self.media_dir, exist_ok=True)
+            uid = asset.get("provider_uid") or asset["media_asset_id"]
+            path = os.path.join(self.media_dir, f"ugc_{uid}.mp4")
+            if not os.path.exists(path) or os.path.getsize(path) != len(opened["bytes"]):
+                tmp = path + ".tmp"
+                with open(tmp, "wb") as handle:
+                    handle.write(opened["bytes"])
+                os.replace(tmp, path)
+        if path:
+            status, headers, body = demo_media.read_range(path, self.headers.get("Range"))
+            ctype = opened.get("content_type") or headers.get("Content-Type") or "video/mp4"
+            headers["Content-Type"] = ctype
+            self.send_response(status)
+            self._base_headers(no_store=True)
+            for key, value in headers.items():
+                if key == "Cache-Control":
+                    continue
+                self.send_header(key, value)
+            self.end_headers()
+            if self.command != "HEAD":
+                self._safe_write(body)
             return
         path = demo_media.ensure_media(self.media_dir, asset["media_asset_id"], seconds=seconds)
         status, headers, body = demo_media.read_range(path, self.headers.get("Range"))

@@ -892,7 +892,27 @@ $("#composer").onsubmit = async event => {
         event_id: form.event_id.value || undefined, rights_attestation: true,
       });
       status.textContent = "Uploading to media provider…";
-      await api("POST", game.game.upload.upload_url, { duration_seconds: 120, filename: ($("#composer-file").files[0] || {}).name });
+      const gameFile = $("#composer-file").files[0];
+      const gameUpload = game.game.upload || {};
+      const gameUrl = String(gameUpload.upload_url || "");
+      const gameLocalFake = gameUrl.startsWith("/") || gameUrl.includes("/provider/fake/upload/");
+      if (gameFile && gameLocalFake) {
+        const ctype = (gameFile.type && gameFile.type.startsWith("video/")) ? gameFile.type : "video/mp4";
+        const resp = await fetch(gameUrl, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": ctype },
+          body: gameFile,
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const err = Error(data.error || "Game upload failed");
+          err.code = data.code;
+          throw err;
+        }
+      } else {
+        await api("POST", gameUrl, { duration_seconds: 120, filename: (gameFile || {}).name });
+      }
       status.textContent = "Processing video…";
       let ready = false;
       for (let i = 0; i < 8 && !ready; i += 1) {
@@ -941,11 +961,37 @@ $("#composer").onsubmit = async event => {
         });
       }
     } else {
-      status.textContent = "Uploading clip…";
-      await api("POST", upload.upload_url, {
-        duration_seconds: 20,
-        filename: file && file.name,
-      });
+      status.textContent = state.kind === "game" ? "Uploading game…" : "Uploading clip…";
+      const url = String(upload.upload_url || "");
+      const localFake = url.startsWith("/") || url.includes("/provider/fake/upload/");
+      const token = (upload.upload_token || url.split("?")[0].split("/").pop());
+      if (file && upload.upload_method === "put" && !localFake) {
+        await fetch(url, { method: "PUT", body: file, credentials: "include" });
+        await api("POST", `/api/network/provider/fake/upload/${token}`, {
+          duration_seconds: state.kind === "game" ? 120 : 20,
+          filename: file.name,
+          byte_size: file.size,
+        });
+      } else if (file && localFake) {
+        const ctype = (file.type && file.type.startsWith("video/")) ? file.type : "video/mp4";
+        const resp = await fetch(url.startsWith("/") ? url : `/api/network/provider/fake/upload/${token}`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": ctype },
+          body: file,
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const err = Error(data.error || "Video upload failed");
+          err.code = data.code;
+          throw err;
+        }
+      } else {
+        await api("POST", upload.upload_url, {
+          duration_seconds: state.kind === "game" ? 120 : 20,
+          filename: file && file.name,
+        });
+      }
     }
     const published = await api("POST", "/api/network/posts", {
       upload_job_id: upload.upload_job_id,

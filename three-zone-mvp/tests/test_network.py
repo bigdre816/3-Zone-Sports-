@@ -649,5 +649,130 @@ class PhotoMediaAndDeleteTests(unittest.TestCase):
             httpd.shutdown()
 
 
+
+class FakeClipUploadBytesTests(unittest.TestCase):
+    """Uploaded clip bytes must be served — not regenerating demo_media testsrc."""
+
+    def setUp(self):
+        self.cp, self.portal, self.net, self.provider = build_net()
+        self.member = self.cp.get_user("demo-viewer")
+
+    def _publish_clip_with_bytes(self, payload, content_type="video/mp4"):
+        upload = self.net.create_upload(self.member, {"kind": "clip"})
+        token = upload["upload_url"].rsplit("/", 1)[-1]
+        self.net.complete_fake_upload(
+            token,
+            {"duration_seconds": 12, "filename": "play.mp4", "byte_size": len(payload)},
+            body=payload,
+            content_type=content_type,
+        )
+        job = self.cp.db.query_one(
+            "SELECT provider_uid, status FROM upload_jobs WHERE upload_job_id=?",
+            (upload["upload_job_id"],),
+        )
+        self.assertEqual(job["status"], "ready")
+        asset = self.cp.db.query_one(
+            "SELECT media_asset_id FROM media_assets WHERE provider_uid=?",
+            (job["provider_uid"],),
+        )
+        post = self.net.create_post(self.member, {
+            "media_asset_id": asset["media_asset_id"],
+            "caption": "Real clip upload",
+            "sport": "basketball",
+            "visibility": "public",
+        })
+        return post, asset["media_asset_id"], job["provider_uid"], payload
+
+    def test_fake_clip_bytes_stored_and_opened(self):
+        # Minimal MP4-ish payload with ftyp magic (not demo testsrc).
+        payload = (
+            b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
+            b"CLIP-BYTES-NOT-TESTSRC"
+        )
+        _post, asset_id, uid, payload = self._publish_clip_with_bytes(payload)
+        loaded = self.provider.read_video(uid)
+        self.assertIsNotNone(loaded)
+        data, ctype = loaded
+        self.assertEqual(data, payload)
+        self.assertTrue(str(ctype).startswith("video/"))
+        opened = self.net.open_video_asset(self.member, asset_id)
+        self.assertEqual(opened["bytes"], payload)
+        self.assertIn(b"CLIP-BYTES-NOT-TESTSRC", opened["bytes"])
+        self.assertNotIn(b"testsrc", opened["bytes"])
+
+    def test_http_fake_clip_upload_serves_uploaded_bytes(self):
+        upload = self.net.create_upload(self.member, {"kind": "clip"})
+        token = upload["upload_url"].rsplit("/", 1)[-1]
+        payload = (
+            b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
+            b"HUDDLE-REAL-CLIP"
+        )
+        httpd = make_http_server(
+            self.cp.config, self.cp, "/tmp/tz-clip-media",
+            provider=self.provider, photo_storage=self.net.photo_storage,
+        )
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            req = urllib.request.Request(
+                f"http://{host}:{port}/api/network/provider/fake/upload/{token}",
+                data=payload,
+                method="POST",
+                headers={"Content-Type": "video/mp4"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                body = json.loads(resp.read().decode())
+            self.assertTrue(body.get("ok"))
+            self.assertEqual(body.get("status"), "ready")
+            job = self.cp.db.query_one(
+                "SELECT provider_uid, status FROM upload_jobs WHERE upload_job_id=?",
+                (upload["upload_job_id"],),
+            )
+            self.assertEqual(job["status"], "ready")
+            asset = self.cp.db.query_one(
+                "SELECT media_asset_id FROM media_assets WHERE provider_uid=?",
+                (job["provider_uid"],),
+            )
+            self.net.create_post(self.member, {
+                "media_asset_id": asset["media_asset_id"],
+                "caption": "HTTP clip",
+                "sport": "basketball",
+                "visibility": "public",
+            })
+            with urllib.request.urlopen(
+                f"http://{host}:{port}/api/network/media/{asset['media_asset_id']}", timeout=5,
+            ) as media:
+                served = media.read()
+                ctype = media.headers.get("Content-Type", "")
+            self.assertEqual(served, payload)
+            self.assertIn(b"ftyp", served)
+            self.assertIn(b"HUDDLE-REAL-CLIP", served)
+            self.assertTrue(ctype.startswith("video/"))
+            # Must not be a regenerated color-bar/testsrc asset of unrelated size
+            self.assertNotEqual(served[:12], b"")  # sanity
+        finally:
+            httpd.shutdown()
+
+    def test_metadata_only_clip_still_falls_back_to_demo_media(self):
+        """Legacy demo completions without bytes keep ensure_media fallback."""
+        upload = self.net.create_upload(self.member, {"kind": "clip"})
+        token = upload["upload_url"].rsplit("/", 1)[-1]
+        self.net.complete_fake_upload(token, {"duration_seconds": 8})
+        job = self.cp.db.query_one(
+            "SELECT provider_uid FROM upload_jobs WHERE upload_job_id=?",
+            (upload["upload_job_id"],),
+        )
+        self.assertIsNone(self.provider.read_video(job["provider_uid"]))
+        asset = self.cp.db.query_one(
+            "SELECT media_asset_id FROM media_assets WHERE provider_uid=?",
+            (job["provider_uid"],),
+        )
+        opened = self.net.open_video_asset(self.member, asset["media_asset_id"])
+        self.assertIsNone(opened["bytes"])
+        self.assertIsNone(opened["path"])
+
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
