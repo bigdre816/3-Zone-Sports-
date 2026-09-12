@@ -1,4 +1,4 @@
-"""L1B / L1B+ — operator-only private live capture sessions + private ingest.
+"""L1B / L1B+ / G4-B — private live capture + ingest + short rewind buffer.
 
 Lifecycle (server-enforced):
   REQUESTED → CAPTURE_STARTING → VERIFYING_PRIVATE → STOP_REQUESTED → STOPPED
@@ -14,6 +14,10 @@ Server-forced truth on create (clients cannot override):
 L1B+ / G4-A — private server-side ingest bound to an active live_session:
   NONE → BOUND → RECEIVING → CLOSED
   Media/handle stays private; distribution remains DISABLED; no public live input.
+
+G4-B — optional short private rewind buffer (NOT full DVR):
+  Bounded ring of recent private chunks (max seconds / chunks / total bytes).
+  Operator-only; cleared on stop/fail; never LIVE_PUBLIC / Restream / published.
 
 Does NOT call media_provider, restream, AI, xrpl, settlement, Moten intake,
 or ControlPlane.transition(live). Audits via ControlPlane.audit_log only
@@ -73,6 +77,15 @@ INGEST_CLOSED = "CLOSED"
 # Soft cap for private media body in one request (bytes). Keeps L1B+ small.
 _MAX_PRIVATE_MEDIA_BYTES = 256 * 1024
 
+# G4-B — short private rewind buffer bounds (NOT full DVR product).
+# Explicit windows: time AND chunk count AND total bytes — whichever bites first.
+PRIVATE_REWIND_MAX_SECONDS = 30
+PRIVATE_REWIND_MAX_CHUNKS = 30
+PRIVATE_REWIND_MAX_TOTAL_BYTES = 768 * 1024  # 768 KiB
+PRIVATE_REWIND_LABEL = (
+    "Private short rewind buffer — not DVR — not published"
+)
+
 # Fields clients may attempt to set maliciously — always stripped/ignored.
 _CLIENT_TRUTH_FIELDS = frozenset({
     "sports_status",
@@ -100,6 +113,9 @@ _CLIENT_TRUTH_FIELDS = frozenset({
     "private_ingest_closed_at",
     "private_ingest_byte_count",
     "publication",
+    "private_rewind",
+    "is_dvr",
+    "rewind_chunk_id",
 })
 
 _ALLOWED_TRANSITIONS = {
@@ -171,11 +187,125 @@ class LiveSessionService:
         return raw
 
     # -- serialization -----------------------------------------------------
+
+    def _rewind_rows(self, live_session_id: str) -> list:
+        return self.db.query(
+            "SELECT * FROM private_rewind_chunks WHERE live_session_id=? "
+            "ORDER BY created_at ASC, chunk_id ASC",
+            (live_session_id,),
+        )
+
+    def _rewind_summary(self, live_session_id: str) -> dict[str, Any]:
+        rows = self._rewind_rows(live_session_id)
+        total = sum(int(r["byte_count"] or 0) for r in rows)
+        return {
+            "chunk_count": len(rows),
+            "total_bytes": total,
+            "max_seconds": PRIVATE_REWIND_MAX_SECONDS,
+            "max_chunks": PRIVATE_REWIND_MAX_CHUNKS,
+            "max_total_bytes": PRIVATE_REWIND_MAX_TOTAL_BYTES,
+            "oldest_created_at": rows[0]["created_at"] if rows else None,
+            "newest_created_at": rows[-1]["created_at"] if rows else None,
+            "is_dvr": False,
+            "published": False,
+            "distribution_state": DISTRIBUTION_DISABLED,
+            "label": PRIVATE_REWIND_LABEL,
+        }
+
+    def _rewind_chunk_path(self, live_session_id: str, file_name: str) -> Path:
+        return self._private_dir(live_session_id) / file_name
+
+    def _rewind_delete_file(self, live_session_id: str, file_name: str,
+                            keep_asset_id: str | None = None) -> None:
+        # Do not unlink the session's current source asset while still active.
+        stem = file_name[:-4] if file_name.endswith(".bin") else file_name
+        if keep_asset_id and stem == keep_asset_id:
+            return
+        path = self._rewind_chunk_path(live_session_id, file_name)
+        try:
+            if path.is_file():
+                path.unlink()
+        except OSError:
+            pass
+
+    def _rewind_evict(self, live_session_id: str, *, keep_asset_id: str | None = None) -> None:
+        """Enforce time / count / byte bounds — not an unbounded DVR."""
+        cutoff = now() - PRIVATE_REWIND_MAX_SECONDS
+        rows = self._rewind_rows(live_session_id)
+        # Age eviction.
+        for r in rows:
+            if float(r["created_at"]) < cutoff:
+                self._rewind_delete_file(
+                    live_session_id, r["file_name"], keep_asset_id=keep_asset_id
+                )
+                self.db.execute(
+                    "DELETE FROM private_rewind_chunks WHERE chunk_id=?",
+                    (r["chunk_id"],),
+                )
+        rows = self._rewind_rows(live_session_id)
+        # Count eviction (oldest first).
+        while len(rows) > PRIVATE_REWIND_MAX_CHUNKS:
+            victim = rows[0]
+            self._rewind_delete_file(
+                live_session_id, victim["file_name"], keep_asset_id=keep_asset_id
+            )
+            self.db.execute(
+                "DELETE FROM private_rewind_chunks WHERE chunk_id=?",
+                (victim["chunk_id"],),
+            )
+            rows = rows[1:]
+        # Byte eviction (oldest first).
+        total = sum(int(r["byte_count"] or 0) for r in rows)
+        while rows and total > PRIVATE_REWIND_MAX_TOTAL_BYTES:
+            victim = rows[0]
+            self._rewind_delete_file(
+                live_session_id, victim["file_name"], keep_asset_id=keep_asset_id
+            )
+            self.db.execute(
+                "DELETE FROM private_rewind_chunks WHERE chunk_id=?",
+                (victim["chunk_id"],),
+            )
+            total -= int(victim["byte_count"] or 0)
+            rows = rows[1:]
+
+    def _rewind_append(
+        self,
+        live_session_id: str,
+        *,
+        private_ingest_id: str | None,
+        asset_id: str,
+        source_hash: str,
+        byte_count: int,
+        file_name: str,
+    ) -> None:
+        chunk_id = "rw_" + uuid.uuid4().hex[:16]
+        ts = now()
+        self.db.execute(
+            "INSERT INTO private_rewind_chunks("
+            "chunk_id, live_session_id, private_ingest_id, asset_id, "
+            "source_hash, byte_count, file_name, created_at"
+            ") VALUES (?,?,?,?,?,?,?,?)",
+            (
+                chunk_id, live_session_id, private_ingest_id, asset_id,
+                source_hash, int(byte_count), file_name, ts,
+            ),
+        )
+        self._rewind_evict(live_session_id, keep_asset_id=asset_id)
+
+    def _rewind_clear(self, live_session_id: str) -> None:
+        rows = self._rewind_rows(live_session_id)
+        for r in rows:
+            self._rewind_delete_file(live_session_id, r["file_name"], keep_asset_id=None)
+        self.db.execute(
+            "DELETE FROM private_rewind_chunks WHERE live_session_id=?",
+            (live_session_id,),
+        )
+
     def _private_ingest_block(self, r: dict[str, Any]) -> dict[str, Any]:
         state = r.get("private_ingest_state") or INGEST_NONE
         bound = bool(r.get("private_ingest_id")) and state in _INGEST_ACTIVE
         return {
-            "private_ingest_id": r.get("private_ingest_id"),
+            "private_ingest_id": _row_get(r, "private_ingest_id"),
             "private_ingest_state": state,
             "private_ingest_bound_at": r.get("private_ingest_bound_at"),
             "private_ingest_closed_at": r.get("private_ingest_closed_at"),
@@ -196,6 +326,7 @@ class LiveSessionService:
     def _session_dict(self, row) -> dict[str, Any]:
         r = _row_dict(row)
         ingest = self._private_ingest_block(r)
+        rewind = self._rewind_summary(r["live_session_id"])
         return {
             "live_session_id": r["live_session_id"],
             "actor_id": r["actor_id"],
@@ -229,6 +360,7 @@ class LiveSessionService:
             "created_at": r["created_at"],
             "updated_at": r["updated_at"],
             "private_ingest": ingest,
+            "private_rewind": rewind,
             # Honest operator label — never implies publication.
             "publication": {
                 "browser_source_published": False,
@@ -606,6 +738,16 @@ class LiveSessionService:
             "published": False,
             "distribution_state": DISTRIBUTION_DISABLED,
         })
+        # G4-B: append to short private rewind ring (bounded; not DVR).
+        self._rewind_append(
+            live_session_id,
+            private_ingest_id=_row_get(row, "private_ingest_id"),
+            asset_id=asset_id,
+            source_hash=digest,
+            byte_count=len(blob),
+            file_name=f"{asset_id}.bin",
+        )
+        row = self._get_row(live_session_id)
         return self._session_dict(row)
 
     def stop(self, operator: dict, live_session_id: str, data: dict | None = None) -> dict:
@@ -620,6 +762,7 @@ class LiveSessionService:
         if row["session_state"] in (STATE_STOPPED, STATE_STOP_REQUESTED):
             if row["session_state"] == STATE_STOP_REQUESTED:
                 row = self._close_ingest_if_open(row)
+                self._rewind_clear(live_session_id)
                 row = self._transition(row, STATE_STOPPED, ts_field="stopped_at")
                 self._audit(operator["user_id"], "live_session.stopped", live_session_id, {
                     "session_state": STATE_STOPPED,
@@ -652,6 +795,12 @@ class LiveSessionService:
                 "private_ingest_state": INGEST_CLOSED,
                 "published": False,
             })
+        self._rewind_clear(live_session_id)
+        self._audit(operator["user_id"], "live_session.private_rewind_cleared", live_session_id, {
+            "reason": "stop",
+            "is_dvr": False,
+            "published": False,
+        })
         row = self._transition(row, STATE_STOPPED, ts_field="stopped_at")
         self._audit(operator["user_id"], "live_session.stopped", live_session_id, {
             "session_state": STATE_STOPPED,
@@ -675,6 +824,12 @@ class LiveSessionService:
             )
         msg = (reason or "failed").strip()[:200] or "failed"
         row = self._close_ingest_if_open(row)
+        self._rewind_clear(live_session_id)
+        self._audit(operator["user_id"], "live_session.private_rewind_cleared", live_session_id, {
+            "reason": "fail",
+            "is_dvr": False,
+            "published": False,
+        })
         row = self._transition(
             row, STATE_FAILED,
             ts_field="failed_at",
@@ -685,3 +840,97 @@ class LiveSessionService:
             "reason": msg,
         })
         return self._session_dict(row)
+
+    def list_private_rewind(self, operator: dict, live_session_id: str) -> dict:
+        """G4-B: list recent private rewind buffer metadata (operator only).
+
+        Honest labels: short bounded buffer — not full DVR — not published.
+        """
+        self.cp.require_operator(operator)
+        self.require_enabled()
+        row = self._get_row(live_session_id)
+        if not row:
+            raise NotFoundError("live session not found", "live_session_not_found")
+        # Defense in depth — never surface public rails.
+        if row["public_state"] != PUBLIC_STATE_LIVE_PRIVATE or row["distribution_state"] != DISTRIBUTION_DISABLED:
+            self.db.execute(
+                "UPDATE live_sessions SET public_state=?, distribution_state=?, "
+                "updated_at=? WHERE live_session_id=?",
+                (PUBLIC_STATE_LIVE_PRIVATE, DISTRIBUTION_DISABLED, now(), live_session_id),
+            )
+            row = self._get_row(live_session_id)
+        summary = self._rewind_summary(live_session_id)
+        chunks = []
+        for r in self._rewind_rows(live_session_id):
+            chunks.append({
+                "chunk_id": r["chunk_id"],
+                "asset_id": r["asset_id"],
+                "private_ingest_id": _row_get(r, "private_ingest_id"),
+                "source_hash": r["source_hash"],
+                "byte_count": int(r["byte_count"] or 0),
+                "created_at": r["created_at"],
+            })
+        return {
+            "live_session_id": live_session_id,
+            "private_ingest_id": _row_get(row, "private_ingest_id"),
+            "session_state": row["session_state"],
+            "public_state": PUBLIC_STATE_LIVE_PRIVATE,
+            "distribution_state": DISTRIBUTION_DISABLED,
+            "provider_name": PROVIDER_NAME,
+            "provider_stream_id": None,
+            "restream_event_id": None,
+            "is_dvr": False,
+            "published": False,
+            "label": PRIVATE_REWIND_LABEL,
+            "bounds": {
+                "max_seconds": PRIVATE_REWIND_MAX_SECONDS,
+                "max_chunks": PRIVATE_REWIND_MAX_CHUNKS,
+                "max_total_bytes": PRIVATE_REWIND_MAX_TOTAL_BYTES,
+            },
+            "chunk_count": summary["chunk_count"],
+            "total_bytes": summary["total_bytes"],
+            "oldest_created_at": summary["oldest_created_at"],
+            "newest_created_at": summary["newest_created_at"],
+            "chunks": chunks,
+        }
+
+    def get_private_rewind_latest(self, operator: dict, live_session_id: str,
+                                  data: dict | None = None) -> dict:
+        """G4-B: fetch latest private rewind chunk metadata (optional bytes).
+
+        Never claims DVR; never enables distribution / public live.
+        """
+        self.cp.require_operator(operator)
+        self.require_enabled()
+        payload = self.strip_client_payload(data)
+        row = self._get_row(live_session_id)
+        if not row:
+            raise NotFoundError("live session not found", "live_session_not_found")
+        rows = self._rewind_rows(live_session_id)
+        latest = rows[-1] if rows else None
+        include = bool(payload.get("include_content"))
+        chunk = None
+        if latest:
+            chunk = {
+                "chunk_id": latest["chunk_id"],
+                "asset_id": latest["asset_id"],
+                "private_ingest_id": _row_get(latest, "private_ingest_id"),
+                "source_hash": latest["source_hash"],
+                "byte_count": int(latest["byte_count"] or 0),
+                "created_at": latest["created_at"],
+            }
+            if include:
+                path = self._rewind_chunk_path(live_session_id, latest["file_name"])
+                if path.is_file():
+                    chunk["content_base64"] = base64.b64encode(path.read_bytes()).decode()
+                else:
+                    chunk["content_base64"] = None
+        return {
+            "live_session_id": live_session_id,
+            "public_state": PUBLIC_STATE_LIVE_PRIVATE,
+            "distribution_state": DISTRIBUTION_DISABLED,
+            "is_dvr": False,
+            "published": False,
+            "label": PRIVATE_REWIND_LABEL,
+            "chunk": chunk,
+        }

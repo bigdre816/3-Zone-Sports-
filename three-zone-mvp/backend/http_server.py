@@ -95,6 +95,8 @@ def _routes():
         ("POST", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)/stop$"), "h_live_session_stop", "operator"),
         ("POST", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)/private-ingest$"), "h_live_session_private_ingest", "operator"),
         ("POST", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)/private-ingest/media$"), "h_live_session_private_ingest_media", "operator"),
+        ("GET", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)/private-rewind$"), "h_live_session_private_rewind", "operator"),
+        ("GET", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)/private-rewind/latest$"), "h_live_session_private_rewind_latest", "operator"),
         ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)$"), "h_audit_detail", "operator"),
         ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)/xrpl$"), "h_audit_detail", "operator"),
         ("POST", re.compile(r"^/internal/treasure/verify$"), "h_treasure_verify", "operator"),
@@ -784,6 +786,26 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         # L1B+: store private media bytes server-side; never publishes.
         session = self.live_sessions.receive_private_media(u, p["live_session_id"], b or {})
         self._send_json(200, {"live_session": session})
+
+    def h_live_session_private_rewind(self, p, b, u):
+        # G4-B: list short private rewind buffer metadata (not DVR).
+        payload = self.live_sessions.list_private_rewind(u, p["live_session_id"])
+        self._send_json(200, {"private_rewind": payload})
+
+    def h_live_session_private_rewind_latest(self, p, b, u):
+        # G4-B: latest private rewind chunk metadata (optional content via query).
+        # GET — read include_content from query string if present.
+        include = False
+        try:
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            include = (qs.get("include_content") or ["false"])[0].lower() in ("1", "true", "yes")
+        except Exception:
+            include = False
+        payload = self.live_sessions.get_private_rewind_latest(
+            u, p["live_session_id"], {"include_content": include}
+        )
+        self._send_json(200, {"private_rewind_latest": payload})
 
     def h_treasure_verify(self, p, b, u):
         self._send_json(200, self.portal.verify_treasure((b or {}).get("subject_ref", "demo-viewer")))
