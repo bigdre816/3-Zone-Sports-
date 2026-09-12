@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Private capture — Three-Zone</title>
+  <link rel="stylesheet" href="/private_capture.css" />
+</head>
+<body>
+  <main>
+    <h1>Private live capture</h1>
+    <p class="muted">Operator-only. No member route. No public card. No third-party live publish.</p>
+    <div class="banner" id="banner">Private capture session — Browser source not published</div>
+    <p class="muted">Local camera preview only. Distribution is forced <strong>DISABLED</strong>; public_state is <strong>LIVE_PRIVATE</strong>.</p>
+
+    <label>Session token (Bearer from /ops sign-in)
+      <input id="token" type="password" autocomplete="off" placeholder="Paste operator session token" />
+    </label>
+    <label>Optional event_id (validated read-only; does not go live)
+      <input id="event_id" type="text" placeholder="evt_…" />
+    </label>
+
+    <div class="row">
+      <button type="button" id="cam-btn">Enable local camera</button>
+      <button type="button" id="start-btn" disabled>Start private session</button>
+      <button type="button" id="stop-btn" class="danger" disabled>Stop</button>
+      <button type="button" id="refresh-btn" class="ghost" disabled>Refresh</button>
+    </div>
+
+    <video id="preview" playsinline muted autoplay></video>
+    <p class="muted"><a href="/ops">← Back to control plane</a></p>
+    <div id="status">Idle. Feature flag THREEZONE_PRIVATE_LIVE_CAPTURE_ENABLED must be true.</div>
+  </main>
+  <script src="/private_capture.js"></script>
+</body>
+</html>
