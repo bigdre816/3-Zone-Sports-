@@ -42,6 +42,8 @@ def _routes():
         ("GET", re.compile(r"^/health$"), "h_health", "none"),
         ("GET", re.compile(r"^/api/ops/live-readiness$"), "h_live_readiness", "operator"),
         ("GET", re.compile(r"^/api/ops/dashboard$"), "h_ops_dashboard", "operator"),
+        ("GET", re.compile(r"^/api/ops/sports-check/assets$"), "h_sports_check_assets", "operator"),
+        ("POST", re.compile(r"^/api/ops/sports-check$"), "h_sports_check_run", "operator"),
         ("GET", re.compile(r"^/api/config$"), "h_config", "none"),
         ("GET", re.compile(r"^/api/public/live$"), "h_public_live", "none"),
         ("GET", re.compile(r"^/api/public/schedules$"), "h_public_schedules", "none"),
@@ -516,6 +518,14 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         self._send_json(200, self.cp.ops_dashboard(
             u, live_sessions=self.live_sessions, moten=self.moten,
         ))
+
+    def h_sports_check_assets(self, p, b, u):
+        from .sports_check import list_synthetic_assets
+        self._send_json(200, list_synthetic_assets(self.cp, u))
+
+    def h_sports_check_run(self, p, b, u):
+        from .sports_check import run_sports_check
+        self._send_json(200, run_sports_check(self.cp, u, b or {}))
 
     def h_config(self, p, b, u):
         self._send_json(200, self.cp.config.public_config())

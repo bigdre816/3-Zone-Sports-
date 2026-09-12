@@ -1,8 +1,9 @@
 """THREEZONE sports-vision evidence library (V0 / P1-V0).
 
-Library-only. Not imported by backend.http_server, run.py, or the AI
-gateway startup path. No product HTTP route, worker admission, or
-gateway task registration.
+V0 library. Operator sports-check (V0b) may call this via
+``/api/ops/sports-check`` with ``allow_offline_synthetic`` only.
+Not registered on the AI gateway, workers, or public member routes.
+No publication authority.
 
 Models emit observations. SportsContextPolicy emits the only decision.
 Publication / rights / settlement are out of scope.
