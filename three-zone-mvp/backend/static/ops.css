@@ -440,3 +440,8 @@ summary { cursor: pointer; font-weight: 600; }
 .wallet-summary code { font-size: 12px; }
 .moten-embed-details { margin-top: 18px; }
 .moten-embed-details > summary { cursor: pointer; font-weight: 600; margin-bottom: 10px; }
+
+.xrpl-subhead { margin: 16px 0 8px; font-size: 14px; }
+.xrpl-honesty { margin-top: 8px; font-size: 12px; line-height: 1.45; padding: 8px 10px; border-radius: 8px; background: rgba(15,23,42,0.04); }
+.xrpl-reconcile { margin-top: 12px; font-size: 13px; }
+.xrpl-moten-actions { margin-bottom: 6px; }

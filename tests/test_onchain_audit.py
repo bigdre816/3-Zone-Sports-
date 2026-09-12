@@ -99,5 +99,58 @@ class AuditTests(unittest.TestCase):
             self.assertNotIn("MOTEN_XRPL_SECRET", page.read())
 
 
+
+    def test_set_signing_account_binds_classic_address(self):
+        svc = build()
+        profile = svc.set_signing_account("rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe", "testnet")
+        self.assertEqual(profile["account"], "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe")
+        self.assertEqual(profile["network"], "testnet")
+        self.assertEqual(profile["status"], "CONFIGURED")
+        health = svc.health()
+        self.assertEqual(health["xrpl_mode"], "simulation")
+        self.assertTrue(health["wallet_signed_publication_supported"])
+        self.assertIn("honesty", health)
+        self.assertIn("treasure", health["honesty"])
+
+    def test_set_signing_account_rejects_bad_address(self):
+        with self.assertRaisesRegex(ValueError, "invalid"):
+            build().set_signing_account("not-an-address", "testnet")
+
+    def test_confirm_wallet_publication_stores_receipt(self):
+        svc = build()
+        svc.set_signing_account("rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe", "testnet")
+        created = svc.create_event(event(event_id="AUD-WALLET-1", event_type="evidence.manifest.created",
+                                         payload={"purpose": "ops_wallet_test_publish"}))
+        verification = svc.verify(created["event_id"])
+        self.assertEqual(verification["verification_status"], "VERIFIED")
+        request = svc.request_publication(created["event_id"], verification["verification_id"])
+        tx_hash = "A1B2C3D4" * 8
+        result = svc.confirm_wallet_publication(
+            request["request_id"],
+            tx_hash=tx_hash,
+            account="rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe",
+            network="testnet",
+        )
+        self.assertEqual(result["transaction_hash"], tx_hash)
+        self.assertEqual(result["publication"]["status"], "VALIDATED")
+        receipts = svc.list_receipts()
+        self.assertTrue(any(r["transaction_hash"] == tx_hash and r["status"] == "VALIDATED" for r in receipts))
+
+    def test_confirm_wallet_publication_rejects_account_mismatch(self):
+        svc = build()
+        svc.set_signing_account("rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe", "testnet")
+        created = svc.create_event(event(event_id="AUD-WALLET-2", event_type="evidence.manifest.created",
+                                         payload={"purpose": "ops_wallet_test_publish"}))
+        verification = svc.verify(created["event_id"])
+        request = svc.request_publication(created["event_id"], verification["verification_id"])
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            svc.confirm_wallet_publication(
+                request["request_id"],
+                tx_hash="DEADBEEF" * 8,
+                account="rN7n7otQDd6FczFgLdlqtyMVea3zAjyTqF",
+                network="testnet",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

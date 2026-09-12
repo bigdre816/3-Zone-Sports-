@@ -236,6 +236,40 @@
                 </tbody>
               </table>
             </div>
+
+            <div class="xrpl-moten-actions wallet-actions" style="margin-top:14px">
+              <button type="button" class="primary" id="xrpl-save-audit">Save as Moten audit account</button>
+              <button type="button" class="primary" id="xrpl-test-publish">Publish test audit hash</button>
+              <button type="button" class="ghost" id="xrpl-moten-refresh">Refresh Moten dept</button>
+            </div>
+            <div id="xrpl-audit-bind-status" class="embed-status muted">Moten audit account not bound yet.</div>
+            <div id="xrpl-moten-honesty" class="xrpl-honesty muted">Treasure verify is simulated. Ledger publish is wallet-signed AccountSet+Memo.</div>
+
+            <h3 class="xrpl-subhead">Moten publications</h3>
+            <div class="table-wrap">
+              <table class="health-table" id="xrpl-moten-pubs-table">
+                <thead>
+                  <tr><th>request_id</th><th>event_id</th><th>status</th><th>network</th></tr>
+                </thead>
+                <tbody id="xrpl-moten-pubs-body">
+                  <tr><td colspan="4" class="muted">Connect a wallet and refresh Moten dept.</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3 class="xrpl-subhead">Moten receipts</h3>
+            <div class="table-wrap">
+              <table class="health-table" id="xrpl-moten-receipts-table">
+                <thead>
+                  <tr><th>receipt status</th><th>tx hash</th><th>event_id</th></tr>
+                </thead>
+                <tbody id="xrpl-moten-receipts-body">
+                  <tr><td colspan="3" class="muted">No Moten receipts loaded yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div id="xrpl-reconcile-summary" class="xrpl-reconcile muted">Reconcile: connect a wallet to match Moten receipts ↔ ledger tx hashes.</div>
           </div>
 
           <details class="moten-embed-details" id="xrpl-moten-details">

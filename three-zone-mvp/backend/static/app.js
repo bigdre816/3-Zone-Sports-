@@ -231,6 +231,7 @@ function showPane(name) {
   }
   if (name === "xrpl") {
     restoreXrplWallet();
+    loadXrplMotenDept();
   }
   if (name === "audit") {
     refreshAnalytics();
@@ -446,6 +447,13 @@ async function refreshXrplAccountView() {
     if (status) status.textContent = "Connected, but ledger read failed: " + (e.code || e.message);
     toast("XRPL account read failed: " + (e.code || e.message), "bad");
   }
+  // Moten bind + dept are best-effort alongside ledger refresh
+  try {
+    await saveXrplAuditAccount({ quiet: true });
+  } catch (_) {}
+  try {
+    await loadXrplMotenDept();
+  } catch (_) {}
 }
 
 async function onXrplConnect(provider) {
@@ -484,6 +492,277 @@ function restoreXrplWallet() {
     if (net && saved.network) net.value = saved.network;
   }
   refreshXrplAccountView();
+}
+
+function _xrplEmptyRow(tbody, cols, msg) {
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  const tr = document.createElement("tr");
+  const td = document.createElement("td");
+  td.colSpan = cols;
+  td.className = "muted";
+  td.textContent = msg;
+  tr.appendChild(td);
+  tbody.appendChild(tr);
+}
+
+function _shortHash(h) {
+  const s = String(h || "");
+  if (!s) return "—";
+  return s.length > 14 ? s.slice(0, 12) + "…" : s;
+}
+
+async function saveXrplAuditAccount(opts) {
+  const quiet = !!(opts && opts.quiet);
+  const bind = $("#xrpl-audit-bind-status");
+  if (!_xrplWallet || !_xrplWallet.address) {
+    if (bind) bind.textContent = "Moten audit account not bound yet — connect a wallet first.";
+    if (!quiet) toast("Connect a wallet first", "bad");
+    return null;
+  }
+  const network = ($("#xrpl-network") && $("#xrpl-network").value) || _xrplWallet.network || "testnet";
+  if (bind) bind.textContent = "Saving Moten audit account…";
+  try {
+    const res = await api("POST", "/api/ops/xrpl/audit-account", {
+      address: _xrplWallet.address,
+      network,
+      provider: _xrplWallet.provider || "unknown",
+    });
+    const profile = (res.moten && res.moten.signing_profile) || (res.moten && res.moten) || {};
+    const acct = profile.account || res.address || _xrplWallet.address;
+    const net = profile.network || res.network || network;
+    if (bind) {
+      bind.textContent = "Saved as Moten audit account · " + acct + " · " + net
+        + (profile.status ? (" · " + profile.status) : "");
+    }
+    if (!quiet) toast("Moten audit account saved", "ok");
+    return res;
+  } catch (e) {
+    if (bind) bind.textContent = "Moten bind failed: " + (e.code || e.message);
+    if (!quiet) toast("Moten audit bind failed: " + (e.code || e.message), "bad");
+    throw e;
+  }
+}
+
+async function loadXrplMotenDept() {
+  const honestyEl = $("#xrpl-moten-honesty");
+  const pubsBody = $("#xrpl-moten-pubs-body");
+  const receiptsBody = $("#xrpl-moten-receipts-body");
+  const reconcileEl = $("#xrpl-reconcile-summary");
+  const address = _xrplWallet && _xrplWallet.address;
+  const q = address
+    ? ("/api/ops/xrpl/moten?address=" + encodeURIComponent(address))
+    : "/api/ops/xrpl/moten";
+  let data;
+  try {
+    data = await api("GET", q);
+  } catch (e) {
+    if (honestyEl) {
+      honestyEl.textContent = "Moten dept unavailable: " + (e.code || e.message)
+        + " · Treasure verify is simulated; ledger publish is wallet-signed AccountSet+Memo.";
+    }
+    _xrplEmptyRow(pubsBody, 4, "Moten publications unavailable.");
+    _xrplEmptyRow(receiptsBody, 3, "Moten receipts unavailable.");
+    if (reconcileEl) reconcileEl.textContent = "Reconcile unavailable: " + (e.code || e.message);
+    return null;
+  }
+  if (!data.configured) {
+    if (honestyEl) {
+      honestyEl.textContent = "Moten on-chain not configured (set TZ_MOTEN_ONCHAIN_URL). "
+        + "Treasure verify is simulated; ledger publish is wallet-signed AccountSet+Memo.";
+    }
+    _xrplEmptyRow(pubsBody, 4, "Configure TZ_MOTEN_ONCHAIN_URL to load Moten publications.");
+    _xrplEmptyRow(receiptsBody, 3, "Configure TZ_MOTEN_ONCHAIN_URL to load Moten receipts.");
+    if (reconcileEl) reconcileEl.textContent = "Reconcile: Moten on-chain URL not configured.";
+    return data;
+  }
+  const h = data.honesty || {};
+  const health = data.health || {};
+  const bits = [];
+  bits.push("mode=" + (h.xrpl_mode || health.xrpl_mode || "unknown"));
+  bits.push("network=" + (h.network || health.network || "unknown"));
+  if (h.xrpl_label || health.xrpl) bits.push(String(h.xrpl_label || health.xrpl));
+  bits.push(h.treasure || "Treasure verify is simulated");
+  bits.push(h.publish || "Ledger publish is wallet-signed AccountSet+Memo");
+  if (h.mode_note) bits.push(h.mode_note);
+  if (h.wallet_signed_publication_supported || health.wallet_signed_publication_supported) {
+    bits.push("wallet-signed path supported");
+  }
+  if (honestyEl) honestyEl.textContent = bits.join(" · ");
+
+  const pubs = data.publications || [];
+  if (pubsBody) {
+    pubsBody.innerHTML = "";
+    if (!pubs.length) {
+      _xrplEmptyRow(pubsBody, 4, "No Moten publications yet.");
+    } else {
+      pubs.forEach((p) => {
+        const tr = document.createElement("tr");
+        [p.request_id || "—", p.event_id || "—", p.status || "—", p.network || "—"].forEach((val) => {
+          const td = document.createElement("td");
+          const code = document.createElement("code");
+          code.textContent = String(val);
+          td.appendChild(code);
+          tr.appendChild(td);
+        });
+        pubsBody.appendChild(tr);
+      });
+    }
+  }
+
+  const receipts = data.receipts || [];
+  if (receiptsBody) {
+    receiptsBody.innerHTML = "";
+    if (!receipts.length) {
+      _xrplEmptyRow(receiptsBody, 3, "No Moten receipts yet.");
+    } else {
+      receipts.forEach((r) => {
+        const tr = document.createElement("tr");
+        const cells = [r.status || "—", _shortHash(r.transaction_hash), r.event_id || "—"];
+        cells.forEach((val, idx) => {
+          const td = document.createElement("td");
+          if (idx === 1 && r.transaction_hash) {
+            const code = document.createElement("code");
+            code.title = r.transaction_hash;
+            code.textContent = val;
+            td.appendChild(code);
+          } else {
+            const code = document.createElement("code");
+            code.textContent = String(val);
+            td.appendChild(code);
+          }
+          tr.appendChild(td);
+        });
+        receiptsBody.appendChild(tr);
+      });
+    }
+  }
+
+  const match = data.match || {};
+  const rec = data.reconciliation || {};
+  const matched = match.matched || [];
+  if (reconcileEl) {
+    reconcileEl.textContent = "Reconcile · matched " + matched.length
+      + " · unmatched Moten receipts " + (match.unmatched_receipt_count != null ? match.unmatched_receipt_count : "—")
+      + " · wallet txs " + (match.wallet_tx_count != null ? match.wallet_tx_count : "—")
+      + (rec.status ? (" · Moten run " + rec.status) : "")
+      + (rec.error ? (" · " + rec.error) : "");
+  }
+
+  const bind = $("#xrpl-audit-bind-status");
+  const profile = data.signing_profile || {};
+  if (bind && profile.account) {
+    bind.textContent = "Moten audit account · " + profile.account
+      + " · " + (profile.network || "")
+      + (profile.status ? (" · " + profile.status) : "");
+  }
+  return data;
+}
+
+function _extractTxHash(resp) {
+  if (!resp) return null;
+  if (typeof resp === "string" && resp.length >= 16) return resp;
+  const candidates = [
+    resp.hash,
+    resp.transaction_hash,
+    resp.tx_hash,
+    resp.result && resp.result.hash,
+    resp.result && resp.result.transaction_hash,
+    resp.response && resp.response.txid,
+    resp.response && resp.response.hash,
+    resp.response && resp.response.data && resp.response.data.hash,
+    resp.response && resp.response.data && resp.response.data.resp && resp.response.data.resp.hash,
+    resp.data && resp.data.hash,
+    resp.tx_json && resp.tx_json.hash,
+    resp.engine_result && resp.tx_json && resp.tx_json.hash,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.length >= 16) return c;
+  }
+  // nested Crossmark pack shapes
+  try {
+    const raw = JSON.stringify(resp);
+    const m = raw.match(/"hash"\s*:\s*"([A-F0-9]{64})"/i);
+    if (m) return m[1];
+  } catch (_) {}
+  return null;
+}
+
+async function _signSubmitCrossmark(unsignedTx) {
+  await _loadScriptOnce(
+    "https://cdn.jsdelivr.net/npm/@crossmarkio/sdk@0.4.0/pack/umd/index.js",
+    "tz-crossmark-sdk"
+  );
+  const sdk = window.default || window.crossmark || window.Crossmark || null;
+  if (!sdk) throw new Error("Crossmark SDK did not load");
+  let resp;
+  if (typeof sdk.signAndSubmitAndWait === "function") {
+    resp = await sdk.signAndSubmitAndWait(unsignedTx);
+  } else if (sdk.async && typeof sdk.async.signAndSubmitAndWait === "function") {
+    resp = await sdk.async.signAndSubmitAndWait(unsignedTx);
+  } else if (typeof sdk.signAndSubmit === "function") {
+    resp = await sdk.signAndSubmit(unsignedTx);
+  } else {
+    throw new Error("Crossmark sign+submit is unavailable in this browser");
+  }
+  const hash = _extractTxHash(resp);
+  if (!hash) throw new Error("Crossmark did not return a transaction hash");
+  return hash;
+}
+
+async function _signSubmitGemWallet(unsignedTx) {
+  await _loadScriptOnce(
+    "https://unpkg.com/@gemwallet/api@3.8.0/umd/gemwallet-api.js",
+    "tz-gemwallet-api"
+  );
+  const apiGw = window.GemWalletApi;
+  if (!apiGw) throw new Error("GemWallet API did not load");
+  const resp = await apiGw.signAndSubmit({ transaction: unsignedTx });
+  const hash = _extractTxHash(resp)
+    || (resp && resp.result && resp.result.hash)
+    || null;
+  if (!hash) throw new Error("GemWallet did not return a transaction hash (or request was rejected)");
+  return hash;
+}
+
+async function publishTestAudit() {
+  if (!_xrplWallet || !_xrplWallet.address) {
+    toast("Connect a wallet first", "bad");
+    return;
+  }
+  const network = ($("#xrpl-network") && $("#xrpl-network").value) || _xrplWallet.network || "testnet";
+  const status = $("#xrpl-wallet-status");
+  try {
+    if (status) status.textContent = "Preparing Moten test publish…";
+    toast("Treasure verify is simulated; ledger publish is wallet-signed AccountSet+Memo", "ok");
+    const prepared = await api("POST", "/api/ops/xrpl/test-publish/prepare", {
+      address: _xrplWallet.address,
+      network,
+    });
+    const unsigned = prepared.unsigned_tx;
+    const requestId = prepared.request_id;
+    if (!unsigned || !requestId) throw new Error("prepare did not return unsigned_tx/request_id");
+    if (status) status.textContent = "Approve AccountSet+Memo in " + (_xrplWallet.provider || "wallet") + "…";
+    let txHash;
+    if (_xrplWallet.provider === "gemwallet") {
+      txHash = await _signSubmitGemWallet(unsigned);
+    } else {
+      txHash = await _signSubmitCrossmark(unsigned);
+    }
+    if (status) status.textContent = "Confirming Moten receipt…";
+    await api("POST", "/api/ops/xrpl/test-publish/confirm", {
+      request_id: requestId,
+      transaction_hash: txHash,
+      address: _xrplWallet.address,
+      network,
+    });
+    toast("Test audit hash published · " + _shortHash(txHash), "ok");
+    await refreshXrplAccountView();
+    await loadXrplMotenDept();
+  } catch (e) {
+    if (status) status.textContent = "Publish failed: " + (e.code || e.message);
+    toast("Publish failed: " + (e.code || e.message || e), "bad");
+  }
 }
 
 // -- Moten / XRPL department panes (merged into /ops) -------------------
@@ -1754,6 +2033,7 @@ async function init() {
   if (xrplRefresh) xrplRefresh.addEventListener("click", () => {
     loadMotenBridge();
     refreshXrplAccountView();
+    loadXrplMotenDept();
   });
   const xrplCrossmark = $("#xrpl-connect-crossmark");
   if (xrplCrossmark) xrplCrossmark.addEventListener("click", () => onXrplConnect("crossmark"));
@@ -1765,6 +2045,14 @@ async function init() {
   if (xrplNetwork) xrplNetwork.addEventListener("change", () => {
     if (_xrplWallet) refreshXrplAccountView();
   });
+  const xrplSaveAudit = $("#xrpl-save-audit");
+  if (xrplSaveAudit) xrplSaveAudit.addEventListener("click", () => {
+    saveXrplAuditAccount({ quiet: false }).then(() => loadXrplMotenDept()).catch(() => {});
+  });
+  const xrplTestPublish = $("#xrpl-test-publish");
+  if (xrplTestPublish) xrplTestPublish.addEventListener("click", () => publishTestAudit());
+  const xrplMotenRefresh = $("#xrpl-moten-refresh");
+  if (xrplMotenRefresh) xrplMotenRefresh.addEventListener("click", () => loadXrplMotenDept());
   document.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const pane = btn.getAttribute("data-goto");

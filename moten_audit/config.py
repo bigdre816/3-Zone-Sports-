@@ -22,6 +22,8 @@ class Config:
         config = cls(
             env=os.getenv("MOTEN_ENV", "development").lower(),
             database_path=os.getenv("MOTEN_AUDIT_DATABASE_PATH", "data/moten_audit.sqlite3"),
+            # Defaults to simulation. For /ops wallet-confirm honesty labels + testnet mode,
+            # set MOTEN_XRPL_MODE=testnet on the Moten on-chain service (Render env; not in render-moten.yaml).
             xrpl_mode=os.getenv("MOTEN_XRPL_MODE", "simulation").lower(),
             xrpl_network=os.getenv("MOTEN_XRPL_NETWORK", "testnet").lower(),
             xrpl_account=os.getenv("MOTEN_XRPL_ACCOUNT", ""),
