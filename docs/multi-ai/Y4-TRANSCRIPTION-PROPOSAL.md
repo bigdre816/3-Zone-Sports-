@@ -13,7 +13,7 @@ does **not**:
 - complete Path A review / Moten institutional release
 - mutate ControlPlane rights, playback leases, score, settlement, or XRPL
 
-Treasure delivery / reconciliation is **Y5**. Human review seats are **Y6**.
+Treasure delivery / reconciliation is **Y5** — see [Y5-TREASURE-DELIVERY.md](./Y5-TREASURE-DELIVERY.md). Human review seats are **Y6**.
 Member panel is **Y7**.
 
 ## Local path
