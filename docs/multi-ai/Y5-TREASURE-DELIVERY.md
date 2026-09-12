@@ -89,7 +89,7 @@ Env: `TZ_MOTEN_SERVICE_URL`, `TZ_MOTEN_SHARED_SECRET`, `TZ_MOTEN_TIMEOUT_SECONDS
 
 ## Out of scope (later tickets)
 
-- **Y6** independent review engine / immutable revisions product
+- **Y6** independent review + immutable revisions as **projections only** — see [Y6-REVIEW-PROJECTIONS.md](./Y6-REVIEW-PROJECTIONS.md)
 - **Y7** member panel
 - Full Treasure Path A 4-seat product UI
 - Prod AI flip; Restream / `LIVE_PUBLIC`; rights / score / settlement / XRPL mutation
