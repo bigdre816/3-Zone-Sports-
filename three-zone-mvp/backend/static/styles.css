@@ -40,15 +40,32 @@
   --frame-photo: none;  /* optional texture for empty frames awaiting community moments */
   --surface-glow: radial-gradient(120% 80% at 50% -20%, rgba(200, 245, 66, 0.05), transparent 55%);
   --frame-edge: rgba(255, 255, 255, 0.06);
+  /* Mobile-safe page chrome — fixed gutters avoid % bleed overflow on XR/Android */
+  --page-gutter: 5%;
+  --chrome-bottom: 110px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 }
 
 * { box-sizing: border-box; }
 
-html { color-scheme: dark; }
+html {
+  color-scheme: dark;
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
   background:
     var(--surface-glow),
     linear-gradient(180deg, var(--void-a) 0%, var(--void-b) 48%, var(--void-c) 100%);
@@ -59,12 +76,18 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+img, video, canvas, svg {
+  max-width: 100%;
+}
+
 /* ——— Chrome ——— */
 .topbar, header.topbar, header {
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  padding: 14px 5%;
+  padding: calc(14px + var(--safe-top)) var(--page-gutter) 14px;
+  padding-left: max(var(--page-gutter), var(--safe-left));
+  padding-right: max(var(--page-gutter), var(--safe-right));
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
@@ -72,6 +95,10 @@ body {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   z-index: 8;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .brand {
@@ -81,6 +108,7 @@ body {
   letter-spacing: 0.08em;
   font-size: 13px;
   text-transform: uppercase;
+  flex-shrink: 0;
 }
 
 #portal h1,
@@ -119,6 +147,9 @@ nav a.active { box-shadow: inset 0 -2px 0 var(--accent); }
   display: flex;
   gap: 8px;
   align-items: center;
+  min-width: 0;
+  flex: 1;
+  justify-content: flex-end;
 }
 
 /* ——— Type & controls ——— */
@@ -196,9 +227,14 @@ button.danger, .danger {
 }
 
 main {
-  max-width: 1080px;
+  width: 100%;
+  max-width: min(1080px, 100%);
   margin: 0 auto;
-  padding: var(--space-lg) 5% 110px;
+  padding: var(--space-lg) var(--page-gutter) calc(var(--chrome-bottom) + var(--safe-bottom));
+  padding-left: max(var(--page-gutter), var(--safe-left));
+  padding-right: max(var(--page-gutter), var(--safe-right));
+  overflow-x: clip;
+  box-sizing: border-box;
 }
 
 .portal-intro {
@@ -348,11 +384,16 @@ footer {
   gap: 16px;
   justify-content: center;
   flex-wrap: wrap;
-  padding: 28px 5% 110px;
+  padding: 28px var(--page-gutter) calc(var(--chrome-bottom) + var(--safe-bottom));
+  padding-left: max(var(--page-gutter), var(--safe-left));
+  padding-right: max(var(--page-gutter), var(--safe-right));
   border-top: 1px solid var(--line);
   color: var(--muted-soft);
   font-size: 12px;
   letter-spacing: 0.04em;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: clip;
 }
 
 footer a {
@@ -488,9 +529,10 @@ video {
 
 .toast {
   position: fixed;
-  bottom: 96px;
+  bottom: calc(96px + var(--safe-bottom));
   left: 50%;
   transform: translateX(-50%);
+  max-width: min(92vw, 420px);
   background: var(--text);
   color: var(--ink);
   padding: 12px 18px;
@@ -498,6 +540,7 @@ video {
   font-weight: 700;
   z-index: 20;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
 }
 
 /* ——— Chips ——— */
@@ -936,9 +979,13 @@ dialog {
   color: var(--text);
   border: 1px solid var(--line-strong);
   border-radius: 22px;
-  width: min(480px, 94vw);
+  width: min(480px, calc(100vw - 24px));
+  max-width: calc(100% - 24px);
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 24px);
+  overflow: auto;
   padding: 22px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  box-sizing: border-box;
 }
 
 dialog::backdrop {
@@ -1076,9 +1123,12 @@ dialog::backdrop {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid var(--line);
-  padding: 8px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+  padding: 8px max(10px, var(--safe-right)) calc(10px + var(--safe-bottom)) max(10px, var(--safe-left));
   justify-content: space-around;
   align-items: center;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .bottom-nav a,
@@ -1155,6 +1205,11 @@ dialog::backdrop {
 }
 
 @media (max-width: 800px) {
+  :root {
+    --page-gutter: 16px;
+    --chrome-bottom: 128px;
+  }
+
   .auth-grid,
   .columns,
   .cards,
@@ -1167,31 +1222,128 @@ dialog::backdrop {
   .bottom-nav { display: flex; }
   #bottom-nav[hidden] { display: none; }
 
-  #search-wrap { width: min(148px, 34vw); }
-  .schedule-row { grid-template-columns: 1fr 1fr; }
-  main { padding-bottom: 128px; }
-  footer { padding-bottom: 128px; }
+  /* Topbar must fit ~360–414 without horizontal scroll */
+  .topbar {
+    padding-top: calc(10px + var(--safe-top));
+    padding-bottom: 10px;
+    gap: 8px;
+  }
 
-  .topbar { padding: 12px 4%; gap: 10px; }
+  .header-actions {
+    gap: 4px;
+  }
+
   .header-actions .quiet[href="https://3zonesports.com/"] { display: none; }
 
+  /* Create lives in bottom nav on phone — drop duplicate to free chrome */
+  #create-btn:not(.hidden) { display: none; }
+
+  #search-wrap {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: 132px;
+  }
+
+  #search {
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+
+  #signout {
+    padding: 8px 10px;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+
+  .schedule-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    font-size: 12px;
+  }
+
   .auth-hero {
-    min-height: 42vh;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    padding-top: 48px;
+    padding-top: clamp(20px, 6vh, 48px);
+    padding-bottom: var(--space-md);
   }
 
-  .feed-col { max-width: none; }
+  .auth h1 {
+    font-size: clamp(32px, 9vw, 48px);
+    max-width: 14ch;
+  }
+
+  #portal h1,
+  #huddle-title {
+    font-size: clamp(28px, 8vw, 44px);
+  }
+
+  .feed-col { max-width: none; width: 100%; }
+
+  /* Full-bleed to the visual viewport; html/body overflow-x:clip contains any 100vw quirk */
   .post-media,
   .post-card > img,
   .post-card > video {
     border-radius: 0;
-    margin-left: -4%;
-    margin-right: -4%;
-    width: calc(100% + 8%);
-    max-width: none;
+    width: 100vw;
+    max-width: 100vw;
+    margin-left: calc(50% - 50vw);
+    margin-right: calc(50% - 50vw);
+    box-sizing: border-box;
+  }
+
+  .chip-row {
+    margin-left: 0;
+    max-width: 100%;
+  }
+
+  .chip {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .scoreboard {
+    flex-wrap: wrap;
+    font-size: clamp(22px, 7vw, 36px);
+  }
+
+  .moment-row {
+    grid-template-columns: 72px 1fr;
+    gap: 10px;
+  }
+
+  .live-hero {
+    padding: 18px;
+    min-height: 180px;
+  }
+
+  .live-hero h3 {
+    font-size: clamp(22px, 6vw, 32px);
+  }
+
+  form { padding: 16px; }
+
+  .studio-times { grid-template-columns: 1fr; }
+
+  #studio-dialog { width: min(640px, calc(100vw - 24px)); }
+
+  .comment-form label { min-width: 0; flex: 1 1 100%; }
+}
+
+@media (max-width: 380px) {
+  #avatar-chip:not(.hidden) { display: none; }
+  #search-wrap { max-width: 108px; }
+  .brand { font-size: 12px; letter-spacing: 0.06em; }
+}
+
+@media (max-height: 700px) {
+  .auth-hero {
+    min-height: 0;
+    padding-top: 16px;
   }
 }
 
