@@ -27,6 +27,7 @@ from .network import NetworkService
 from .photo_storage import build_photo_storage
 from .portal import PortalService
 from .ai_gateway_routes import AiGatewayHandlers, extra_routes
+from .live_sessions import LiveSessionService
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 _STATIC_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
@@ -86,6 +87,9 @@ def _routes():
         ("POST", re.compile(r"^/api/admin/schedules/upload$"), "h_schedule_upload", "operator"),
         ("GET", re.compile(r"^/api/cameras$"), "h_cameras_list", "operator"),
         ("POST", re.compile(r"^/api/cameras$"), "h_cameras_add", "operator"),
+        ("POST", re.compile(r"^/api/live-sessions$"), "h_live_session_create", "operator"),
+        ("GET", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)$"), "h_live_session_get", "operator"),
+        ("POST", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)/stop$"), "h_live_session_stop", "operator"),
         ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)$"), "h_audit_detail", "operator"),
         ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)/xrpl$"), "h_audit_detail", "operator"),
         ("POST", re.compile(r"^/internal/treasure/verify$"), "h_treasure_verify", "operator"),
@@ -189,6 +193,7 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
     portal: PortalService = None  # type: ignore
     network: NetworkService = None  # type: ignore
     moten: MotenIntakeService = None  # type: ignore
+    live_sessions: LiveSessionService = None  # type: ignore
     media_dir: str = "data/media"
     routes = _routes()
 
@@ -411,7 +416,16 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             return self.h_post_page({"post_id": path.split("/post/", 1)[-1]}, {}, self._optional_user())
         if method == "GET" and path in ("/ops", "/ops.html", "/ops/"):
             return self._serve_static("ops.html")
-        if method == "GET" and path in ("/app.js", "/portal.js", "/api.js", "/styles.css", "/ops.css"):
+        if method == "GET" and path in (
+            "/ops/private-capture",
+            "/ops/private-capture.html",
+            "/private-capture.html",
+        ):
+            return self._serve_static("private_capture.html")
+        if method == "GET" and path in (
+            "/app.js", "/portal.js", "/api.js", "/styles.css", "/ops.css",
+            "/private_capture.js", "/private_capture.css",
+        ):
             return self._serve_static(path.lstrip("/"))
         if method == "GET" and path.startswith("/vendor/") and ".." not in path:
             return self._serve_static(path.lstrip("/"))
@@ -728,6 +742,19 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
 
     def h_cameras_add(self, p, b, u):
         self._send_json(201, {"camera": self.cp.register_camera(u, b or {})})
+
+    def h_live_session_create(self, p, b, u):
+        # Operator-only (route auth). Flag-off → 503 private_live_capture_disabled.
+        session = self.live_sessions.start(u, b or {})
+        self._send_json(201, {"live_session": session})
+
+    def h_live_session_get(self, p, b, u):
+        session = self.live_sessions.get(u, p["live_session_id"])
+        self._send_json(200, {"live_session": session})
+
+    def h_live_session_stop(self, p, b, u):
+        session = self.live_sessions.stop(u, p["live_session_id"], b or {})
+        self._send_json(200, {"live_session": session})
 
     def h_treasure_verify(self, p, b, u):
         self._send_json(200, self.portal.verify_treasure((b or {}).get("subject_ref", "demo-viewer")))
@@ -1215,8 +1242,10 @@ def make_http_server(config, cp: ControlPlane, media_dir: str,
     network = NetworkService(cp, portal, provider, photo_storage)
     moten = MotenIntakeService(cp)
     network.moten = moten
+    live_sessions = LiveSessionService(cp)
     handler = type("BoundHandler", (_Handler,), {
-        "cp": cp, "portal": portal, "network": network, "moten": moten, "media_dir": media_dir,
+        "cp": cp, "portal": portal, "network": network, "moten": moten,
+        "live_sessions": live_sessions, "media_dir": media_dir,
     })
     httpd = ThreadingHTTPServer((config.http_host, config.http_port), handler)
     httpd.daemon_threads = True

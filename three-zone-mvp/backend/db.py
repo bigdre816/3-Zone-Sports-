@@ -619,6 +619,48 @@ CREATE TABLE IF NOT EXISTS content_reports (
     reason TEXT NOT NULL,
     created_at REAL NOT NULL
 );
+-- L1B: operator-only private live capture sessions (no public distribution).
+-- Truth fields (public_state, distribution_state, sports_status, safety_state,
+-- provider_*) are server-assigned; clients cannot set them.
+CREATE TABLE IF NOT EXISTS live_sessions (
+    live_session_id TEXT PRIMARY KEY,
+    actor_id TEXT NOT NULL,
+    event_id TEXT,
+    property_id TEXT,
+    team_id TEXT,
+    session_state TEXT NOT NULL,
+    sports_status TEXT NOT NULL,
+    sports_confidence REAL,
+    public_state TEXT NOT NULL,
+    distribution_state TEXT NOT NULL,
+    safety_state TEXT NOT NULL,
+    rights_version INTEGER,
+    policy_version TEXT,
+    source_asset_id TEXT,
+    source_hash TEXT,
+    provider_name TEXT NOT NULL,
+    provider_stream_id TEXT,
+    restream_event_id TEXT,
+    stop_reason TEXT,
+    failure_reason TEXT,
+    supersedes_session_id TEXT,
+    idempotency_key TEXT,
+    input_fingerprint TEXT,
+    env TEXT,
+    requested_at REAL,
+    capture_starting_at REAL,
+    verifying_private_at REAL,
+    stop_requested_at REAL,
+    stopped_at REAL,
+    failed_at REAL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_live_sessions_actor_idempotency
+    ON live_sessions(actor_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_live_sessions_actor_created
+    ON live_sessions(actor_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_profiles_handle ON profiles(handle);
 CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_profile_id, published_at);
 CREATE INDEX IF NOT EXISTS idx_posts_feed ON posts(publication_status, published_at);

@@ -34,6 +34,44 @@ def _truthy(raw: str | None, default: bool = False) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _env_flag_fail_closed(name: str) -> bool:
+    """Process kill-switch style flag: unset/blank/false-like/malformed → off.
+
+    Only explicit true-like values (1/true/yes/on) enable. Mirrors Y1b fail-closed.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return False
+    if raw.strip() == "":
+        return False
+    return _truthy(raw, False)
+
+
+def private_live_capture_enabled() -> bool:
+    """L1B operator-only private live capture. Default OFF."""
+    return _env_flag_fail_closed("THREEZONE_PRIVATE_LIVE_CAPTURE_ENABLED")
+
+
+def member_live_enabled() -> bool:
+    """Future member live surface. Documented disabled; not implemented in L1B."""
+    return _env_flag_fail_closed("THREEZONE_MEMBER_LIVE_ENABLED")
+
+
+def sports_verify_enabled() -> bool:
+    """Future sports verification. Documented disabled; not implemented in L1B."""
+    return _env_flag_fail_closed("THREEZONE_SPORTS_VERIFY_ENABLED")
+
+
+def live_publication_enabled() -> bool:
+    """Future public live publication. Documented disabled; not implemented in L1B."""
+    return _env_flag_fail_closed("THREEZONE_LIVE_PUBLICATION_ENABLED")
+
+
+def live_continuous_verify_enabled() -> bool:
+    """Future continuous live verify. Documented disabled; not implemented in L1B."""
+    return _env_flag_fail_closed("THREEZONE_LIVE_CONTINUOUS_VERIFY_ENABLED")
+
+
 def running_on_render() -> bool:
     """True when Render injects ``RENDER=true`` into the web service."""
     return _truthy(os.environ.get("RENDER"), False)
