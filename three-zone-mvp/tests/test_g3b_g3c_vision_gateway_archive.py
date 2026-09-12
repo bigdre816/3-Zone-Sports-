@@ -56,14 +56,19 @@ def test_gateway_sports_vision_fail_closed_when_ai_off(monkeypatch):
 
 def test_gateway_sports_vision_runs_when_ai_on(monkeypatch):
     monkeypatch.setenv("THREEZONE_AI_ENABLED", "true")
+    from copy import deepcopy
+
     from threezone_ai.config import Settings, reset_settings
+    from threezone_ai.defaults import DEFAULT_GATEWAY_CONFIG
     from threezone_ai import gateway as gw
 
     reset_settings()
+    cfg = deepcopy(DEFAULT_GATEWAY_CONFIG)
+    cfg["enabled"] = True
     monkeypatch.setattr(
         gw,
         "get_settings",
-        lambda reload=False: Settings(ai_enabled=True, gateway_config={"enabled": True}),
+        lambda reload=False: Settings(ai_enabled=True, gateway_config=cfg),
     )
     resp = gw.run(
         AIRequest(
