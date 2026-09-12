@@ -23,6 +23,7 @@ DEFAULT_GATEWAY_CONFIG: dict[str, Any] = {
             "ollama_chat",
             "local_classifier_stub",
             "sports_vision_offline",
+            "transcription_local",
             "transcription_offline",
         ],
         "low": [
@@ -33,6 +34,7 @@ DEFAULT_GATEWAY_CONFIG: dict[str, Any] = {
             "groq",
             "groq_whisper",
             "sports_vision_offline",
+            "transcription_local",
             "transcription_offline",
         ],
         "any": [
@@ -45,6 +47,7 @@ DEFAULT_GATEWAY_CONFIG: dict[str, Any] = {
             "gemini",
             "cloudflare",
             "sports_vision_offline",
+            "transcription_local",
             "transcription_offline",
         ],
     },
@@ -71,8 +74,8 @@ DEFAULT_GATEWAY_CONFIG: dict[str, Any] = {
             "human_review_default": True,
         },
         "transcription": {
-            # Y2: typed segments via fake/offline provider; real Whisper path is Y4
-            "default_order": ["transcription_offline"],
+            # Y4: local-first path, then offline fake fallback
+            "default_order": ["transcription_local", "transcription_offline"],
             "human_review_default": True,
         },
     },
@@ -86,6 +89,7 @@ DEFAULT_GATEWAY_CONFIG: dict[str, Any] = {
         "cloudflare": {"tier": "fallback", "cost": "any"},
         "local_classifier_stub": {"tier": "local_first", "cost": "free"},
         "sports_vision_offline": {"tier": "local_first", "cost": "free"},
+        "transcription_local": {"tier": "local_first", "cost": "free"},
         "transcription_offline": {"tier": "local_first", "cost": "free"},
     },
     "lineage": {"backend": "jsonl", "path": "data/lineage.jsonl"},

@@ -16,8 +16,11 @@ if str(_MVP) not in sys.path:
 
 from threezone_ai.providers.base import get_provider_registry, reset_provider_registry
 from threezone_ai.providers.transcription_offline import (
-    GATEWAY_TASK_VERSION,
+    GATEWAY_TASK_VERSION as OFFLINE_GATEWAY_TASK_VERSION,
     SEGMENT_SCHEMA_VERSION,
+)
+from threezone_ai.providers.transcription_local import (
+    GATEWAY_TASK_VERSION as LOCAL_GATEWAY_TASK_VERSION,
 )
 from threezone_ai.types import AIRequest, TaskType
 
@@ -33,9 +36,12 @@ def test_task_type_transcription_registered():
     assert TaskType.TRANSCRIPTION.value == "transcription"
     reg = get_provider_registry()
     assert "transcription_offline" in reg
+    assert "transcription_local" in reg
     assert reg["transcription_offline"].supports(TaskType.TRANSCRIPTION)
+    assert reg["transcription_local"].supports(TaskType.TRANSCRIPTION)
     # Distinct from free-form caption
     assert not reg["transcription_offline"].supports(TaskType.CAPTION)
+    assert not reg["transcription_local"].supports(TaskType.CAPTION)
 
 
 def test_gateway_transcription_fail_closed_when_ai_off(monkeypatch):
@@ -80,8 +86,8 @@ def test_gateway_transcription_runs_when_ai_on(monkeypatch):
         record_lineage=False,
     )
     assert resp.ok is True, (resp.error, resp.metadata)
-    assert resp.provider == "transcription_offline"
-    assert resp.version == GATEWAY_TASK_VERSION
+    assert resp.provider == "transcription_local"
+    assert resp.version == LOCAL_GATEWAY_TASK_VERSION
     assert resp.human_review_required is True
     assert resp.metadata.get("publish") is False
     assert resp.metadata.get("schema_version") == SEGMENT_SCHEMA_VERSION
@@ -128,7 +134,8 @@ def test_transcription_output_shape_stable(monkeypatch):
 
 
 def test_gateway_task_version_registered():
-    assert GATEWAY_TASK_VERSION == "transcription.gateway.v0"
+    assert OFFLINE_GATEWAY_TASK_VERSION == "transcription.gateway.v0"
+    assert LOCAL_GATEWAY_TASK_VERSION == "transcription.local.v0"
 
 
 def test_config_lists_transcription_task():
@@ -137,12 +144,15 @@ def test_config_lists_transcription_task():
 
     cfg = load_gateway_config()
     assert "transcription" in (cfg.get("tasks") or {})
-    assert cfg["tasks"]["transcription"]["default_order"] == ["transcription_offline"]
+    assert cfg["tasks"]["transcription"]["default_order"] == ["transcription_local", "transcription_offline"]
     assert cfg["tasks"]["transcription"]["human_review_default"] is True
     assert DEFAULT_GATEWAY_CONFIG["tasks"]["transcription"]["human_review_default"] is True
+    assert "transcription_local" in DEFAULT_GATEWAY_CONFIG["providers"]
     assert "transcription_offline" in DEFAULT_GATEWAY_CONFIG["providers"]
     for tier in ("free_only", "low", "any"):
+        assert "transcription_local" in DEFAULT_GATEWAY_CONFIG["cost_tiers"][tier]
         assert "transcription_offline" in DEFAULT_GATEWAY_CONFIG["cost_tiers"][tier]
+        assert "transcription_local" in cfg["cost_tiers"][tier]
         assert "transcription_offline" in cfg["cost_tiers"][tier]
 
 

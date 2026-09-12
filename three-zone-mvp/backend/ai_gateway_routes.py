@@ -61,6 +61,7 @@ def extra_routes() -> list[tuple[str, re.Pattern[str], str, str]]:
         ("POST", re.compile(r"^/api/ai-jobs/(?P<job_id>aij_[a-z0-9]+)/heartbeat$"), "h_ai_jobs_heartbeat", "operator"),
         ("POST", re.compile(r"^/api/ai-jobs/(?P<job_id>aij_[a-z0-9]+)/run$"), "h_ai_jobs_run", "operator"),
         ("POST", re.compile(r"^/api/ai-jobs/(?P<job_id>aij_[a-z0-9]+)/complete$"), "h_ai_jobs_complete", "operator"),
+        ("POST", re.compile(r"^/api/ai-jobs/(?P<job_id>aij_[a-z0-9]+)/propose$"), "h_ai_jobs_propose", "operator"),
     ]
 
 
@@ -571,6 +572,45 @@ class AiGatewayHandlers:
         except Exception as exc:
             from threezone_ai.jobs.types import AiJobError
 
+            if isinstance(exc, AiJobError):
+                self._raise_job(exc)
+            self._ai_error(exc)
+
+    def h_ai_jobs_propose(self, p, b, u):
+        """Y4 — immutable transcription proposal (≠ Treasure release)."""
+        if not self._require_ai():
+            return
+        try:
+            job_id = (p or {}).get("job_id")
+            job = self._job_service().get(job_id)
+            from threezone_ai.proposals import ProposeService, get_propose_service
+            from threezone_ai.proposals.types import ProposalError
+
+            try:
+                proposer = get_propose_service()
+            except Exception:
+                proposer = ProposeService(job_store=self._job_service().store)
+            prop = proposer.propose_from_job(job)
+            self._send_json(
+                200,
+                {
+                    "ok": True,
+                    "proposal": prop.to_dict(),
+                    # Explicit: not Treasure delivery/release (Y5).
+                    "treasure_release": False,
+                    "publish": False,
+                },
+            )
+        except ControlError:
+            raise
+        except Exception as exc:
+            from threezone_ai.jobs.types import AiJobError
+            from threezone_ai.proposals.types import ProposalError
+
+            if isinstance(exc, ProposalError):
+                err = ControlError(str(exc), exc.code)
+                err.status = int(getattr(exc, "status", 400) or 400)
+                raise err
             if isinstance(exc, AiJobError):
                 self._raise_job(exc)
             self._ai_error(exc)
