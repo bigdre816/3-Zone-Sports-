@@ -47,6 +47,12 @@
         <button type="button" class="nav-item" data-pane="treasure">
           <span class="nav-ico" aria-hidden="true">◆</span> Treasure
         </button>
+        <button type="button" class="nav-item" data-pane="moten">
+          <span class="nav-ico" aria-hidden="true">◈</span> Moten
+        </button>
+        <button type="button" class="nav-item" data-pane="xrpl">
+          <span class="nav-ico" aria-hidden="true">≋</span> XRPL audit
+        </button>
         <button type="button" class="nav-item" data-pane="audit">
           <span class="nav-ico" aria-hidden="true">◷</span> Activity
         </button>
@@ -181,6 +187,32 @@
           <div class="stub-note card-lite">
             <strong>Deferred:</strong> clip revenue KPIs, weekly sales chart, Clip Commerce. No fake dollar figures.
           </div>
+        </section>
+
+        <section data-pane="moten" class="panel hidden embed-panel">
+          <div class="panel-head">
+            <h2>Moten control plane</h2>
+            <button type="button" class="ghost" id="moten-refresh-btn">Refresh status</button>
+          </div>
+          <p class="muted">Moten IP / invention controls live inside this back portal. Intake is transport receipt only — not Treasure Path A release.</p>
+          <div id="moten-status" class="embed-status muted">Loading Moten bridge…</div>
+          <div id="moten-unconfigured" class="stub-note card-lite hidden">
+            <strong>Not wired:</strong> set <code>TZ_MOTEN_SERVICE_URL</code> on the sports service to embed Moten here.
+          </div>
+          <iframe id="moten-frame" class="dept-frame hidden" title="Moten control plane" referrerpolicy="no-referrer"></iframe>
+        </section>
+
+        <section data-pane="xrpl" class="panel hidden embed-panel">
+          <div class="panel-head">
+            <h2>XRPL / on-chain audit</h2>
+            <button type="button" class="ghost" id="xrpl-refresh-btn">Refresh status</button>
+          </div>
+          <p class="muted">On-chain audit department. This console does not submit XRPL ledger transactions; simulation labels stay honest.</p>
+          <div id="xrpl-status" class="embed-status muted">Loading on-chain bridge…</div>
+          <div id="xrpl-unconfigured" class="stub-note card-lite hidden">
+            <strong>Not wired:</strong> set <code>TZ_MOTEN_ONCHAIN_URL</code> on the sports service to embed the XRPL department here.
+          </div>
+          <iframe id="xrpl-frame" class="dept-frame hidden" title="XRPL on-chain audit" referrerpolicy="no-referrer"></iframe>
         </section>
 
         <!-- Existing System health (kept) -->

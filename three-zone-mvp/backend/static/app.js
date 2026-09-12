@@ -194,6 +194,8 @@ const PANE_TITLES = {
   schedule: ["Operations", "Schedule"],
   network: ["Review", "Verification"],
   treasure: ["Evidence", "Treasure"],
+  moten: ["Evidence", "Moten"],
+  xrpl: ["Evidence", "XRPL audit"],
   audit: ["Audit", "Activity"],
   health: ["System", "System health"],
   create: ["Tools", "Create event"],
@@ -223,6 +225,9 @@ function showPane(name) {
     startHealthAutoRefresh();
   } else {
     stopHealthAutoRefresh();
+  }
+  if (name === "moten" || name === "xrpl") {
+    loadMotenBridge();
   }
   if (name === "audit") {
     refreshAnalytics();
@@ -1433,6 +1438,10 @@ async function init() {
   if (healthRefresh) healthRefresh.addEventListener("click", () => refreshHealthDashboard());
   const treasureRefresh = $("#treasure-refresh-btn");
   if (treasureRefresh) treasureRefresh.addEventListener("click", () => refreshHealthDashboard());
+  const motenRefresh = $("#moten-refresh-btn");
+  if (motenRefresh) motenRefresh.addEventListener("click", () => loadMotenBridge());
+  const xrplRefresh = $("#xrpl-refresh-btn");
+  if (xrplRefresh) xrplRefresh.addEventListener("click", () => loadMotenBridge());
   document.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const pane = btn.getAttribute("data-goto");

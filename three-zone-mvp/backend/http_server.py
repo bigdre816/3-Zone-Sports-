@@ -42,6 +42,7 @@ def _routes():
         ("GET", re.compile(r"^/health$"), "h_health", "none"),
         ("GET", re.compile(r"^/api/ops/live-readiness$"), "h_live_readiness", "operator"),
         ("GET", re.compile(r"^/api/ops/dashboard$"), "h_ops_dashboard", "operator"),
+        ("GET", re.compile(r"^/api/ops/moten-bridge$"), "h_ops_moten_bridge", "operator"),
         ("GET", re.compile(r"^/api/ops/sports-check/assets$"), "h_sports_check_assets", "operator"),
         ("POST", re.compile(r"^/api/ops/sports-check$"), "h_sports_check_run", "operator"),
         ("GET", re.compile(r"^/api/config$"), "h_config", "none"),
@@ -221,10 +222,14 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         if host:
             media_src += " " + host
             connect_src += " " + host
+        frame_src = "'self'"
+        for origin in getattr(cfg, "moten_embed_frame_sources", lambda: [])():
+            frame_src += " " + origin
         return (
             "default-src 'none'; "
             "script-src 'self'; style-src 'self'; img-src 'self' data:; "
             f"media-src {media_src}; connect-src {connect_src}; "
+            f"frame-src {frame_src}; "
             "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
         )
 
