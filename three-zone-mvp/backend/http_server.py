@@ -41,6 +41,7 @@ def _routes():
         ("GET", re.compile(r"^/healthz$"), "h_health", "none"),
         ("GET", re.compile(r"^/health$"), "h_health", "none"),
         ("GET", re.compile(r"^/api/ops/live-readiness$"), "h_live_readiness", "operator"),
+        ("GET", re.compile(r"^/api/ops/dashboard$"), "h_ops_dashboard", "operator"),
         ("GET", re.compile(r"^/api/config$"), "h_config", "none"),
         ("GET", re.compile(r"^/api/public/live$"), "h_public_live", "none"),
         ("GET", re.compile(r"^/api/public/schedules$"), "h_public_schedules", "none"),
@@ -509,6 +510,12 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         # Operator/owner only. Never returns secret values — only presence/validity flags.
         from .live_readiness import readiness
         self._send_json(200, readiness(self.cp.config))
+
+    def h_ops_dashboard(self, p, b, u):
+        # Operator/owner health dashboard — consolidated, secret-free.
+        self._send_json(200, self.cp.ops_dashboard(
+            u, live_sessions=self.live_sessions, moten=self.moten,
+        ))
 
     def h_config(self, p, b, u):
         self._send_json(200, self.cp.config.public_config())

@@ -227,6 +227,52 @@ summary { cursor: pointer; font-weight: 600; }
 .report-table tr:nth-child(even) td { background: #f7f9fb; }
 
 /* Print: inventory report OR mastery article as a clean document. */
+
+/* Health / Back portal dashboard */
+.health-status-strip {
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 16px;
+}
+.health-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; padding: 6px 12px;
+  border-radius: 999px; border: 1px solid var(--border);
+  background: var(--panel-2); color: var(--muted);
+}
+.health-pill .dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--gray);
+}
+.health-pill.ok { color: var(--green); border-color: rgba(63,185,80,.45); }
+.health-pill.ok .dot { background: var(--green); }
+.health-pill.warn { color: var(--yellow); border-color: rgba(210,153,34,.45); }
+.health-pill.warn .dot { background: var(--yellow); }
+.health-pill.bad { color: var(--red); border-color: rgba(248,81,73,.45); }
+.health-pill.bad .dot { background: var(--red); }
+.health-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;
+}
+.health-card h3 { margin: 0 0 8px; font-size: 13px; letter-spacing: .2px; }
+.health-kv { font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
+.health-kv .kv-row { display: flex; justify-content: space-between; gap: 8px; }
+.health-kv .kv-row span:last-child { color: var(--text); font-weight: 550; }
+.health-wide { width: 100%; }
+.table-wrap { overflow-x: auto; }
+.health-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+.health-table th, .health-table td {
+  text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.health-table th { color: var(--muted); font-weight: 550; }
+.health-table td { color: var(--text); }
+.health-table tbody tr:hover { background: rgba(79,157,255,.06); }
+.flag-chip {
+  display: inline-block; font-size: 10px; padding: 2px 6px; margin: 2px 2px 0 0;
+  border-radius: 4px; border: 1px solid var(--border); color: var(--muted);
+}
+.flag-chip.on { color: var(--yellow); border-color: rgba(210,153,34,.4); }
+.flag-chip.off { color: var(--gray); }
+
 @media print {
   #auth-panel, .sidebar, #toast { display: none !important; }
   body { background: #ffffff; }
