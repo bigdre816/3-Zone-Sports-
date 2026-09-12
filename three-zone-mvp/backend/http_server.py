@@ -44,6 +44,10 @@ def _routes():
         ("GET", re.compile(r"^/api/ops/dashboard$"), "h_ops_dashboard", "operator"),
         ("GET", re.compile(r"^/api/ops/moten-bridge$"), "h_ops_moten_bridge", "operator"),
         ("GET", re.compile(r"^/api/ops/xrpl/account$"), "h_ops_xrpl_account", "operator"),
+        ("GET", re.compile(r"^/api/ops/xrpl/moten$"), "h_ops_xrpl_moten", "operator"),
+        ("POST", re.compile(r"^/api/ops/xrpl/audit-account$"), "h_ops_xrpl_audit_account", "operator"),
+        ("POST", re.compile(r"^/api/ops/xrpl/test-publish/prepare$"), "h_ops_xrpl_prepare", "operator"),
+        ("POST", re.compile(r"^/api/ops/xrpl/test-publish/confirm$"), "h_ops_xrpl_confirm", "operator"),
         ("GET", re.compile(r"^/api/ops/sports-check/assets$"), "h_sports_check_assets", "operator"),
         ("POST", re.compile(r"^/api/ops/sports-check$"), "h_sports_check_run", "operator"),
         ("GET", re.compile(r"^/api/config$"), "h_config", "none"),
@@ -529,6 +533,87 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         self._send_json(200, self.cp.ops_dashboard(
             u, live_sessions=self.live_sessions, moten=self.moten,
         ))
+
+    def h_ops_moten_bridge(self, p, b, u):
+        self._send_json(200, self.cp.ops_moten_bridge(u))
+
+    def h_ops_xrpl_account(self, p, b, u):
+        from .xrpl_ops import account_snapshot
+        qs = parse_qs(urlparse(self.path).query)
+        address = (qs.get("address") or [""])[0]
+        network = (qs.get("network") or ["testnet"])[0]
+        try:
+            limit = int((qs.get("limit") or ["50"])[0])
+        except ValueError:
+            limit = 50
+        try:
+            self._send_json(200, account_snapshot(address, network, tx_limit=limit))
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc), "code": "bad_request"})
+        except RuntimeError as exc:
+            self._send_json(502, {"error": str(exc), "code": "xrpl_upstream"})
+
+    def h_ops_xrpl_moten(self, p, b, u):
+        from .xrpl_ops import moten_department_snapshot
+        qs = parse_qs(urlparse(self.path).query)
+        address = (qs.get("address") or [""])[0] or None
+        base = getattr(self.cp.config, "moten_onchain_url", "") or ""
+        try:
+            self._send_json(200, moten_department_snapshot(base, wallet_address=address or None))
+        except RuntimeError as exc:
+            self._send_json(502, {"error": str(exc), "code": "moten_upstream"})
+
+    def h_ops_xrpl_audit_account(self, p, b, u):
+        from .xrpl_ops import bind_moten_audit_account, validate_classic_address, normalize_network
+        body = b or {}
+        base = getattr(self.cp.config, "moten_onchain_url", "") or ""
+        try:
+            address = validate_classic_address(body.get("address") or body.get("account") or "")
+            network = normalize_network(body.get("network") or "testnet")
+            moten = bind_moten_audit_account(base, account=address, network=network)
+            self._send_json(200, {
+                "address": address,
+                "network": network,
+                "provider": body.get("provider") or "unknown",
+                "moten": moten,
+                "saved_as_audit_account": True,
+            })
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc), "code": "bad_request"})
+        except RuntimeError as exc:
+            self._send_json(502, {"error": str(exc), "code": "moten_upstream"})
+
+    def h_ops_xrpl_prepare(self, p, b, u):
+        from .xrpl_ops import prepare_wallet_test_publish, validate_classic_address, normalize_network
+        body = b or {}
+        base = getattr(self.cp.config, "moten_onchain_url", "") or ""
+        try:
+            address = validate_classic_address(body.get("address") or body.get("account") or "")
+            network = normalize_network(body.get("network") or "testnet")
+            self._send_json(200, prepare_wallet_test_publish(base, account=address, network=network))
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc), "code": "bad_request"})
+        except RuntimeError as exc:
+            self._send_json(502, {"error": str(exc), "code": "moten_upstream"})
+
+    def h_ops_xrpl_confirm(self, p, b, u):
+        from .xrpl_ops import confirm_wallet_test_publish, validate_classic_address, normalize_network
+        body = b or {}
+        base = getattr(self.cp.config, "moten_onchain_url", "") or ""
+        try:
+            address = validate_classic_address(body.get("address") or body.get("account") or "")
+            network = normalize_network(body.get("network") or "testnet")
+            request_id = (body.get("request_id") or "").strip()
+            tx_hash = (body.get("transaction_hash") or body.get("tx_hash") or "").strip()
+            if not request_id or not tx_hash:
+                raise ValueError("request_id and transaction_hash required")
+            self._send_json(200, confirm_wallet_test_publish(
+                base, request_id=request_id, transaction_hash=tx_hash, account=address, network=network,
+            ))
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc), "code": "bad_request"})
+        except RuntimeError as exc:
+            self._send_json(502, {"error": str(exc), "code": "moten_upstream"})
 
     def h_sports_check_assets(self, p, b, u):
         from .sports_check import list_synthetic_assets
