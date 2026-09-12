@@ -61,6 +61,7 @@
       $("refresh-btn").disabled = false;
       $("ingest-btn").disabled = false;
       $("rewind-btn").disabled = false;
+      $("sports-check-btn").disabled = false;
       syncBanner(data.live_session);
       setStatus(data.live_session);
     } catch (e) {
@@ -87,6 +88,7 @@
       });
       $("ingest-btn").disabled = true;
       $("rewind-btn").disabled = true;
+      $("sports-check-btn").disabled = true;
       syncBanner(data.live_session);
       setStatus(data.live_session);
     } catch (e) {
@@ -99,6 +101,17 @@
     try {
       const data = await api("GET", "/api/live-sessions/" + sessionId + "/private-rewind");
       setStatus(data.private_rewind);
+    } catch (e) {
+      setStatus({ error: e.message, status: e.status, payload: e.payload });
+    }
+  });
+
+  $("sports-check-btn").addEventListener("click", async function () {
+    if (!sessionId) return;
+    try {
+      const data = await api("POST", "/api/live-sessions/" + sessionId + "/private-sports-check", {});
+      if (data.live_session) syncBanner(data.live_session);
+      setStatus(data);
     } catch (e) {
       setStatus({ error: e.message, status: e.status, payload: e.payload });
     }

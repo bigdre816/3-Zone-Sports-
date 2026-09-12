@@ -124,6 +124,8 @@ SITE_ROUTES = [
      "purpose": "List synthetic assets for operator sports-check (V0b read-only)"},
     {"method": "POST", "path": "/api/ops/sports-check", "tier": "worker",
      "purpose": "Run synthetic sports-check; returns evidence bundle + policy (no publish)"},
+    {"method": "POST", "path": "/api/live-sessions/{id}/private-sports-check", "tier": "worker",
+     "purpose": "G4-C private-frame sports-verify (evidence/policy only; never publish)"},
     {"method": "GET", "path": "/api/config", "tier": "public",
      "purpose": "Public runtime config (ports, TTLs, demo accounts)"},
     {"method": "GET", "path": "/api/public/live", "tier": "public",

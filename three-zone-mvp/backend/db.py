@@ -658,6 +658,12 @@ CREATE TABLE IF NOT EXISTS live_sessions (
     private_ingest_bound_at REAL,
     private_ingest_closed_at REAL,
     private_ingest_byte_count INTEGER NOT NULL DEFAULT 0,
+    private_verify_decision TEXT,
+    private_verify_bundle_id TEXT,
+    private_verify_source_asset_id TEXT,
+    private_verify_at REAL,
+    private_verify_publish INTEGER NOT NULL DEFAULT 0,
+    private_verify_lane TEXT,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
@@ -855,6 +861,13 @@ class Database:
                 "private_ingest_bound_at": "REAL",
                 "private_ingest_closed_at": "REAL",
                 "private_ingest_byte_count": "INTEGER NOT NULL DEFAULT 0",
+                # G4-C: last private sports-verify result (evidence only; publish forced 0)
+                "private_verify_decision": "TEXT",
+                "private_verify_bundle_id": "TEXT",
+                "private_verify_source_asset_id": "TEXT",
+                "private_verify_at": "REAL",
+                "private_verify_publish": "INTEGER NOT NULL DEFAULT 0",
+                "private_verify_lane": "TEXT",
             }
             for name, decl in live_alters.items():
                 if name not in live_cols:
@@ -904,6 +917,12 @@ class Database:
             "ALTER TABLE live_sessions ADD COLUMN private_ingest_bound_at DOUBLE PRECISION",
             "ALTER TABLE live_sessions ADD COLUMN private_ingest_closed_at DOUBLE PRECISION",
             "ALTER TABLE live_sessions ADD COLUMN private_ingest_byte_count INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE live_sessions ADD COLUMN private_verify_decision TEXT",
+            "ALTER TABLE live_sessions ADD COLUMN private_verify_bundle_id TEXT",
+            "ALTER TABLE live_sessions ADD COLUMN private_verify_source_asset_id TEXT",
+            "ALTER TABLE live_sessions ADD COLUMN private_verify_at DOUBLE PRECISION",
+            "ALTER TABLE live_sessions ADD COLUMN private_verify_publish INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE live_sessions ADD COLUMN private_verify_lane TEXT",
         ):
             try:
                 self._conn.execute(stmt)

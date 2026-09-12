@@ -58,7 +58,7 @@ def member_live_enabled() -> bool:
 
 
 def sports_verify_enabled() -> bool:
-    """Future sports verification. Documented disabled; not implemented in L1B."""
+    """G4-C private-frame sports-verify (with PRIVATE_LIVE_CAPTURE). Default OFF."""
     return _env_flag_fail_closed("THREEZONE_SPORTS_VERIFY_ENABLED")
 
 

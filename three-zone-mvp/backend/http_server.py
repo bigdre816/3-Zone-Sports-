@@ -97,6 +97,7 @@ def _routes():
         ("POST", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)/private-ingest/media$"), "h_live_session_private_ingest_media", "operator"),
         ("GET", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)/private-rewind$"), "h_live_session_private_rewind", "operator"),
         ("GET", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)/private-rewind/latest$"), "h_live_session_private_rewind_latest", "operator"),
+        ("POST", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)/private-sports-check$"), "h_live_session_private_sports_check", "operator"),
         ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)$"), "h_audit_detail", "operator"),
         ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)/xrpl$"), "h_audit_detail", "operator"),
         ("POST", re.compile(r"^/internal/treasure/verify$"), "h_treasure_verify", "operator"),
@@ -806,6 +807,15 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             u, p["live_session_id"], {"include_content": include}
         )
         self._send_json(200, {"private_rewind_latest": payload})
+
+
+    def h_live_session_private_sports_check(self, p, b, u):
+        # G4-C: sports-verify on private frames only — evidence/policy; never publish.
+        payload = self.live_sessions.run_private_sports_check(
+            u, p["live_session_id"], b or {}
+        )
+        self._send_json(200, payload)
+
 
     def h_treasure_verify(self, p, b, u):
         self._send_json(200, self.portal.verify_treasure((b or {}).get("subject_ref", "demo-viewer")))

@@ -1,4 +1,4 @@
-"""L1B / L1B+ / G4-B — private live capture + ingest + short rewind buffer.
+"""L1B / L1B+ / G4-B / G4-C — private live capture + ingest + rewind + sports-verify.
 
 Lifecycle (server-enforced):
   REQUESTED → CAPTURE_STARTING → VERIFYING_PRIVATE → STOP_REQUESTED → STOPPED
@@ -19,7 +19,12 @@ G4-B — optional short private rewind buffer (NOT full DVR):
   Bounded ring of recent private chunks (max seconds / chunks / total bytes).
   Operator-only; cleared on stop/fail; never LIVE_PUBLIC / Restream / published.
 
-Does NOT call media_provider, restream, AI, xrpl, settlement, Moten intake,
+G4-C — hook sports-verify (G3 evidence / sports_check offline path) onto
+  private capture frames only. Result is evidence/policy; publish=false always.
+  Never LIVE_PUBLIC / PUBLICATION_PENDING / distribution ENABLED / Restream.
+  Behind THREEZONE_PRIVATE_LIVE_CAPTURE_ENABLED + THREEZONE_SPORTS_VERIFY_ENABLED.
+
+Does NOT call media_provider, restream, prod AI, xrpl, settlement, Moten intake,
 or ControlPlane.transition(live). Audits via ControlPlane.audit_log only
 (no Moten outbox handoff for these events).
 """
@@ -33,7 +38,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .config import private_live_capture_enabled
+from .config import private_live_capture_enabled, sports_verify_enabled
 from .control_plane import (
     ConflictError,
     ControlError,
@@ -45,7 +50,7 @@ from .control_plane import (
 
 
 class FeatureDisabledError(ControlError):
-    """Mirror ai_disabled — HTTP 503 when private live capture flag is off."""
+    """Mirror ai_disabled — HTTP 503 when private live / sports-verify flag is off."""
     status = 503
 
 from .db import dumps
@@ -86,6 +91,11 @@ PRIVATE_REWIND_LABEL = (
     "Private short rewind buffer — not DVR — not published"
 )
 
+# G4-C — private sports-verify (evidence/policy only; never publish auth).
+PRIVATE_SPORTS_VERIFY_LABEL = (
+    "Private sports-check — evidence/policy only — not publish"
+)
+
 # Fields clients may attempt to set maliciously — always stripped/ignored.
 _CLIENT_TRUTH_FIELDS = frozenset({
     "sports_status",
@@ -116,6 +126,14 @@ _CLIENT_TRUTH_FIELDS = frozenset({
     "private_rewind",
     "is_dvr",
     "rewind_chunk_id",
+    "private_sports_verify",
+    "private_verify_decision",
+    "private_verify_bundle_id",
+    "private_verify_source_asset_id",
+    "private_verify_at",
+    "private_verify_publish",
+    "private_verify_lane",
+    "publish",
 })
 
 _ALLOWED_TRANSITIONS = {
@@ -177,6 +195,15 @@ class LiveSessionService:
             raise FeatureDisabledError(
                 "private live capture disabled",
                 "private_live_capture_disabled",
+            )
+
+    def require_sports_verify_enabled(self) -> None:
+        """G4-C: both private capture AND sports-verify flags must be on."""
+        self.require_enabled()
+        if not sports_verify_enabled():
+            raise FeatureDisabledError(
+                "sports verify disabled",
+                "sports_verify_disabled",
             )
 
     @staticmethod
@@ -323,10 +350,32 @@ class LiveSessionService:
             ),
         }
 
+
+    def _private_sports_verify_block(self, r: dict[str, Any]) -> dict[str, Any]:
+        decision = r.get("private_verify_decision")
+        return {
+            "decision": decision,
+            "bundle_id": r.get("private_verify_bundle_id"),
+            "source_asset_id": r.get("private_verify_source_asset_id"),
+            "verified_at": r.get("private_verify_at"),
+            "lane": r.get("private_verify_lane"),
+            "publish": False,
+            "public_state": PUBLIC_STATE_LIVE_PRIVATE,
+            "distribution_state": DISTRIBUTION_DISABLED,
+            "label": PRIVATE_SPORTS_VERIFY_LABEL,
+            "note": (
+                "Last private sports-verify result is evidence/policy only — "
+                "not publication authorization"
+                if decision
+                else "No private sports-verify yet — not published"
+            ),
+        }
+
     def _session_dict(self, row) -> dict[str, Any]:
         r = _row_dict(row)
         ingest = self._private_ingest_block(r)
         rewind = self._rewind_summary(r["live_session_id"])
+        verify = self._private_sports_verify_block(r)
         return {
             "live_session_id": r["live_session_id"],
             "actor_id": r["actor_id"],
@@ -361,6 +410,7 @@ class LiveSessionService:
             "updated_at": r["updated_at"],
             "private_ingest": ingest,
             "private_rewind": rewind,
+            "private_sports_verify": verify,
             # Honest operator label — never implies publication.
             "publication": {
                 "browser_source_published": False,
@@ -933,4 +983,148 @@ class LiveSessionService:
             "published": False,
             "label": PRIVATE_REWIND_LABEL,
             "chunk": chunk,
+        }
+
+
+    def run_private_sports_check(self, operator: dict, live_session_id: str,
+                                 data: dict | None = None) -> dict:
+        """G4-C: run sports-verify on private capture frames only.
+
+        Uses latest private rewind chunk, else session source_asset_id from
+        private ingest. Calls G3 evidence / sports_check offline path with
+        allow_offline_synthetic. Stores last result; publish always false.
+        Never LIVE_PUBLIC / distribution ENABLED / Restream / transition(live).
+        """
+        self.cp.require_operator(operator)
+        self.require_sports_verify_enabled()
+        payload = self.strip_client_payload(data)
+        row = self._get_row(live_session_id)
+        if not row:
+            raise NotFoundError("live session not found", "live_session_not_found")
+
+        # Defense in depth — force private rails before any evidence work.
+        if row["public_state"] != PUBLIC_STATE_LIVE_PRIVATE or row["distribution_state"] != DISTRIBUTION_DISABLED:
+            self.db.execute(
+                "UPDATE live_sessions SET public_state=?, distribution_state=?, "
+                "provider_name=?, provider_stream_id=?, restream_event_id=?, "
+                "updated_at=? WHERE live_session_id=?",
+                (
+                    PUBLIC_STATE_LIVE_PRIVATE, DISTRIBUTION_DISABLED,
+                    PROVIDER_NAME, None, None, now(), live_session_id,
+                ),
+            )
+            row = self._get_row(live_session_id)
+
+        # Resolve private frame: prefer latest rewind chunk, else session source.
+        rewind_rows = self._rewind_rows(live_session_id)
+        latest = rewind_rows[-1] if rewind_rows else None
+        private_asset_id = None
+        source_hash = None
+        byte_count = 0
+        if latest:
+            private_asset_id = latest["asset_id"]
+            source_hash = latest["source_hash"]
+            byte_count = int(latest["byte_count"] or 0)
+        elif _row_get(row, "source_asset_id"):
+            private_asset_id = _row_get(row, "source_asset_id")
+            source_hash = _row_get(row, "source_hash") or ""
+            byte_count = int(_row_get(row, "private_ingest_byte_count") or 0)
+
+        if not private_asset_id or not str(private_asset_id).startswith("priv_asset_"):
+            raise ValidationError(
+                "private capture frame required (rewind chunk or private ingest source)",
+                "private_frame_required",
+            )
+        if not source_hash:
+            raise ValidationError(
+                "private source_hash missing",
+                "private_frame_required",
+            )
+
+        offline_synthetic = payload.get("offline_synthetic_asset_id")
+        if offline_synthetic is not None and not isinstance(offline_synthetic, str):
+            raise ValidationError(
+                "offline_synthetic_asset_id must be a string",
+                "invalid_offline_synthetic",
+            )
+
+        from .sports_check import run_private_capture_sports_check
+
+        result = run_private_capture_sports_check(
+            self.cp,
+            operator,
+            live_session_id=live_session_id,
+            private_asset_id=str(private_asset_id),
+            source_hash=str(source_hash),
+            byte_count=byte_count,
+            offline_synthetic_asset_id=(
+                offline_synthetic.strip() if offline_synthetic else None
+            ),
+        )
+
+        # Force evidence-only outcomes onto the session — never publish rails.
+        ts = now()
+        sports_status = result["sports_status"]
+        self.db.execute(
+            "UPDATE live_sessions SET sports_status=?, "
+            "private_verify_decision=?, private_verify_bundle_id=?, "
+            "private_verify_source_asset_id=?, private_verify_at=?, "
+            "private_verify_publish=?, private_verify_lane=?, "
+            "public_state=?, distribution_state=?, "
+            "provider_name=?, provider_stream_id=?, restream_event_id=?, "
+            "updated_at=? WHERE live_session_id=?",
+            (
+                sports_status,
+                result["decision"],
+                result["bundle_id"],
+                result["source_asset_id"],
+                ts,
+                0,  # publish always false
+                result["lane"],
+                PUBLIC_STATE_LIVE_PRIVATE,
+                DISTRIBUTION_DISABLED,
+                PROVIDER_NAME,
+                None,
+                None,
+                ts,
+                live_session_id,
+            ),
+        )
+        row = self._get_row(live_session_id)
+        self._audit(operator["user_id"], "live_session.private_sports_check", live_session_id, {
+            "decision": result["decision"],
+            "bundle_id": result["bundle_id"],
+            "sports_status": sports_status,
+            "source_asset_id": result["source_asset_id"],
+            "private_asset_id": private_asset_id,
+            "source_mode": result["source_mode"],
+            "publish": False,
+            "public_state": PUBLIC_STATE_LIVE_PRIVATE,
+            "distribution_state": DISTRIBUTION_DISABLED,
+            "label": PRIVATE_SPORTS_VERIFY_LABEL,
+        })
+        session = self._session_dict(row)
+        # Absolute bans — belt and suspenders.
+        session["public_state"] = PUBLIC_STATE_LIVE_PRIVATE
+        session["distribution_state"] = DISTRIBUTION_DISABLED
+        session["provider_stream_id"] = None
+        session["restream_event_id"] = None
+        return {
+            "live_session": session,
+            "private_sports_check": {
+                "publish": False,
+                "decision": result["decision"],
+                "bundle_id": result["bundle_id"],
+                "sports_status": sports_status,
+                "source_asset_id": result["source_asset_id"],
+                "source_mode": result["source_mode"],
+                "private_asset_id": private_asset_id,
+                "lane": result["lane"],
+                "label": PRIVATE_SPORTS_VERIFY_LABEL,
+                "public_state": PUBLIC_STATE_LIVE_PRIVATE,
+                "distribution_state": DISTRIBUTION_DISABLED,
+                "policy": result["policy"],
+                "bundle": result["bundle"],
+                "note": result["note"],
+            },
         }

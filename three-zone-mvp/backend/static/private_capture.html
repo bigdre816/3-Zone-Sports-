@@ -11,7 +11,7 @@
     <h1>Private live capture</h1>
     <p class="muted">Operator-only. No member route. No public card. No third-party live publish.</p>
     <div class="banner" id="banner">Private capture session — Browser source not published</div>
-    <p class="muted">Local camera preview + optional private server-side ingest. Distribution is forced <strong>DISABLED</strong>; public_state is <strong>LIVE_PRIVATE</strong>. Private ingest is never published to members. Optional short private rewind buffer is <strong>not DVR</strong> and stays private.</p>
+    <p class="muted">Local camera preview + optional private server-side ingest. Distribution is forced <strong>DISABLED</strong>; public_state is <strong>LIVE_PRIVATE</strong>. Private ingest is never published to members. Optional short private rewind buffer is <strong>not DVR</strong> and stays private. Private sports-check is <strong>evidence/policy only</strong> — never publish authorization.</p>
 
     <label>Session token (Bearer from /ops sign-in)
       <input id="token" type="password" autocomplete="off" placeholder="Paste operator session token" />
@@ -25,6 +25,7 @@
       <button type="button" id="start-btn" disabled>Start private session</button>
       <button type="button" id="ingest-btn" disabled>Bind private ingest</button>
       <button type="button" id="rewind-btn" class="ghost" disabled>Rewind buffer</button>
+      <button type="button" id="sports-check-btn" class="ghost" disabled title="Requires THREEZONE_SPORTS_VERIFY_ENABLED">Private sports-check (evidence only — not publish)</button>
       <button type="button" id="stop-btn" class="danger" disabled>Stop</button>
       <button type="button" id="refresh-btn" class="ghost" disabled>Refresh</button>
     </div>
