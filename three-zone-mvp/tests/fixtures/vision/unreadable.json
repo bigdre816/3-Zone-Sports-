@@ -1,0 +1,43 @@
+{
+  "duration_s": 20,
+  "environment": "isolated_test",
+  "frame_descriptors": [
+    {
+      "t": 0.0,
+      "text": "static / black / no readable content"
+    },
+    {
+      "t": 2.857143,
+      "text": "static / black / no readable content"
+    },
+    {
+      "t": 5.714286,
+      "text": "static / black / no readable content"
+    },
+    {
+      "t": 8.571429,
+      "text": "static / black / no readable content"
+    },
+    {
+      "t": 11.428571,
+      "text": "static / black / no readable content"
+    },
+    {
+      "t": 14.285714,
+      "text": "static / black / no readable content"
+    },
+    {
+      "t": 17.142857,
+      "text": "static / black / no readable content"
+    },
+    {
+      "t": 20.0,
+      "text": "static / black / no readable content"
+    }
+  ],
+  "input_privacy_class": "P0",
+  "sample_frame_count": 8,
+  "scenario": "unreadable",
+  "source_asset_id": "asset:synthetic:unreadable-001",
+  "visibility_state": "unreadable"
+}

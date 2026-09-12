@@ -1,0 +1,51 @@
+{
+  "duration_s": 20,
+  "environment": "isolated_test",
+  "frame_descriptors": [
+    {
+      "t": 0.0,
+      "text": "hardwood court visible, hoop, basketball, players moving"
+    },
+    {
+      "t": 2.222222,
+      "text": "hardwood court visible, hoop, basketball, players moving"
+    },
+    {
+      "t": 4.444444,
+      "text": "hardwood court visible, hoop, basketball, players moving"
+    },
+    {
+      "t": 6.666667,
+      "text": "hardwood court visible, hoop, basketball, players moving"
+    },
+    {
+      "t": 8.888889,
+      "text": "hardwood court visible, hoop, basketball, players moving"
+    },
+    {
+      "t": 11.111111,
+      "text": "hardwood court visible, hoop, basketball, players moving"
+    },
+    {
+      "t": 13.333333,
+      "text": "hardwood court visible, hoop, basketball, players moving"
+    },
+    {
+      "t": 15.555556,
+      "text": "hardwood court visible, hoop, basketball, players moving"
+    },
+    {
+      "t": 17.777778,
+      "text": "hardwood court visible, hoop, basketball, players moving"
+    },
+    {
+      "t": 20.0,
+      "text": "hardwood court visible, hoop, basketball, players moving"
+    }
+  ],
+  "input_privacy_class": "P0",
+  "sample_frame_count": 10,
+  "scenario": "basketball",
+  "source_asset_id": "asset:synthetic:basketball-001",
+  "visibility_state": "clear"
+}

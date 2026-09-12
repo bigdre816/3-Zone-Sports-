@@ -1,0 +1,43 @@
+{
+  "duration_s": 20,
+  "environment": "isolated_test",
+  "frame_descriptors": [
+    {
+      "t": 0.0,
+      "text": "finger over lens, mostly blocked"
+    },
+    {
+      "t": 2.857143,
+      "text": "finger over lens, mostly blocked"
+    },
+    {
+      "t": 5.714286,
+      "text": "finger over lens, mostly blocked"
+    },
+    {
+      "t": 8.571429,
+      "text": "finger over lens, mostly blocked"
+    },
+    {
+      "t": 11.428571,
+      "text": "finger over lens, mostly blocked"
+    },
+    {
+      "t": 14.285714,
+      "text": "finger over lens, mostly blocked"
+    },
+    {
+      "t": 17.142857,
+      "text": "finger over lens, mostly blocked"
+    },
+    {
+      "t": 20.0,
+      "text": "finger over lens, mostly blocked"
+    }
+  ],
+  "input_privacy_class": "P0",
+  "sample_frame_count": 8,
+  "scenario": "obstructed",
+  "source_asset_id": "asset:synthetic:obstructed-001",
+  "visibility_state": "obstructed"
+}

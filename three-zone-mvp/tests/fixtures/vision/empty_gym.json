@@ -1,0 +1,51 @@
+{
+  "duration_s": 20,
+  "environment": "isolated_test",
+  "frame_descriptors": [
+    {
+      "t": 0.0,
+      "text": "empty hardwood court, no players, no ball"
+    },
+    {
+      "t": 2.222222,
+      "text": "empty hardwood court, no players, no ball"
+    },
+    {
+      "t": 4.444444,
+      "text": "empty hardwood court, no players, no ball"
+    },
+    {
+      "t": 6.666667,
+      "text": "empty hardwood court, no players, no ball"
+    },
+    {
+      "t": 8.888889,
+      "text": "empty hardwood court, no players, no ball"
+    },
+    {
+      "t": 11.111111,
+      "text": "empty hardwood court, no players, no ball"
+    },
+    {
+      "t": 13.333333,
+      "text": "empty hardwood court, no players, no ball"
+    },
+    {
+      "t": 15.555556,
+      "text": "empty hardwood court, no players, no ball"
+    },
+    {
+      "t": 17.777778,
+      "text": "empty hardwood court, no players, no ball"
+    },
+    {
+      "t": 20.0,
+      "text": "empty hardwood court, no players, no ball"
+    }
+  ],
+  "input_privacy_class": "P0",
+  "sample_frame_count": 10,
+  "scenario": "empty_gym",
+  "source_asset_id": "asset:synthetic:empty-gym-001",
+  "visibility_state": "clear"
+}

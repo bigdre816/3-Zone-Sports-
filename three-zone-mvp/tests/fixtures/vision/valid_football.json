@@ -1,0 +1,51 @@
+{
+  "duration_s": 20,
+  "environment": "isolated_test",
+  "frame_descriptors": [
+    {
+      "t": 0.0,
+      "text": "marked football field, goalpost, players in kit"
+    },
+    {
+      "t": 2.222222,
+      "text": "marked football field, goalpost, players in kit"
+    },
+    {
+      "t": 4.444444,
+      "text": "marked football field, goalpost, players in kit"
+    },
+    {
+      "t": 6.666667,
+      "text": "marked football field, goalpost, players in kit"
+    },
+    {
+      "t": 8.888889,
+      "text": "marked football field, goalpost, players in kit"
+    },
+    {
+      "t": 11.111111,
+      "text": "marked football field, goalpost, players in kit"
+    },
+    {
+      "t": 13.333333,
+      "text": "marked football field, goalpost, players in kit"
+    },
+    {
+      "t": 15.555556,
+      "text": "marked football field, goalpost, players in kit"
+    },
+    {
+      "t": 17.777778,
+      "text": "marked football field, goalpost, players in kit"
+    },
+    {
+      "t": 20.0,
+      "text": "marked football field, goalpost, players in kit"
+    }
+  ],
+  "input_privacy_class": "P0",
+  "sample_frame_count": 10,
+  "scenario": "football",
+  "source_asset_id": "asset:synthetic:football-001",
+  "visibility_state": "clear"
+}
