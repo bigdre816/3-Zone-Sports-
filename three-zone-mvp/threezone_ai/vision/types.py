@@ -13,8 +13,8 @@ from typing import Any
 EVIDENCE_SCHEMA_VERSION = "threezone.vision.evidence.v0"
 POLICY_VERSION = "sports-context-policy.v0"
 PROCESSING_POLICY_VERSION = "sports-vision-processing.v0"
-# Honest: V0 is not registered as a gateway task.
-GATEWAY_TASK_VERSION = "unregistered"
+# G3-B: registered as gateway task sports_vision (kill-switch gated).
+GATEWAY_TASK_VERSION = "sports-vision.gateway.v0"
 
 DECISION_ELIGIBLE = "eligible_for_rights_check"
 DECISION_HOLD = "hold_uncertain"

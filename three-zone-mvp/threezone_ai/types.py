@@ -12,6 +12,7 @@ class TaskType(str, Enum):
     EMBEDDING = "embedding"
     MODERATION = "moderation"
     DESCRIPTION = "description"
+    SPORTS_VISION = "sports_vision"
 
 
 class PrivacyClass(str, Enum):

@@ -1,18 +1,23 @@
 """THREEZONE sports-vision evidence library (V0 / P1-V0).
 
-V0 library. Operator sports-check (V0b) may call this via
-``/api/ops/sports-check`` with ``allow_offline_synthetic`` only.
-Not registered on the AI gateway, workers, or public member routes.
-No publication authority.
+Sports-vision evidence library.
+
+- V0b operator sports-check may call with ``allow_offline_synthetic``.
+- G3-B registers gateway task ``sports_vision`` (kill-switch gated; local offline provider).
+- G3-C resolves ``asset:archive:<id>`` via authorized DB lookup only.
+No publication authority; no arbitrary filesystem/URL opens.
 
 Models emit observations. SportsContextPolicy emits the only decision.
 Publication / rights / settlement are out of scope.
 """
 
 from threezone_ai.vision.assets import (
+    ArchiveAssetResolver,
     IllicitAssetReference,
     ResolvedAsset,
     SyntheticAssetResolver,
+    UnknownArchiveAsset,
+    resolve_authorized_asset,
 )
 from threezone_ai.vision.ontology import (
     ONTOLOGY_CLASSES,
@@ -52,6 +57,7 @@ __all__ = [
     "FakeEscalationProvider",
     "FakeObjectDetectionProvider",
     "FakeSceneReasoningProvider",
+    "ArchiveAssetResolver",
     "IllicitAssetReference",
     "MappingStatus",
     "ObjectDetectionProvider",
@@ -62,6 +68,8 @@ __all__ = [
     "SportsContextPolicyResult",
     "SportsVisionEvidenceBundle",
     "SyntheticAssetResolver",
+    "UnknownArchiveAsset",
+    "resolve_authorized_asset",
     "VisionPipelineDisabled",
     "evaluate_sports_context",
     "map_label",

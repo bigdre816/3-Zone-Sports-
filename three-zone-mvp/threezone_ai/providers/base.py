@@ -40,6 +40,7 @@ def get_provider_registry() -> dict[str, BaseProvider]:
         from threezone_ai.providers.groq_chat import GroqChatProvider
         from threezone_ai.providers.groq_whisper import GroqWhisperProvider
         from threezone_ai.providers.local_moderation import LocalModerationProvider
+        from threezone_ai.providers.sports_vision_offline import SportsVisionOfflineProvider
         from threezone_ai.providers.local_whisper import LocalFasterWhisperProvider
         from threezone_ai.providers.ollama_chat import OllamaChatProvider
         from threezone_ai.providers.ollama_embed import OllamaEmbedProvider
@@ -53,6 +54,7 @@ def get_provider_registry() -> dict[str, BaseProvider]:
             GeminiChatProvider(),
             CloudflareChatProvider(),
             LocalModerationProvider(),
+            SportsVisionOfflineProvider(),
         ]
         _REGISTRY = {p.name: p for p in providers}
     return _REGISTRY

@@ -20,6 +20,7 @@ cost_tiers:
     - ollama_nomic
     - ollama_chat
     - local_classifier_stub
+    - sports_vision_offline
   low:
     - local_faster_whisper
     - ollama_nomic
@@ -27,6 +28,7 @@ cost_tiers:
     - local_classifier_stub
     - groq
     - groq_whisper
+    - sports_vision_offline
   any:
     - local_faster_whisper
     - ollama_nomic
@@ -36,6 +38,7 @@ cost_tiers:
     - groq_whisper
     - gemini
     - cloudflare
+    - sports_vision_offline
 
 tasks:
   caption:
@@ -58,6 +61,11 @@ tasks:
     default_order:
       - local_classifier_stub
     human_review_default: false
+  sports_vision:
+    # G3-B: kill-switch gated; local offline evidence only — no auto cloud / YOLO lock-in
+    default_order:
+      - sports_vision_offline
+    human_review_default: true
 
 providers:
   local_faster_whisper:
@@ -82,6 +90,9 @@ providers:
     tier: fallback
     cost: any
   local_classifier_stub:
+    tier: local_first
+    cost: free
+  sports_vision_offline:
     tier: local_first
     cost: free
 

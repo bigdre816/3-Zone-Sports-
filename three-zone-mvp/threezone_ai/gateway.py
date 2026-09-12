@@ -196,6 +196,7 @@ def run(
         should_lineage = record_lineage and task in {
             TaskType.CAPTION,
             TaskType.DESCRIPTION,
+            TaskType.SPORTS_VISION,
         }
         # Embeddings: lighter provenance optional via metadata flag
         if record_lineage and task == TaskType.EMBEDDING and (
