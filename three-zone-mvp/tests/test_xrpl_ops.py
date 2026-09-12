@@ -49,5 +49,36 @@ class XrplOpsUnitTests(unittest.TestCase):
         self.assertNotIn("private_key", snap)
 
 
+
+    def test_build_memo_account_set_shape(self):
+        tx = xrpl_ops.build_memo_account_set(
+            account="rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe",
+            memo_type="moten.audit.v1",
+            memo_data="abc123",
+        )
+        self.assertEqual(tx["TransactionType"], "AccountSet")
+        self.assertEqual(tx["Account"], "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe")
+        self.assertIn("Memos", tx)
+
+    def test_bind_moten_audit_account_posts(self):
+        with mock.patch.object(xrpl_ops, "_moten_json", return_value={"signing_profile": {"account": "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe"}}) as m:
+            out = xrpl_ops.bind_moten_audit_account("https://moten.example", account="rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe", network="testnet")
+        self.assertIn("signing_profile", out)
+        self.assertEqual(m.call_args[0][0], "POST")
+        self.assertIn("/api/onchain/signing-profile/account", m.call_args[0][1])
+
+    def test_confirm_wallet_test_publish_posts(self):
+        with mock.patch.object(xrpl_ops, "_moten_json", return_value={"ok": True}) as m:
+            xrpl_ops.confirm_wallet_test_publish(
+                "https://moten.example",
+                request_id="PUB-1",
+                transaction_hash="ABCD" * 16,
+                account="rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe",
+                network="testnet",
+            )
+        self.assertEqual(m.call_args[0][0], "POST")
+        self.assertIn("/api/onchain/publications/wallet-confirm", m.call_args[0][1])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -329,6 +329,100 @@ class AuditService:
                         ("human hold", timestamp(), request_id))
         return self.publication(request_id)
 
+
+    def set_signing_account(self, account: str, network: str | None = None) -> dict:
+        """Bind a public classic address as the Moten audit signing account (no secret)."""
+        account = (account or "").strip()
+        if not account.startswith("r") or len(account) < 25:
+            raise ValueError("invalid XRPL classic address")
+        network = (network or self.config.xrpl_network or "testnet").strip().lower()
+        if network not in {"testnet", "mainnet"}:
+            raise ValueError("network must be testnet or mainnet")
+        if network == "mainnet" and self.config.xrpl_mode != "testnet":
+            # Moten config still forbids mainnet mode at the service gate; allow account label only on testnet ops.
+            pass
+        now = timestamp()
+        existing = self.db.one(
+            "SELECT signing_profile_id FROM signing_profiles WHERE signing_profile_id=?",
+            (self.config.signing_profile_id,),
+        )
+        if existing:
+            self.db.execute(
+                "UPDATE signing_profiles SET account=?, network=?, status='CONFIGURED', effective_at=? WHERE signing_profile_id=?",
+                (account, network, now, self.config.signing_profile_id),
+            )
+        else:
+            self.db.execute(
+                "INSERT INTO signing_profiles VALUES (?,?,?,?,?,?,?)",
+                (self.config.signing_profile_id, "Andre / Moten authorized signer", account, network, "CONFIGURED", now, "IP Steward"),
+            )
+        self.db.execute(
+            "INSERT INTO signing_authority_events(event_type,profile_id,detail,occurred_at) VALUES (?,?,?,?)",
+            ("signing.account.bound", self.config.signing_profile_id, dumps({"account": account, "network": network}), now),
+        )
+        return self.signing_profile()
+
+    def confirm_wallet_publication(self, request_id: str, *, tx_hash: str, account: str, network: str | None = None) -> dict:
+        """Record a wallet-signed XRPL publication (operator signed outside Moten; Moten stores the receipt)."""
+        request = self.db.one("SELECT * FROM blockchain_publication_requests WHERE request_id=?", (request_id,))
+        if not request:
+            raise ValueError("publication request not found")
+        tx_hash = (tx_hash or "").strip()
+        account = (account or "").strip()
+        if len(tx_hash) < 16:
+            raise ValueError("transaction hash required")
+        if not account.startswith("r"):
+            raise ValueError("classic account required")
+        network = (network or request["network"] or self.config.xrpl_network or "testnet").strip().lower()
+        profile = self.db.one("SELECT * FROM signing_profiles WHERE signing_profile_id=?", (request["signing_profile_id"],))
+        if not profile or profile["status"] == "NOT_CONFIGURED":
+            raise ValueError("signing profile not configured")
+        profile = dict(profile)
+        if profile.get("account") and profile["account"] != account:
+            raise ValueError("connected account does not match Moten signing profile")
+        now = timestamp()
+        attempt_id = f"ATT-{uuid.uuid4().hex[:12].upper()}"
+        self.db.execute(
+            "INSERT INTO blockchain_publication_attempts VALUES (?,?,?,?,?,?,?,?,?)",
+            (attempt_id, request_id, "VALIDATED", None, "tesSUCCESS", tx_hash, now, now,
+             dumps({"signer": "operator_wallet", "account": account, "network": network})),
+        )
+        event = self.get_event(request["event_id"])
+        receipt_id = f"XRPL-RECEIPT-{uuid.uuid4().hex[:12].upper()}"
+        self.db.execute(
+            "INSERT INTO blockchain_receipts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (receipt_id, event["event_id"], attempt_id, network, account, tx_hash, None,
+             "WALLET_SIGNED_MEMO", now, now, "tesSUCCESS", None, event["canonical_event_hash"],
+             sha256(request["approved_representation"].encode()), "operator_wallet", "VALIDATED"),
+        )
+        self.db.execute(
+            "UPDATE blockchain_publication_requests SET status='VALIDATED',updated_at=? WHERE request_id=?",
+            (now, request_id),
+        )
+        self.db.execute(
+            "INSERT INTO signing_authority_events(event_type,profile_id,detail,occurred_at) VALUES (?,?,?,?)",
+            ("signing.completed", profile["signing_profile_id"],
+             dumps({"request_id": request_id, "tx_hash": tx_hash, "wallet_signed": True}), now),
+        )
+        self.db.execute(
+            "INSERT INTO verification_history(verification_id,event_type,detail,occurred_at) VALUES (?,?,?,?)",
+            (request["verification_id"], "blockchain.receipt.received",
+             dumps({"receipt_id": receipt_id, "tx_hash": tx_hash, "wallet_signed": True}), now),
+        )
+        return {
+            "publication": self.publication(request_id),
+            "receipt_id": receipt_id,
+            "transaction_hash": tx_hash,
+            "network": network,
+            "account": account,
+        }
+
+    def list_receipts(self, limit: int = 50) -> list[dict]:
+        limit = max(1, min(int(limit or 50), 100))
+        return [dict(row) for row in self.db.many(
+            "SELECT * FROM blockchain_receipts ORDER BY submitted_at DESC LIMIT ?", (limit,)
+        )]
+
     def signing_profile(self) -> dict:
         row = self.db.one("SELECT signing_profile_id,display_name,account,network,status,effective_at,signer_role"
                           " FROM signing_profiles WHERE signing_profile_id=?", (self.config.signing_profile_id,))
@@ -347,13 +441,46 @@ class AuditService:
 
     def health(self) -> dict:
         queued = self.db.one("SELECT COUNT(*) AS count FROM blockchain_publication_requests WHERE status IN ('QUEUED','HELD')")["count"]
-        profile = self.db.one("SELECT * FROM signing_profiles WHERE signing_profile_id=?", (self.config.signing_profile_id,))
+        profile_row = self.db.one("SELECT * FROM signing_profiles WHERE signing_profile_id=?", (self.config.signing_profile_id,))
+        profile = dict(profile_row) if profile_row else None
         status = "HEALTHY" if self.config.is_simulation else "DEGRADED"
         if not profile or profile["status"] == "NOT_CONFIGURED":
             status = "BLOCKED"
-        return {"status": status, "xrpl": "SIMULATION · NO XRPL PUBLICATION" if self.config.is_simulation else "TESTNET CONFIGURATION PENDING",
-                "treasure": "SIMULATED TREASURE NETWORK VERIFICATION", "queue_depth": queued,
-                "signing_profile": {"id": self.config.signing_profile_id, "status": profile["status"] if profile else "NOT_CONFIGURED"}}
+        elif not self.config.is_simulation and profile.get("account"):
+            status = "HEALTHY"
+        if self.config.is_simulation:
+            xrpl_label = "SIMULATION · NO XRPL PUBLICATION"
+            mode_note = (
+                "MOTEN_XRPL_MODE defaults to simulation. Set MOTEN_XRPL_MODE=testnet on the Moten "
+                "on-chain service (Render dashboard / env) so ops wallet-confirm is labeled testnet; "
+                "Treasure verify remains simulated either way."
+            )
+        elif profile and profile.get("account"):
+            xrpl_label = "TESTNET · WALLET-SIGNED PUBLICATIONS"
+            mode_note = "MOTEN_XRPL_MODE=testnet · ops wallet-confirm validates receipts on testnet labels."
+        else:
+            xrpl_label = "TESTNET · AUDIT ACCOUNT NOT CONNECTED"
+            mode_note = "MOTEN_XRPL_MODE=testnet · bind a wallet from /ops to enable wallet-signed publications."
+        return {
+            "status": status,
+            "xrpl": xrpl_label,
+            "xrpl_mode": self.config.xrpl_mode,
+            "network": self.config.xrpl_network,
+            "wallet_signed_publication_supported": True,
+            "treasure": "SIMULATED TREASURE NETWORK VERIFICATION",
+            "queue_depth": queued,
+            "signing_profile": {
+                "id": self.config.signing_profile_id,
+                "status": profile["status"] if profile else "NOT_CONFIGURED",
+                "account": profile.get("account") if profile else None,
+                "network": profile.get("network") if profile else self.config.xrpl_network,
+            },
+            "honesty": {
+                "treasure": "Treasure verify is simulated only — never a live Treasure Network claim.",
+                "publish": "Ledger publish is wallet-signed AccountSet+Memo; Moten stores the receipt (no Moten seed).",
+                "mode_note": mode_note,
+            },
+        }
 
 
 class TreasureNetworkVerificationProvider:

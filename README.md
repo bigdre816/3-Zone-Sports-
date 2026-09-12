@@ -71,6 +71,12 @@ logged, or stored in the audit database. Mainnet is intentionally disabled.
 Real testnet publication additionally requires a real XRPL client, an
 authorized human signing profile, and separately supplied backend credentials.
 
+`/ops` wallet-signed test publish (Crossmark/GemWallet AccountSet+Memo → Moten
+`wallet-confirm`) works without `MOTEN_XRPL_SECRET`. For honest testnet labels
+set `MOTEN_XRPL_MODE=testnet` (and usually `MOTEN_XRPL_NETWORK=testnet`) on the
+Moten on-chain audit service in the Render dashboard — `render-moten.yaml` is
+the control-plane service and does not set this. Default remains `simulation`.
+
 The durable tables include canonical audit events and versions/lineage,
 Treasure verification records/history, publication requests/attempts/receipts,
 signing-profile audit, and reconciliation/health records. Key APIs are

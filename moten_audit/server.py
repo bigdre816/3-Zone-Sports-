@@ -54,6 +54,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"events": self.service.list_events()})
             if path == "/api/onchain/publications":
                 return self._send(200, {"publications": self.service.list_requests()})
+            if path == "/api/onchain/receipts":
+                return self._send(200, {"receipts": self.service.list_receipts()})
             if path == "/api/onchain/signing-profile":
                 return self._send(200, {"signing_profile": self.service.signing_profile()})
             match = re.fullmatch(r"/api/audit/events/([^/]+)", path)
@@ -103,6 +105,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"publication": self.service.hold_publication(match.group(1), self._role())})
             if path == "/api/onchain/reconcile":
                 return self._send(201, self.service.reconcile())
+            if path == "/api/onchain/signing-profile/account":
+                return self._send(200, {"signing_profile": self.service.set_signing_account(
+                    body.get("account", ""), body.get("network"))})
+            if path == "/api/onchain/publications/wallet-confirm":
+                return self._send(200, self.service.confirm_wallet_publication(
+                    body.get("request_id", ""),
+                    tx_hash=body.get("transaction_hash") or body.get("tx_hash") or "",
+                    account=body.get("account", ""),
+                    network=body.get("network"),
+                ))
             return self._send(404, {"error": "not found"})
         except PermissionError as exc:
             return self._send(403, {"error": str(exc)})
