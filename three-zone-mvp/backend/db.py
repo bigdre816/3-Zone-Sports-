@@ -653,6 +653,11 @@ CREATE TABLE IF NOT EXISTS live_sessions (
     stop_requested_at REAL,
     stopped_at REAL,
     failed_at REAL,
+    private_ingest_id TEXT,
+    private_ingest_state TEXT NOT NULL DEFAULT 'NONE',
+    private_ingest_bound_at REAL,
+    private_ingest_closed_at REAL,
+    private_ingest_byte_count INTEGER NOT NULL DEFAULT 0,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
@@ -828,6 +833,19 @@ class Database:
         comment_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(comments)").fetchall()}
         if comment_cols and "parent_comment_id" not in comment_cols:
             self._conn.execute("ALTER TABLE comments ADD COLUMN parent_comment_id TEXT")
+        # L1B+ / G4-A: private ingest metadata on live_sessions (additive).
+        live_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(live_sessions)").fetchall()}
+        if live_cols:
+            live_alters = {
+                "private_ingest_id": "TEXT",
+                "private_ingest_state": "TEXT NOT NULL DEFAULT 'NONE'",
+                "private_ingest_bound_at": "REAL",
+                "private_ingest_closed_at": "REAL",
+                "private_ingest_byte_count": "INTEGER NOT NULL DEFAULT 0",
+            }
+            for name, decl in live_alters.items():
+                if name not in live_cols:
+                    self._conn.execute(f"ALTER TABLE live_sessions ADD COLUMN {name} {decl}")
         self._conn.commit()
 
     def _init_postgres_schema(self) -> None:
@@ -851,6 +869,17 @@ class Database:
             self._conn.execute("ALTER TABLE comments ADD COLUMN parent_comment_id TEXT")
         except Exception:
             pass
+        for stmt in (
+            "ALTER TABLE live_sessions ADD COLUMN private_ingest_id TEXT",
+            "ALTER TABLE live_sessions ADD COLUMN private_ingest_state TEXT NOT NULL DEFAULT 'NONE'",
+            "ALTER TABLE live_sessions ADD COLUMN private_ingest_bound_at DOUBLE PRECISION",
+            "ALTER TABLE live_sessions ADD COLUMN private_ingest_closed_at DOUBLE PRECISION",
+            "ALTER TABLE live_sessions ADD COLUMN private_ingest_byte_count INTEGER NOT NULL DEFAULT 0",
+        ):
+            try:
+                self._conn.execute(stmt)
+            except Exception:
+                pass
         self._conn.commit()
 
     def _dedupe_open_view_sessions(self) -> None:

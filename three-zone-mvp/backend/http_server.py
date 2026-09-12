@@ -93,6 +93,8 @@ def _routes():
         ("POST", re.compile(r"^/api/live-sessions$"), "h_live_session_create", "operator"),
         ("GET", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)$"), "h_live_session_get", "operator"),
         ("POST", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)/stop$"), "h_live_session_stop", "operator"),
+        ("POST", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)/private-ingest$"), "h_live_session_private_ingest", "operator"),
+        ("POST", re.compile(r"^/api/live-sessions/(?P<live_session_id>ls_[a-z0-9]+)/private-ingest/media$"), "h_live_session_private_ingest_media", "operator"),
         ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)$"), "h_audit_detail", "operator"),
         ("GET", re.compile(r"^/api/admin/audit/(?P<audit_id>AUD-[a-z0-9-]+)/xrpl$"), "h_audit_detail", "operator"),
         ("POST", re.compile(r"^/internal/treasure/verify$"), "h_treasure_verify", "operator"),
@@ -773,6 +775,16 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         session = self.live_sessions.stop(u, p["live_session_id"], b or {})
         self._send_json(200, {"live_session": session})
 
+    def h_live_session_private_ingest(self, p, b, u):
+        # L1B+ / G4-A: bind private ingest to active session (operator-only).
+        session = self.live_sessions.bind_private_ingest(u, p["live_session_id"], b or {})
+        self._send_json(200, {"live_session": session})
+
+    def h_live_session_private_ingest_media(self, p, b, u):
+        # L1B+: store private media bytes server-side; never publishes.
+        session = self.live_sessions.receive_private_media(u, p["live_session_id"], b or {})
+        self._send_json(200, {"live_session": session})
+
     def h_treasure_verify(self, p, b, u):
         self._send_json(200, self.portal.verify_treasure((b or {}).get("subject_ref", "demo-viewer")))
 
@@ -1292,7 +1304,7 @@ def make_http_server(config, cp: ControlPlane, media_dir: str,
     network = NetworkService(cp, portal, provider, photo_storage)
     moten = MotenIntakeService(cp)
     network.moten = moten
-    live_sessions = LiveSessionService(cp)
+    live_sessions = LiveSessionService(cp, media_dir=media_dir)
     handler = type("BoundHandler", (_Handler,), {
         "cp": cp, "portal": portal, "network": network, "moten": moten,
         "live_sessions": live_sessions, "media_dir": media_dir,
