@@ -4,6 +4,9 @@ Gateway-only execution: the runner calls ``threezone_ai.gateway.run`` for
 allowlisted tasks (transcription first). Never imports Groq/Gemini/Ollama/CF
 SDKs or ``threezone_ai.providers.*``.
 
+Successful transcription may emit an immutable proposal (Y4) — proposal ≠
+Treasure release (Y5).
+
 This is NOT the sports playback lease (``lease_records`` / ControlPlane).
 Worker claims are ``ai_work_lease`` rows on ``ai_jobs``.
 """
@@ -82,7 +85,7 @@ def _summary_from_response(resp: AIResponse, task: str) -> dict[str, Any]:
         or (TRANSCRIPTION_SEGMENTS_SCHEMA_REF if task == "transcription" else None)
     )
     segments = list(resp.segments or [])
-    return {
+    out: dict[str, Any] = {
         "ok": bool(resp.ok),
         "provider": resp.provider,
         "task_type": resp.task_type,
@@ -96,6 +99,10 @@ def _summary_from_response(resp: AIResponse, task: str) -> dict[str, Any]:
         "model": resp.model,
         "version": resp.version,
     }
+    if task == "transcription":
+        out["segments"] = segments
+        out["local_path"] = bool(meta.get("local_path") or meta.get("is_local"))
+    return out
 
 
 class AiJobService:
@@ -106,9 +113,13 @@ class AiJobService:
         store: AiJobStore | None = None,
         *,
         gateway_run: GatewayRun | None = None,
+        propose_service: Any | None = None,
+        auto_propose: bool = False,
     ) -> None:
         self.store = store or AiJobStore(":memory:")
         self._gateway_run = gateway_run
+        self._propose_service = propose_service
+        self.auto_propose = auto_propose
 
     def _run_gateway(self, request: AIRequest, **kwargs: Any) -> AIResponse:
         runner = self._gateway_run
@@ -296,7 +307,7 @@ class AiJobService:
         )
         if finished is None:
             raise JobConflict(f"ai job {job_id} already terminal")
-        return finished
+        return self._maybe_auto_propose(finished, now=ts)
 
     def fail(
         self,
@@ -323,6 +334,46 @@ class AiJobService:
             raise JobConflict(f"ai job {job_id} already terminal")
         return finished
 
+    def _propose_service_or_none(self):
+        if self._propose_service is not None:
+            return self._propose_service
+        try:
+            from threezone_ai.proposals import get_propose_service
+
+            return get_propose_service()
+        except Exception:
+            return None
+
+    def propose(self, job_id: str, *, now: float | None = None) -> Any:
+        """Emit immutable transcription proposal for a succeeded job (Y4)."""
+        job = self.get(job_id)
+        proposer = self._propose_service_or_none()
+        if proposer is None:
+            raise AiJobError("propose service unavailable", "propose_unavailable")
+        return proposer.propose_from_job(job, now=now)
+
+    def _maybe_auto_propose(self, finished: AiJob, *, now: float) -> AiJob:
+        if not self.auto_propose:
+            return finished
+        if finished.status != "succeeded" or finished.task_type != "transcription":
+            return finished
+        result = finished.result if isinstance(finished.result, dict) else {}
+        if not result.get("segments"):
+            return finished
+        try:
+            prop = self.propose(finished.job_id, now=now)
+            # Attach proposal_id onto an ephemeral view (result already sealed in store).
+            if isinstance(finished.result, dict) and prop is not None:
+                finished.result = dict(finished.result)
+                finished.result["proposal_id"] = prop.proposal_id
+                finished.result["proposal_schema_ref"] = getattr(
+                    prop, "schema_ref", None
+                )
+        except Exception:
+            # Proposal is best-effort on auto path; explicit /propose surfaces errors.
+            pass
+        return finished
+
     def _finish_from_response(
         self, job_id: str, resp: AIResponse, *, now: float
     ) -> AiJob:
@@ -340,7 +391,7 @@ class AiJobService:
         )
         if finished is None:
             raise JobConflict(f"ai job {job_id} already terminal")
-        return finished
+        return self._maybe_auto_propose(finished, now=now)
 
 
 _default_service: AiJobService | None = None
@@ -353,7 +404,18 @@ def get_job_service(*, reload: bool = False) -> AiJobService:
         import os
 
         path = (os.environ.get("THREEZONE_AI_JOBS_PATH") or "data/ai_jobs.sqlite").strip() or "data/ai_jobs.sqlite"
-        _default_service = AiJobService(AiJobStore(path))
+        propose = None
+        try:
+            from threezone_ai.proposals import get_propose_service
+
+            propose = get_propose_service(reload=reload)
+        except Exception:
+            propose = None
+        _default_service = AiJobService(
+            AiJobStore(path),
+            propose_service=propose,
+            auto_propose=True,
+        )
     return _default_service
 
 

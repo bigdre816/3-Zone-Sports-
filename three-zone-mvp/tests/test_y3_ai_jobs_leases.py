@@ -182,7 +182,7 @@ def test_complete_via_gateway_fake_provider_publish_false(monkeypatch):
     assert done.result is not None
     assert done.result.get("publish") is False
     assert done.result.get("treasure_release") is False
-    assert done.result.get("provider") == "transcription_offline"
+    assert done.result.get("provider") == "transcription_local"
     assert done.result.get("ok") is True
     assert int(done.result.get("segment_count") or 0) >= 1
 
