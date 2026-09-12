@@ -140,10 +140,56 @@ function afterAuth() {
   loadEvents();
 }
 
+
+async function loadSportsCheckAssets() {
+  const sel = $("#sports-check-asset");
+  if (!sel) return;
+  try {
+    const res = await api("GET", "/api/ops/sports-check/assets");
+    sel.innerHTML = "";
+    (res.assets || []).forEach((a) => {
+      const opt = document.createElement("option");
+      opt.value = a.source_asset_id;
+      opt.textContent = `${a.source_asset_id} (${a.scenario || "?"}, ${a.input_privacy_class || "?"})`;
+      sel.appendChild(opt);
+    });
+    const summary = $("#sports-check-summary");
+    if (summary) {
+      summary.textContent = `${(res.assets || []).length} synthetic assets · publish=${res.publish === true} · ${res.note || ""}`;
+    }
+  } catch (e) {
+    toast("Sports-check assets failed: " + (e.code || e.message), "bad");
+  }
+}
+
+async function runSportsCheck(ev) {
+  if (ev) ev.preventDefault();
+  const sel = $("#sports-check-asset");
+  const out = $("#sports-check-out");
+  const summary = $("#sports-check-summary");
+  if (!sel || !sel.value) return;
+  try {
+    const res = await api("POST", "/api/ops/sports-check", { source_asset_id: sel.value });
+    const decision = (res.policy && res.policy.decision) || "?";
+    const reasons = ((res.policy && res.policy.reason_codes) || []).join(", ") || "—";
+    if (summary) {
+      summary.innerHTML = `<strong>Decision:</strong> ${decision}<br/><strong>Reasons:</strong> ${reasons}<br/><span class="muted">publish=${res.publish} · treasure_release=${res.treasure_release} · offline_synthetic=${res.allow_offline_synthetic}</span>`;
+    }
+    if (out) {
+      out.classList.remove("hidden");
+      out.textContent = JSON.stringify({ policy: res.policy, bundle: res.bundle }, null, 2);
+    }
+    toast("Sports check complete: " + decision, "ok");
+  } catch (e) {
+    toast("Sports check failed: " + (e.code || e.message), "bad");
+  }
+}
+
 function showPane(name) {
   document.querySelectorAll("#app [data-pane]").forEach((pane) => {
     pane.classList.toggle("hidden", pane.getAttribute("data-pane") !== name);
   });
+  if (name === "sports-check") loadSportsCheckAssets();
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.classList.toggle("active", item.getAttribute("data-pane") === name);
   });
@@ -1106,6 +1152,11 @@ async function init() {
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.addEventListener("click", () => showPane(item.getAttribute("data-pane")));
   });
+  const sportsForm = $("#sports-check-form");
+  if (sportsForm) sportsForm.addEventListener("submit", runSportsCheck);
+  const sportsRefresh = $("#sports-check-refresh-btn");
+  if (sportsRefresh) sportsRefresh.addEventListener("click", loadSportsCheckAssets);
+
   $("#create-form").addEventListener("submit", (e) => { e.preventDefault(); createEvent(e.target); });
   $("#score-form").addEventListener("submit", (e) => { e.preventDefault(); updateScore(e.target); });
   $("#revoke-btn").addEventListener("click", revokeRights);

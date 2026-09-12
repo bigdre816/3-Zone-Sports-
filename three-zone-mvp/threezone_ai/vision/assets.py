@@ -98,6 +98,20 @@ class SyntheticAssetResolver:
     def default(cls) -> "SyntheticAssetResolver":
         return cls()
 
+    def list_catalog_summaries(self) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for asset_id, meta in sorted(self._catalog.items()):
+            rows.append(
+                {
+                    "source_asset_id": asset_id,
+                    "scenario": meta.get("scenario"),
+                    "input_privacy_class": meta.get("input_privacy_class"),
+                    "environment": meta.get("environment"),
+                    "visibility_state": meta.get("visibility_state"),
+                }
+            )
+        return rows
+
     def resolve(
         self,
         source_asset_id: str,
