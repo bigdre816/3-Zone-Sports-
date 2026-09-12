@@ -1283,8 +1283,160 @@ class ControlPlane(PipelineMixin):
         except Exception:
             audit_recent = []
 
+        # --- Concept A home (admin dashboard) — derived, secret-free ----------
+        generated = now()
+        by_status = dict(analytics.get("events_by_status") or {})
+        by_session = dict(live_payload.get("by_session_state") or {})
+        verifying_states = ("REQUESTED", "CAPTURE_STARTING", "VERIFYING_PRIVATE")
+        streams_verifying = sum(int(by_session.get(s, 0) or 0) for s in verifying_states)
+
+        pending_treasure = 0
+        treasure_pending_rows = []
+        try:
+            pending_row = self.db.query_one(
+                "SELECT COUNT(*) AS c FROM audit_verification_outbox WHERE delivered_at IS NULL"
+            )
+            pending_treasure = int(pending_row["c"] if pending_row else 0)
+            trows = self.db.query(
+                "SELECT id, audit_id, event_json, created_at FROM audit_verification_outbox "
+                "WHERE delivered_at IS NULL ORDER BY id ASC LIMIT 8"
+            )
+            for tr in trows:
+                ev = loads(tr["event_json"], {}) if tr["event_json"] else {}
+                treasure_pending_rows.append({
+                    "outbox_id": tr["id"],
+                    "audit_id": tr["audit_id"],
+                    "created_at": tr["created_at"],
+                    "action": ev.get("action") if isinstance(ev, dict) else None,
+                    "event_id": (ev.get("object_id") if isinstance(ev, dict) else None),
+                    "actor": (ev.get("actor_id") if isinstance(ev, dict) else None),
+                })
+        except Exception:
+            pending_treasure = 0
+            treasure_pending_rows = []
+
+        # Pending network games (streams / UGC verifying)
+        pending_games = []
+        pending_games_count = 0
+        try:
+            grows = self.db.query(
+                "SELECT game_id, game_number, processing_status, verification_status, "
+                "visibility, event_id, created_at FROM games "
+                "WHERE verification_status='pending' OR processing_status IN ('failed','quarantined') "
+                "ORDER BY created_at DESC LIMIT 12"
+            )
+            pending_games = [dict(g) for g in grows]
+            crow = self.db.query_one(
+                "SELECT COUNT(*) AS c FROM games "
+                "WHERE verification_status='pending' OR processing_status IN ('failed','quarantined')"
+            )
+            pending_games_count = int(crow["c"] if crow else 0)
+        except Exception:
+            pending_games = []
+            pending_games_count = 0
+
+        # Today's schedule (UTC day window) + currently live/green/yellow
+        import datetime as _dt
+        day = _dt.datetime.fromtimestamp(generated, tz=_dt.timezone.utc).date()
+        day_start = _dt.datetime(day.year, day.month, day.day, tzinfo=_dt.timezone.utc).timestamp()
+        day_end = day_start + 86400
+        today_items = []
+        try:
+            erows = self.db.query(
+                "SELECT event_id, title, zone, category, status, scheduled_start, production_mode, "
+                "active_source FROM events "
+                "WHERE (scheduled_start >= ? AND scheduled_start < ?) "
+                "   OR status IN ('live','green','yellow') "
+                "ORDER BY scheduled_start ASC LIMIT 40",
+                (day_start, day_end),
+            )
+            seen = set()
+            for er in erows:
+                eid = er["event_id"]
+                if eid in seen:
+                    continue
+                seen.add(eid)
+                today_items.append({
+                    "event_id": eid,
+                    "title": er["title"],
+                    "zone": er["zone"],
+                    "category": er["category"],
+                    "status": er["status"],
+                    "scheduled_start": er["scheduled_start"],
+                    "production_mode": er["production_mode"],
+                    "active_source": er["active_source"],
+                })
+        except Exception:
+            today_items = []
+
+        zones_today = sorted({i["zone"] for i in today_items if i.get("zone")})
+        cats_today = sorted({i["category"] for i in today_items if i.get("category")})
+
+        verification_queue = []
+        for sess in (live_payload.get("recent") or []):
+            st = sess.get("session_state")
+            if st in verifying_states:
+                verification_queue.append({
+                    "kind": "live_session",
+                    "id": sess.get("id"),
+                    "event_id": sess.get("event_id"),
+                    "actor_id": sess.get("actor_id"),
+                    "state": st,
+                    "public_state": sess.get("public_state"),
+                    "updated_at": sess.get("updated_at"),
+                })
+        for g in pending_games[:8]:
+            verification_queue.append({
+                "kind": "network_game",
+                "id": g.get("game_id"),
+                "event_id": g.get("event_id"),
+                "state": g.get("verification_status") or g.get("processing_status"),
+                "processing_status": g.get("processing_status"),
+                "verification_status": g.get("verification_status"),
+                "updated_at": g.get("created_at"),
+            })
+
+        active_games = int(by_status.get("live", 0) or 0)
+        # Streams verifying KPI includes live-session verify states + pending network games
+        streams_verifying_kpi = streams_verifying + pending_games_count
+
+        kpis = {
+            "active_games": active_games,
+            "streams_verifying": streams_verifying_kpi,
+            "pending_treasure": pending_treasure,
+        }
+
+        concept_home = {
+            "kpis": kpis,
+            "today_schedule": {
+                "date": day.isoformat(),
+                "timezone": "UTC",
+                "filters": {
+                    "status": ["all", "live", "green", "yellow", "scheduled"],
+                    "zones": ["all"] + zones_today,
+                    "categories": ["all"] + cats_today,
+                },
+                "items": today_items,
+            },
+            "verification_queue": verification_queue,
+            "treasure_review": {
+                "pending": pending_treasure,
+                "items": treasure_pending_rows,
+                "cta": {"label": "Open Treasure review", "pane": "treasure"},
+                "note": "Treasure adapter outbox — undelivered source events only. No XRPL submission from this console.",
+            },
+            "activity": audit_recent[:12],
+            "deferred": [
+                "clip_revenue_kpis",
+                "clip_commerce",
+                "weekly_sales_chart",
+                "reviewers_online",
+                "cmd_k_search",
+            ],
+        }
+
         return {
-            "generated_at": now(),
+            "generated_at": generated,
             "health": {
                 "ok": True,
                 "path": "/healthz",
@@ -1293,7 +1445,7 @@ class ControlPlane(PipelineMixin):
             "live_readiness": live_readiness,
             "events": {
                 "total": analytics.get("events_total", 0),
-                "by_status": dict(analytics.get("events_by_status") or {}),
+                "by_status": by_status,
                 "by_zone": dict(analytics.get("events_by_zone") or {}),
             },
             "rights": rights,
@@ -1308,6 +1460,14 @@ class ControlPlane(PipelineMixin):
                 "per_event": dict(analytics.get("socket_per_event") or {}),
                 "metrics_fresh": bool(analytics.get("socket_metrics_fresh")),
             },
+            # Concept A admin home (additive)
+            "kpis": kpis,
+            "today_schedule": concept_home["today_schedule"],
+            "verification_queue": verification_queue,
+            "treasure_review": concept_home["treasure_review"],
+            "activity": concept_home["activity"],
+            "deferred": concept_home["deferred"],
+            "concept": "A",
         }
 
     def owner_inventory(self, owner: dict) -> dict:

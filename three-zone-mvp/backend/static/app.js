@@ -6,6 +6,8 @@ const state = {
   user: null,
   events: [],
   zoneFilter: "all",
+  schedFilter: { status: "all", zone: "all", category: "all" },
+  dashPayload: null,
   selected: null,
   ws: null,
   wsEventId: null,
@@ -136,7 +138,7 @@ function afterAuth() {
   $("#who").textContent = `${state.user.display_name} · ${state.user.role}`;
   $("#nav-owner").classList.toggle("hidden", !canOwn(state.user));
   $("#nav-operations").classList.toggle("hidden", !canOperate(state.user));
-  showPane("health");
+  showPane("dashboard");
   loadEvents();
 }
 
@@ -185,6 +187,23 @@ async function runSportsCheck(ev) {
   }
 }
 
+const PANE_TITLES = {
+  dashboard: ["Home", "Dashboard"],
+  catalog: ["Events", "Events"],
+  "live-ops": ["Operations", "Live Ops"],
+  schedule: ["Operations", "Schedule"],
+  network: ["Review", "Verification"],
+  treasure: ["Evidence", "Treasure"],
+  audit: ["Audit", "Activity"],
+  health: ["System", "System health"],
+  create: ["Tools", "Create event"],
+  controls: ["Tools", "Event controls"],
+  player: ["Tools", "Player"],
+  "sports-check": ["Tools", "Sports check"],
+  owner: ["Owner", "Inventory"],
+  mastery: ["Owner", "Mastery"],
+};
+
 function showPane(name) {
   document.querySelectorAll("#app [data-pane]").forEach((pane) => {
     pane.classList.toggle("hidden", pane.getAttribute("data-pane") !== name);
@@ -193,7 +212,13 @@ function showPane(name) {
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.classList.toggle("active", item.getAttribute("data-pane") === name);
   });
-  if (name === "health") {
+  const titles = PANE_TITLES[name] || ["Admin", name];
+  const eye = $("#topbar-eyebrow");
+  const title = $("#topbar-title");
+  if (eye) eye.textContent = titles[0];
+  if (title) title.textContent = titles[1];
+
+  if (name === "dashboard" || name === "health" || name === "treasure") {
     refreshHealthDashboard();
     startHealthAutoRefresh();
   } else {
@@ -208,7 +233,8 @@ function showPane(name) {
   }
   if (name === "network") {
     refreshNetwork();
-    $("#network-evidence-form").classList.toggle("hidden", !canOwn(state.user));
+    const evid = $("#network-evidence-form");
+    if (evid) evid.classList.toggle("hidden", !canOwn(state.user));
   }
 }
 
@@ -226,8 +252,11 @@ function stopHealthAutoRefresh() {
 function startHealthAutoRefresh() {
   stopHealthAutoRefresh();
   _healthTimer = setInterval(() => {
-    const pane = document.querySelector('#app [data-pane="health"]');
-    if (pane && !pane.classList.contains("hidden")) {
+    const dash = document.querySelector('#app [data-pane="dashboard"]');
+    const health = document.querySelector('#app [data-pane="health"]');
+    const treasure = document.querySelector('#app [data-pane="treasure"]');
+    const visible = [dash, health, treasure].some((p) => p && !p.classList.contains("hidden"));
+    if (visible) {
       refreshHealthDashboard({ silent: true });
     } else {
       stopHealthAutoRefresh();
@@ -280,6 +309,9 @@ function renderHealthDashboard(data) {
   if (gen) {
     const when = data.generated_at != null ? _fmtTs(data.generated_at) : "";
     gen.textContent = when ? ("Updated " + when) : "";
+  }
+  if (data && (data.kpis || data.concept === "A" || data.today_schedule)) {
+    renderConceptAHome(data);
   }
 
   const strip = $("#health-status-strip");
@@ -430,6 +462,218 @@ function renderHealthDashboard(data) {
   if (readyOut) {
     readyOut.textContent = JSON.stringify(data.live_readiness || {}, null, 2);
   }
+}
+
+
+// -- Concept A dashboard home ------------------------------------------
+function renderConceptAHome(data) {
+  state.dashPayload = data;
+  const kpis = data.kpis || {};
+  const setKpi = (id, val) => {
+    const n = $(id);
+    if (n) n.textContent = val == null ? "—" : String(val);
+  };
+  setKpi("#kpi-active-games", kpis.active_games);
+  setKpi("#kpi-streams-verifying", kpis.streams_verifying);
+  setKpi("#kpi-pending-treasure", kpis.pending_treasure);
+
+  const strip = $("#dash-status-strip");
+  if (strip) {
+    strip.innerHTML = "";
+    const healthOk = data.health && data.health.ok;
+    const ready = data.live_readiness || {};
+    const blockers = (ready.blockers || []).length;
+    const warnings = (ready.warnings || []).length;
+    let liveTone = "ok";
+    let liveLabel = "Live ready";
+    if (!ready.ready_to_publish_live || blockers) {
+      liveTone = "bad";
+      liveLabel = "Live blocked (" + blockers + ")";
+    } else if (warnings) {
+      liveTone = "warn";
+      liveLabel = "Live ready · " + warnings + " warn";
+    }
+    const moten = data.moten || {};
+    const outbox = moten.outbox || {};
+    const failed = Number(outbox.failed || outbox.error || 0);
+    let motenTone = moten.enabled ? "ok" : "warn";
+    let motenLabel = moten.enabled ? "Moten on" : "Moten off";
+    if (failed) { motenTone = "bad"; motenLabel = "Moten · " + failed + " failed"; }
+    strip.appendChild(_pill(healthOk ? "App ok" : "App down", healthOk ? "ok" : "bad"));
+    strip.appendChild(_pill(liveLabel, liveTone));
+    strip.appendChild(_pill(motenLabel, motenTone));
+    strip.appendChild(_pill("Concept A", "ok"));
+  }
+
+  renderTodaySchedule(data.today_schedule || {});
+  renderVerificationQueue(data.verification_queue || []);
+  renderTreasureSnapshot(data.treasure_review || {});
+  renderActivityFeed(data.activity || data.audit_recent || []);
+}
+
+function _schedTime(ts) {
+  if (ts == null || ts === "") return "—";
+  const n = Number(ts);
+  if (!Number.isFinite(n)) return String(ts);
+  try {
+    return new Date(n * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch (_) {
+    return String(ts);
+  }
+}
+
+function renderTodaySchedule(sched) {
+  const dateEl = $("#sched-date");
+  if (dateEl) {
+    dateEl.textContent = sched.date
+      ? (sched.date + (sched.timezone ? " · " + sched.timezone : ""))
+      : "";
+  }
+  const filters = sched.filters || {};
+  const box = $("#sched-filters");
+  if (box) {
+    box.innerHTML = "";
+    const groups = [
+      ["status", filters.status || ["all"]],
+      ["zone", filters.zones || ["all"]],
+      ["category", filters.categories || ["all"]],
+    ];
+    groups.forEach(([key, values]) => {
+      values.forEach((v) => {
+        const btn = el("button", "pill-btn" + (state.schedFilter[key] === v ? " active" : ""), v);
+        btn.type = "button";
+        btn.addEventListener("click", () => {
+          state.schedFilter[key] = v;
+          renderTodaySchedule((state.dashPayload && state.dashPayload.today_schedule) || sched);
+        });
+        box.appendChild(btn);
+      });
+    });
+  }
+  let items = sched.items || [];
+  if (state.schedFilter.status !== "all") {
+    items = items.filter((i) => i.status === state.schedFilter.status);
+  }
+  if (state.schedFilter.zone !== "all") {
+    items = items.filter((i) => i.zone === state.schedFilter.zone);
+  }
+  if (state.schedFilter.category !== "all") {
+    items = items.filter((i) => i.category === state.schedFilter.category);
+  }
+  const list = $("#sched-list");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!items.length) {
+    list.appendChild(el("div", "empty-row", "No games on today’s live schedule for these filters."));
+    return;
+  }
+  items.forEach((item) => {
+    const row = el("div", "sched-row");
+    row.appendChild(el("div", "sched-time", _schedTime(item.scheduled_start)));
+    const mid = el("div", null);
+    mid.appendChild(el("div", "sched-title", item.title || item.event_id));
+    mid.appendChild(el("div", "sched-meta",
+      [item.zone, item.category, item.production_mode].filter(Boolean).join(" · ")));
+    row.appendChild(mid);
+    row.appendChild(statusBadge(item.status || "scheduled"));
+    const open = el("button", "ghost small", "Open");
+    open.type = "button";
+    open.addEventListener("click", () => {
+      state.selected = item.event_id;
+      showPane("controls");
+      loadEvents().then(() => {
+        renderOperatorControls(item.event_id);
+      }).catch(() => {
+        renderOperatorControls(item.event_id);
+      });
+    });
+    row.appendChild(open);
+    list.appendChild(row);
+  });
+}
+
+function renderVerificationQueue(rows) {
+  const list = $("#vq-list");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!rows.length) {
+    list.appendChild(el("div", "empty-row", "Queue clear — no streams verifying."));
+    return;
+  }
+  rows.forEach((row) => {
+    const wrap = el("div", "queue-row");
+    const main = el("div", "queue-main");
+    const title = row.kind === "live_session"
+      ? ("Session " + (row.id || "—"))
+      : ("Game " + (row.id || "—"));
+    main.appendChild(el("div", "queue-title", title));
+    main.appendChild(el("div", "queue-meta",
+      [row.kind, row.event_id, row.state, row.actor_id].filter(Boolean).join(" · ")));
+    wrap.appendChild(main);
+    const tone = (row.state || "").toLowerCase().includes("fail") ? "bad" : "ok";
+    wrap.appendChild(el("span", "pill " + (tone === "bad" ? "bad" : ""), row.state || "pending"));
+    list.appendChild(wrap);
+  });
+}
+
+function renderTreasureSnapshot(tr) {
+  const note = $("#treasure-note");
+  if (note) note.textContent = tr.note || "";
+  const cta = $("#treasure-cta");
+  if (cta && tr.pending != null) cta.textContent = "Review (" + tr.pending + ")";
+  const renderInto = (sel) => {
+    const list = $(sel);
+    if (!list) return;
+    list.innerHTML = "";
+    const items = tr.items || [];
+    if (!items.length) {
+      list.appendChild(el("div", "empty-row",
+        tr.pending ? (tr.pending + " pending — open Treasure pane") : "No pending Treasure outbox items."));
+      return;
+    }
+    items.forEach((item) => {
+      const wrap = el("div", "queue-row");
+      const main = el("div", "queue-main");
+      main.appendChild(el("div", "queue-title", item.action || ("outbox #" + item.outbox_id)));
+      main.appendChild(el("div", "queue-meta",
+        ["audit " + (item.audit_id || "—"), item.event_id, item.actor, _fmtTs(item.created_at)]
+          .filter(Boolean).join(" · ")));
+      wrap.appendChild(main);
+      wrap.appendChild(el("span", "pill", "pending"));
+      list.appendChild(wrap);
+    });
+  };
+  renderInto("#treasure-snap");
+  renderInto("#treasure-panel-body");
+}
+
+function renderActivityFeed(rows) {
+  const list = $("#activity-list");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!rows.length) {
+    list.appendChild(el("div", "empty-row", "No recent Moten / audit activity."));
+    return;
+  }
+  rows.slice(0, 12).forEach((row) => {
+    const wrap = el("div", "activity-row");
+    wrap.appendChild(el("div", "activity-id", "#" + (row.id != null ? row.id : "—")));
+    const main = el("div", "activity-main");
+    const strong = document.createElement("strong");
+    strong.textContent = row.action || "event";
+    main.appendChild(strong);
+    main.appendChild(document.createTextNode(" · " + (row.actor || "—")));
+    if (row.event_id) main.appendChild(document.createTextNode(" · " + row.event_id));
+    wrap.appendChild(main);
+    wrap.appendChild(el("div", "muted", _fmtTs(row.ts)));
+    list.appendChild(wrap);
+  });
+}
+
+function selectEvent(ev) {
+  if (!ev) return;
+  state.selected = ev.event_id;
+  renderOperatorControls(ev.event_id);
 }
 
 // -- catalog -----------------------------------------------------------
@@ -1150,7 +1394,11 @@ async function init() {
   $("#login-form").addEventListener("submit", login);
   $("#logout-btn").addEventListener("click", logout);
   document.querySelectorAll(".nav-item").forEach((item) => {
-    item.addEventListener("click", () => showPane(item.getAttribute("data-pane")));
+    item.addEventListener("click", () => {
+      if (item.disabled) return;
+      const pane = item.getAttribute("data-pane");
+      if (pane) showPane(pane);
+    });
   });
   const sportsForm = $("#sports-check-form");
   if (sportsForm) sportsForm.addEventListener("submit", runSportsCheck);
@@ -1183,6 +1431,14 @@ async function init() {
   $("#audit-btn").addEventListener("click", refreshAudit);
   const healthRefresh = $("#health-refresh-btn");
   if (healthRefresh) healthRefresh.addEventListener("click", () => refreshHealthDashboard());
+  const treasureRefresh = $("#treasure-refresh-btn");
+  if (treasureRefresh) treasureRefresh.addEventListener("click", () => refreshHealthDashboard());
+  document.querySelectorAll("[data-goto]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const pane = btn.getAttribute("data-goto");
+      if (pane) showPane(pane);
+    });
+  });
   $("#owner-load-btn").addEventListener("click", ownerLoad);
   $("#owner-print-btn").addEventListener("click", ownerPrint);
   $("#owner-export-btn").addEventListener("click", ownerExport);
