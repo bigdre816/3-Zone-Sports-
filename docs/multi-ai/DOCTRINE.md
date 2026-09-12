@@ -45,3 +45,8 @@ Requirement
 - Live games must work when **every** AI provider is dead
 - All generative AI → **AI Gateway only** (local → overflow → fallback → no-AI)
 - AI captions/descriptions carry lineage: source → model/version → output → human edit → approved
+
+## Treasure evidence language (Y1c)
+
+Transport receipt into Moten/control-plane intake is **not** Treasure Path A release.
+See [TREASURE-EVIDENCE-VOCABULARY.md](./TREASURE-EVIDENCE-VOCABULARY.md) (G0-C locked).

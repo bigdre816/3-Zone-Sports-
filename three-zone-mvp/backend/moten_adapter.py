@@ -11,7 +11,12 @@ from .db import dumps, loads
 
 
 class MotenIntakeService:
-    """Queues non-blocking evidence handoffs from Three-Zone to Moten."""
+    """Queues non-blocking evidence handoffs from Three-Zone to Moten.
+
+    Naming (Y1c / G0-C): this is a THREEZONE adapter/outbox client name, not a
+    Treasure Network department or Path A review engine. Outbox delivery is
+    transport only; Treasure release requires independent human seats.
+    """
 
     def __init__(self, cp):
         self.cp = cp
