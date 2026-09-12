@@ -36,6 +36,7 @@ button, .quiet {
 .quiet, a.quiet {
   background: transparent; color: var(--text); text-decoration: none; display: inline-block;
 }
+button.danger, .danger { color: #ff8e8e; border-color: #5a3030; }
 .icon-btn { min-width: 40px; background: var(--panel); color: var(--text); position: relative; }
 .avatar {
   width: 32px; height: 32px; border-radius: 50%; background: #2a3a30;

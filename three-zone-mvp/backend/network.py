@@ -646,17 +646,48 @@ class NetworkService(HuddleExtensions):
         )
         return self.create_upload(user, {"kind": job["intended_type"], "retry": True})
 
-    def complete_fake_upload(self, token: str, meta: dict | None = None) -> dict:
+    def complete_fake_upload(
+        self,
+        token: str,
+        meta: dict | None = None,
+        body: bytes | None = None,
+        content_type: str | None = None,
+    ) -> dict:
         payload = None
         if hasattr(self.provider, "uploads") and token in getattr(self.provider, "uploads", {}):
             payload = self.provider.complete_upload(token, meta or {})
         elif hasattr(self.photo_storage, "uploads") and token in getattr(self.photo_storage, "uploads", {}):
-            payload = self.photo_storage.complete_upload(token, meta or {})
+            payload = self.photo_storage.complete_upload(
+                token, meta or {}, body=body, content_type=content_type,
+            )
         if payload is None:
             raise ForbiddenError("unknown fake upload token", "unknown_upload")
         return self.apply_webhook(
             {"X-Network-Webhook-Secret": self.cp.config.fake_webhook_secret}, payload,
         )
+
+    def open_photo_asset(self, viewer, asset_id: str) -> dict:
+        """Resolve a photo media asset to bytes and/or a redirect URL."""
+        asset, _seconds = self.asset_for_playback(viewer, asset_id)
+        if asset.get("kind") != "photo":
+            raise ValidationError("asset is not a photo", "not_photo")
+        uid = asset.get("provider_uid") or ""
+        result = {"bytes": None, "content_type": "image/jpeg", "redirect_url": None}
+        reader = getattr(self.photo_storage, "read_photo", None)
+        if callable(reader):
+            loaded = reader(uid)
+            if loaded is not None:
+                data, ctype = loaded
+                result["bytes"] = data
+                result["content_type"] = ctype or "image/jpeg"
+                return result
+        url_fn = getattr(self.photo_storage, "playback_url", None)
+        if callable(url_fn):
+            url = url_fn(uid)
+            if url:
+                result["redirect_url"] = url
+                return result
+        return result
 
     def apply_webhook(self, headers: dict, body: dict, raw_body: bytes | None = None) -> dict:
         body = body or {}
@@ -895,6 +926,7 @@ class NetworkService(HuddleExtensions):
         likes, comments = self._counts("post", post["post_id"])
         reacted = False
         saved = False
+        can_delete = False
         if viewer:
             actor = self.ensure_profile(viewer)
             reacted = bool(self.db.query_one(
@@ -906,6 +938,7 @@ class NetworkService(HuddleExtensions):
                 "SELECT 1 FROM saves WHERE profile_id=? AND subject_type='post' AND subject_id=?",
                 (actor["profile_id"], post["post_id"]),
             ))
+            can_delete = actor["profile_id"] == post["author_profile_id"] or self._staff(viewer)
         content_state = (
             "restricted" if post["publication_status"] == "restricted"
             else "removed" if post["publication_status"] == "removed"
@@ -940,6 +973,7 @@ class NetworkService(HuddleExtensions):
                 "liked_by_me": reacted,
                 "saved_by_me": saved,
             },
+            "viewer_can_delete": can_delete,
         }
         card.update(self._post_tags(post["post_id"]))
         if post["clip_id"]:
