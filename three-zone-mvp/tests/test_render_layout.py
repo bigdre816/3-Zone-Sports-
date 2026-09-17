@@ -57,9 +57,21 @@ class WorkspaceLayoutTests(unittest.TestCase):
             "moten_audit/server.py",
             "three-zone-mvp/run.py",
             "three-zone-mvp/backend/http_server.py",
+            "main/index.html",
+            "vercel.json",
         ):
             path = ROOT / rel
             self.assertTrue(path.exists(), f"missing {path}")
+
+    def test_vercel_main_root_is_public_site_not_moten_spec(self):
+        """Vercel project Root/Output Directory is `main`. That folder must exist
+        and must not ship unfiled Moten spec PDFs."""
+        index = (ROOT / "main" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Three-Zone Sports", index)
+        self.assertNotIn("Moten_IP_Invention_Control_Plane", index)
+        self.assertFalse((ROOT / "main" / "Moten_IP_Invention_Control_Plane_Master_Specification_v1_0.pdf").exists())
+        cfg = (ROOT / "vercel.json").read_text(encoding="utf-8")
+        self.assertIn('"outputDirectory": "main"', cfg)
 
     def test_member_dockerfile_copies_from_its_own_directory(self):
         dockerfile = (MVP / "Dockerfile").read_text(encoding="utf-8")

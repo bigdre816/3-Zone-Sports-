@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Three-Zone Sports — upcoming game schedules." />
+  <title>Schedule · Three-Zone Sports</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <a href="/" class="brand">Three-Zone<small>Sports</small></a>
+    <button class="mobile-menu-toggle" id="menu-toggle" type="button" aria-label="Menu">Menu</button>
+    <nav id="main-nav" aria-label="Primary">
+      <a href="/live/">Live</a>
+      <a href="/schedules/" class="active">Schedule</a>
+      <a href="/teams/">Teams</a>
+      <a href="/schools/">Schools</a>
+      <a href="/clips/">Clips</a>
+      <a href="/archives/">Archive</a>
+      <a href="/app/" data-signin>My Zone</a>
+      <a href="/app/" data-signin>Account</a>
+    </nav>
+    <div class="header-actions">
+      <a class="btn" href="/app/" data-signin>Sign In</a>
+    </div>
+  </header>
+
+  <main>
+    <p class="eyebrow">Schedule</p>
+    <h1>Upcoming games</h1>
+    <p class="subtitle">Team calendars and event details for verified games.</p>
+    <div id="schedule-container">
+      <div class="unavailable">Loading schedule…</div>
+    </div>
+  </main>
+
+  <footer>
+    <p>Three-Zone Sports · <a href="/">3zonesports.com</a></p>
+  </footer>
+
+  <script src="/config.js"></script>
+  <script src="/site.js"></script>
+  <script>
+    async function renderScheduleTable() {
+      const container = document.getElementById('schedule-container');
+      try {
+        const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.schedules);
+        const rows = data.schedules || [];
+        if (!rows.length) {
+          ThreeZoneSite.showEmpty(container, 'No upcoming games found.');
+          return;
+        }
+        const table = ThreeZoneSite.el('table', {}, [
+          ThreeZoneSite.el('thead', {}, [
+            ThreeZoneSite.el('tr', {}, [
+              ThreeZoneSite.el('th', { text: 'When' }),
+              ThreeZoneSite.el('th', { text: 'Matchup' }),
+              ThreeZoneSite.el('th', { text: 'Sport' }),
+              ThreeZoneSite.el('th', { text: 'School' }),
+              ThreeZoneSite.el('th', { text: 'Location' }),
+            ]),
+          ]),
+        ]);
+        const body = ThreeZoneSite.el('tbody');
+        rows.forEach((row) => {
+          body.appendChild(ThreeZoneSite.el('tr', {}, [
+            ThreeZoneSite.el('td', {}, [ThreeZoneSite.el('span', { class: 'time', text: ThreeZoneSite.formatWhen(row.start_at) })]),
+            ThreeZoneSite.el('td', { text: (row.team || 'Team') + ' vs ' + (row.opponent || 'Opponent') }),
+            ThreeZoneSite.el('td', { text: [row.sport, row.level].filter(Boolean).join(' · ') || '—' }),
+            ThreeZoneSite.el('td', { text: row.school || '—' }),
+            ThreeZoneSite.el('td', { text: row.location || 'TBA' }),
+          ]));
+        });
+        table.appendChild(body);
+        container.replaceChildren(table);
+      } catch (_) {
+        ThreeZoneSite.showUnavailable(container, 'schedules');
+      }
+    }
+    document.addEventListener('DOMContentLoaded', renderScheduleTable);
+  </script>
+</body>
+</html>
