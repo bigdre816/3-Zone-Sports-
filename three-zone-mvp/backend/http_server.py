@@ -372,12 +372,15 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         Behind backend/gateway.py every socket arrives from loopback, so the
         peer address alone would collapse every visitor into one bucket and
         turn a per-IP login limit into a global one. X-Forwarded-For is only
-        trusted when the immediate peer *is* the loopback gateway; from any
-        other peer the header is attacker-controlled and ignored.
+        X-TZ-Client-IP is written by the gateway (which strips any inbound copy)
+        and is trusted only when the immediate peer *is* the loopback gateway;
+        from any other peer the header is attacker-controlled and ignored.
         """
         peer = self.client_address[0] if self.client_address else ""
         if peer in ("127.0.0.1", "::1", "localhost"):
-            forwarded = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+            # Only the gateway's own header is trusted, and the gateway strips
+            # every inbound copy of it, so a visitor cannot pick their bucket.
+            forwarded = (self.headers.get("X-TZ-Client-IP") or "").strip()
             if forwarded:
                 return forwarded
         return peer or "unknown"

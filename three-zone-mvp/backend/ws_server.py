@@ -41,12 +41,13 @@ def _client_ip(ws, request) -> str:
 
     backend/gateway.py splices the raw TCP stream from loopback, so
     ``remote_address`` is 127.0.0.1 for every viewer; without this every
-    connection would share one per-IP budget. The forwarded header is trusted
-    only when the immediate peer is loopback.
+    connection would share one per-IP budget. X-TZ-Client-IP is written by the
+    gateway (inbound copies are stripped there) and is trusted only when the
+    immediate peer is loopback.
     """
     peer = ws.remote_address[0] if ws.remote_address else ""
     if peer in ("127.0.0.1", "::1"):
-        forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        forwarded = (request.headers.get("X-TZ-Client-IP") or "").strip()
         if forwarded:
             return forwarded
     return peer or "unknown"

@@ -73,28 +73,71 @@ def _is_websocket(path: str, headers: dict[str, str]) -> bool:
     return any(path.startswith(prefix) for prefix in _WS_PATH_PREFIXES)
 
 
+CLIENT_IP_HEADER = "X-TZ-Client-IP"
+_STRIPPED = (b"x-tz-client-ip", b"x-forwarded-proto")
+
+
+def _trust_upstream_proxy() -> bool:
+    """True when a trusted reverse proxy (Render) always fronts the gateway."""
+    override = os.environ.get("TZ_TRUST_UPSTREAM_PROXY", "").strip().lower()
+    if override in ("1", "true", "yes"):
+        return True
+    if override in ("0", "false", "no"):
+        return False
+    return _on_render()
+
+
+def _client_ip_from(headers: dict[str, str], peer_ip: str) -> str:
+    """The address per-IP accounting must use, chosen by the gateway alone.
+
+    On Render the TCP peer is Render's own proxy, so the visitor's address is
+    the left-most entry of the X-Forwarded-For chain that proxy wrote. Without
+    a trusted proxy in front, the only non-forgeable value is the TCP peer.
+    """
+    if _trust_upstream_proxy():
+        forwarded = (headers.get("x-forwarded-for") or "").split(",")[0].strip()
+        if forwarded:
+            return forwarded
+    return peer_ip
+
+
 def _with_forwarded(head: bytes, peer_ip: str, scheme: str) -> bytes:
-    """Append forwarding headers so the backend sees the real client."""
-    if not peer_ip:
-        return head
+    """Rewrite forwarding headers so the backend sees exactly one trusted value.
+
+    Every inbound copy of the client-IP and proto headers is removed first: the
+    backend trusts these only from the loopback gateway, so a visitor must never
+    be able to supply their own accounting key.
+    """
     lines = head.split(b"\r\n")
-    existing = {
-        line.split(b":", 1)[0].strip().lower()
-        for line in lines[1:]
-        if b":" in line
-    }
-    extra: list[bytes] = []
-    if b"x-forwarded-for" not in existing:
-        extra.append(b"X-Forwarded-For: " + peer_ip.encode("latin-1", "replace"))
-    if b"x-forwarded-proto" not in existing:
-        extra.append(b"X-Forwarded-Proto: " + scheme.encode("latin-1"))
-    if not extra:
+    if not lines:
         return head
-    # head ends with the blank line terminator; insert just before it.
-    body_sep = b"\r\n\r\n"
-    if head.endswith(body_sep):
-        return head[: -len(body_sep)] + b"\r\n" + b"\r\n".join(extra) + body_sep
-    return head
+    request_line, rest = lines[0], lines[1:]
+    kept: list[bytes] = []
+    headers: dict[str, str] = {}
+    for line in rest:
+        if b":" not in line:
+            kept.append(line)
+            continue
+        name = line.split(b":", 1)[0].strip().lower()
+        if name in _STRIPPED:
+            continue
+        if name == b"x-forwarded-for":
+            name_s, _, value = line.decode("latin-1", "replace").partition(":")
+            headers["x-forwarded-for"] = value.strip()
+            continue
+        kept.append(line)
+
+    client_ip = _client_ip_from(headers, peer_ip)
+    extra: list[bytes] = [
+        b"X-Forwarded-Proto: " + scheme.encode("latin-1"),
+    ]
+    if client_ip:
+        safe = client_ip.encode("latin-1", "replace").replace(b"\n", b"").replace(b"\r", b"")
+        extra.append(CLIENT_IP_HEADER.encode("latin-1") + b": " + safe)
+        extra.append(b"X-Forwarded-For: " + safe)
+
+    out = [request_line] + [l for l in kept if l not in (b"",)] + extra + [b"", b""]
+    return b"\r\n".join(out)
 
 
 async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:

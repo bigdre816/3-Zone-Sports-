@@ -105,9 +105,6 @@ class PublicSocketUrlTests(unittest.TestCase):
         self.assertTrue(cfg.public_config()["ws_enabled"])
 
 
-if __name__ == "__main__":
-    os.chdir(str(MVP))
-    unittest.main()
 
 
 class TicketMintIdentityTests(unittest.TestCase):
@@ -185,3 +182,66 @@ class TicketMintIdentityTests(unittest.TestCase):
         status, body = self._mint(base, token=token_a, cookie=cookie_b)
         self.assertEqual(status, 401, body)
         self.assertEqual(body.get("code"), "credential_mismatch")
+
+
+class ForwardedClientIpTests(unittest.TestCase):
+    """The gateway, not the visitor, decides the per-IP accounting key."""
+
+    def _head(self, extra: str = "") -> bytes:
+        return (
+            "GET /api/config HTTP/1.1\r\n"
+            "Host: example.onrender.com\r\n"
+            f"{extra}"
+            "\r\n"
+        ).encode()
+
+    def _headers(self, head: bytes) -> list[str]:
+        return [l for l in head.decode().split("\r\n") if ":" in l]
+
+    def test_inbound_client_ip_header_is_stripped(self):
+        from backend import gateway
+
+        os.environ["TZ_TRUST_UPSTREAM_PROXY"] = "0"
+        try:
+            head = gateway._with_forwarded(
+                self._head("X-TZ-Client-IP: 9.9.9.9\r\nX-Forwarded-For: 9.9.9.9\r\n"),
+                "203.0.113.7", "https",
+            )
+        finally:
+            os.environ.pop("TZ_TRUST_UPSTREAM_PROXY", None)
+        headers = self._headers(head)
+        self.assertIn("X-TZ-Client-IP: 203.0.113.7", headers)
+        self.assertEqual(
+            [h for h in headers if h.lower().startswith("x-tz-client-ip")],
+            ["X-TZ-Client-IP: 203.0.113.7"],
+        )
+        self.assertNotIn("9.9.9.9", head.decode())
+
+    def test_trusted_upstream_proxy_supplies_the_real_visitor(self):
+        from backend import gateway
+
+        os.environ["TZ_TRUST_UPSTREAM_PROXY"] = "1"
+        try:
+            head = gateway._with_forwarded(
+                self._head("X-Forwarded-For: 198.51.100.4, 10.0.0.9\r\n"),
+                "10.0.0.9", "https",
+            )
+        finally:
+            os.environ.pop("TZ_TRUST_UPSTREAM_PROXY", None)
+        self.assertIn("X-TZ-Client-IP: 198.51.100.4", self._headers(head))
+
+
+class GatewayOriginSchemeTests(unittest.TestCase):
+    def test_http_origin_is_never_advertised_in_production(self):
+        cfg = Config(env="production", gateway_public_origin="http://example.onrender.com")
+        self.assertEqual(cfg.public_ws_url_base(), "")
+        self.assertFalse(cfg.public_config()["ws_enabled"])
+
+    def test_http_origin_still_works_for_local_development(self):
+        cfg = Config(env="demo", gateway_public_origin="http://127.0.0.1:8099")
+        self.assertEqual(cfg.public_ws_url_base(), "ws://127.0.0.1:8099/ws/events/")
+
+
+if __name__ == "__main__":
+    os.chdir(str(MVP))
+    unittest.main()

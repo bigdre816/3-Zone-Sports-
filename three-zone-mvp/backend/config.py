@@ -493,10 +493,16 @@ class Config:
         if self.gateway_public_origin:
             origin = self.gateway_public_origin.rstrip("/")
             if origin.startswith("https://"):
-                origin = "wss://" + origin[len("https://"):]
-            elif origin.startswith("http://"):
-                origin = "ws://" + origin[len("http://"):]
-            return f"{origin}/ws/events/"
+                return "wss://" + origin[len("https://"):] + "/ws/events/"
+            if origin.startswith("http://"):
+                # A page served over HTTPS cannot open a ws:// socket: the
+                # browser blocks it as mixed content and the client silently
+                # falls back to polling. Outside local development we report no
+                # socket surface rather than advertise one that cannot connect.
+                if self.is_production or str(self.public_base_url).startswith("https://"):
+                    return ""
+                return "ws://" + origin[len("http://"):] + "/ws/events/"
+            return ""
         if self.ws_host in ("0.0.0.0", "::"):
             return ""
         scheme = "wss" if (self.is_production or str(self.public_base_url).startswith("https://")) else "ws"
