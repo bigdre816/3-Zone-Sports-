@@ -130,7 +130,18 @@ CREATE TABLE IF NOT EXISTS socket_metrics (
     updated_at  REAL NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS ws_tickets (
+    ticket          TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    event_id        TEXT NOT NULL DEFAULT '',
+    credential_kind TEXT NOT NULL,
+    credential      TEXT NOT NULL,
+    created_at      REAL NOT NULL,
+    expires_at      REAL NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_rights_event ON rights(event_id, version);
+CREATE INDEX IF NOT EXISTS idx_ws_tickets_expiry ON ws_tickets(expires_at);
 CREATE INDEX IF NOT EXISTS idx_outbox_undelivered ON socket_outbox(delivered, id);
 CREATE INDEX IF NOT EXISTS idx_audit_verify_pending ON audit_verification_outbox(delivered_at, id);
 CREATE INDEX IF NOT EXISTS idx_moten_outbox_status ON moten_outbox(status, created_at);

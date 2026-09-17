@@ -18,6 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import demo_media
+from . import ws_tickets
 from .control_plane import ControlError, ControlPlane
 from .identity import bearer_from_header, resolve_identity, resolve_identity_optional
 from .mastery import article_html, full_page_html, load_markdown
@@ -68,6 +69,7 @@ def _routes():
         ("GET", re.compile(r"^/api/member/feed$"), "h_member_feed", "optional"),
         ("GET", re.compile(r"^/api/member/notifications$"), "h_member_notifications", "member"),
         ("POST", re.compile(r"^/api/member/notifications/(?P<notification_id>ntf_[a-z0-9]+)/read$"), "h_member_notification_read", "member"),
+        ("POST", re.compile(r"^/api/member/ws-ticket$"), "h_member_ws_ticket", "member"),
         ("GET", re.compile(r"^/api/member/settings$"), "h_member_settings", "member"),
         ("POST", re.compile(r"^/api/member/settings$"), "h_member_settings_update", "member"),
         ("GET", re.compile(r"^/api/member/friends/activity$"), "h_member_friends_activity", "member"),
@@ -705,6 +707,28 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
 
     def h_member_notification_read(self, p, b, u):
         self._send_json(200, self.network.mark_notification_read(u, p["notification_id"]))
+
+    def h_member_ws_ticket(self, p, b, u):
+        """Mint a short-lived, single-use ticket for the live socket handshake.
+
+        The caller is already authenticated here; only the ticket travels in
+        Sec-WebSocket-Protocol, so the long-lived session credential never does.
+        """
+        event_id = str((b or {}).get("event_id") or "").strip()
+        sid = self._cookie("tz_member_session")
+        if sid:
+            kind, credential = "cookie", sid
+        else:
+            credential = bearer_from_header(self.headers.get("Authorization")) or ""
+            kind = "bearer"
+        if not credential:
+            self._send_json(401, {"error": "no session credential"})
+            return
+        ticket, ttl = ws_tickets.mint(
+            self.cp.db, user_id=u["user_id"], credential_kind=kind,
+            credential=credential, event_id=event_id,
+        )
+        self._send_json(200, {"ticket": ticket, "expires_in": ttl})
 
     def h_member_settings(self, p, b, u):
         self._send_json(200, self.network.get_settings(u))

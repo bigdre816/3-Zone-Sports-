@@ -25,6 +25,7 @@ from http.cookies import SimpleCookie
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
+from . import ws_tickets
 from .config import Config
 from .control_plane import ControlPlane
 from .db import Database, dumps, loads
@@ -65,9 +66,21 @@ class Hub:
         morsel = jar.get("tz_member_session")
         return morsel.value if morsel else None
 
-    def _user_from_request(self, request):
+    def _user_from_request(self, request, event_id: str = ""):
         token = self._offered_token(request)
+        if token and token.startswith(ws_tickets.TICKET_PREFIX):
+            # Preferred path: short-lived single-use ticket minted over an
+            # already-authenticated HTTP request. Burned here on first use.
+            redeemed = ws_tickets.redeem(self.cp.db, token, event_id)
+            if not redeemed:
+                raise LookupError("invalid or expired ticket")
+            kind, credential = redeemed
+            if kind == "cookie":
+                _row, user = self.portal.session(credential)
+                return user
+            return self.cp.verify_session(credential)
         if token:
+            # Legacy control-plane path: session token offered as subprotocol.
             return self.cp.verify_session(token)
         sid = self._cookie_session(request)
         if sid:
@@ -95,8 +108,11 @@ class Hub:
         if origin is not None and origin not in self.cp.config.allowed_origins:
             await ws.close(1008, "origin not allowed")
             return
+        # Tickets may be bound to one event; give the redeemer the path's id.
+        path_event = path[len(_PATH_PREFIX):].strip("/") if path.startswith(_PATH_PREFIX) else ""
         try:
-            user = self._user_from_request(request)
+            user = self._user_from_request(request, path_event)
+
         except Exception:
             await ws.close(1008, "invalid session")
             return
