@@ -880,12 +880,13 @@ class NetworkService(HuddleExtensions):
         asset_id = data.get("media_asset_id")
         job_id = data.get("upload_job_id")
         clip_id = data.get("clip_id")
+        has_youtube_field = "youtube_url" in data or "youtube_id" in data
         youtube_id = parse_youtube_id(data.get("youtube_url") or data.get("youtube_id") or "")
         if youtube_id:
             asset_id = self._ensure_youtube_asset(profile["profile_id"], youtube_id)
             job_id = None
         status = "published"
-        if (data.get("youtube_url") or data.get("youtube_id")) and not youtube_id:
+        if has_youtube_field and not youtube_id:
             raise ValidationError("paste a YouTube watch, shorts, or youtu.be URL", "bad_youtube")
         if job_id:
             job = dict(self._row("upload_jobs", "upload_job_id", job_id, "upload not found", "upload_not_found"))

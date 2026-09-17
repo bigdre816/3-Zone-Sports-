@@ -33,6 +33,9 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 _STATIC_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
                  ".css": "text/css; charset=utf-8"}
 _EVENT_RE = r"(?P<event_id>evt_[a-z0-9_]+)"
+_POST_RE = r"(?P<post_id>pst_[a-z0-9_]+)"
+_CMT_RE = r"(?P<comment_id>cmt_[a-z0-9_]+)"
+_MED_RE = r"(?P<asset_id>med_[a-z0-9_]+)"
 
 
 def _routes():
@@ -86,11 +89,11 @@ def _routes():
         ("GET", re.compile(r"^/api/member/watch-parties/(?P<party_id>party_[a-z0-9]+)$"), "h_member_party_get", "member"),
         ("POST", re.compile(r"^/api/member/watch-parties/(?P<party_id>party_[a-z0-9]+)/join$"), "h_member_party_join", "member"),
         ("POST", re.compile(r"^/api/member/watch-parties/(?P<party_id>party_[a-z0-9]+)/messages$"), "h_member_party_message", "member"),
-        ("POST", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/share$"), "h_member_post_share", "member"),
-        ("POST", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/like$"), "h_member_post_like", "member"),
-        ("PUT", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/like$"), "h_member_post_like", "member"),
-        ("POST", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/unlike$"), "h_member_post_unlike", "member"),
-        ("DELETE", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/like$"), "h_member_post_unlike", "member"),
+        ("POST", re.compile(rf"^/api/member/posts/{_POST_RE}/share$"), "h_member_post_share", "member"),
+        ("POST", re.compile(rf"^/api/member/posts/{_POST_RE}/like$"), "h_member_post_like", "member"),
+        ("PUT", re.compile(rf"^/api/member/posts/{_POST_RE}/like$"), "h_member_post_like", "member"),
+        ("POST", re.compile(rf"^/api/member/posts/{_POST_RE}/unlike$"), "h_member_post_unlike", "member"),
+        ("DELETE", re.compile(rf"^/api/member/posts/{_POST_RE}/like$"), "h_member_post_unlike", "member"),
         ("GET", re.compile(r"^/api/member/saved$"), "h_member_saved", "member"),
         ("POST", re.compile(rf"^/api/member/events/{_EVENT_RE}/playback$"), "h_member_playback", "member"),
         ("POST", re.compile(r"^/api/member/archive/(?P<archive_id>[A-Za-z0-9_-]+)/playback$"), "h_archive_playback", "member"),
@@ -164,9 +167,9 @@ def _routes():
         ("POST", re.compile(r"^/api/network/webhooks/media$"), "h_net_webhook", "none"),
         ("POST", re.compile(r"^/api/network/provider/fake/upload/(?P<token>[A-Za-z0-9_-]+)$"), "h_net_fake_upload", "none"),
         ("POST", re.compile(r"^/api/network/posts$"), "h_net_post_create", "member"),
-        ("GET", re.compile(r"^/api/network/posts/(?P<post_id>pst_[a-z0-9]+)$"), "h_net_post_get", "optional"),
-        ("POST", re.compile(r"^/api/network/posts/(?P<post_id>pst_[a-z0-9]+)$"), "h_net_post_update", "member"),
-        ("POST", re.compile(r"^/api/network/posts/(?P<post_id>pst_[a-z0-9]+)/delete$"), "h_net_post_delete", "member"),
+        ("GET", re.compile(rf"^/api/network/posts/{_POST_RE}$"), "h_net_post_get", "optional"),
+        ("POST", re.compile(rf"^/api/network/posts/{_POST_RE}$"), "h_net_post_update", "member"),
+        ("POST", re.compile(rf"^/api/network/posts/{_POST_RE}/delete$"), "h_net_post_delete", "member"),
         ("GET", re.compile(r"^/api/network/feed$"), "h_net_feed", "optional"),
         ("POST", re.compile(r"^/api/network/games$"), "h_net_game_create", "member"),
         ("GET", re.compile(r"^/api/network/games/(?P<game_id>gme_[a-z0-9]+)$"), "h_net_game_get", "optional"),
@@ -180,7 +183,7 @@ def _routes():
         ("POST", re.compile(r"^/api/network/unreact$"), "h_net_unreact", "member"),
         ("GET", re.compile(r"^/api/network/comments$"), "h_net_comments", "optional"),
         ("POST", re.compile(r"^/api/network/comments$"), "h_net_comment_create", "member"),
-        ("POST", re.compile(r"^/api/network/comments/(?P<comment_id>cmt_[a-z0-9]+)/delete$"), "h_net_comment_delete", "member"),
+        ("POST", re.compile(rf"^/api/network/comments/{_CMT_RE}/delete$"), "h_net_comment_delete", "member"),
         ("POST", re.compile(r"^/api/network/saves$"), "h_net_save", "member"),
         ("POST", re.compile(r"^/api/network/saves/delete$"), "h_net_unsave", "member"),
         ("POST", re.compile(r"^/api/network/shares$"), "h_net_share", "member"),
@@ -190,12 +193,12 @@ def _routes():
         ("GET", re.compile(r"^/api/network/review$"), "h_net_review", "operator"),
         ("POST", re.compile(r"^/api/network/review/games/(?P<game_id>gme_[a-z0-9]+)$"), "h_net_review_game", "operator"),
         ("POST", re.compile(r"^/api/network/review/cases/(?P<case_id>mod_[a-z0-9]+)$"), "h_net_review_case", "operator"),
-        ("POST", re.compile(r"^/api/network/review/posts/(?P<post_id>pst_[a-z0-9]+)$"), "h_net_review_post", "operator"),
+        ("POST", re.compile(rf"^/api/network/review/posts/{_POST_RE}$"), "h_net_review_post", "operator"),
         ("POST", re.compile(r"^/api/network/profiles/(?P<profile_id>prf_[a-z0-9]+)/verify$"), "h_net_verify", "operator"),
         ("GET", re.compile(r"^/api/network/evidence/(?P<subject_type>game|clip|post)/(?P<subject_id>[A-Za-z0-9_-]+)$"), "h_net_evidence", "owner"),
         ("GET", re.compile(r"^/api/network/evidence/(?P<subject_type>game|clip|post)/(?P<subject_id>[A-Za-z0-9_-]+)\.csv$"), "h_net_evidence_csv", "owner"),
         ("GET", re.compile(r"^/api/network/evidence/(?P<subject_type>game|clip|post)/(?P<subject_id>[A-Za-z0-9_-]+)\.html$"), "h_net_evidence_html", "owner"),
-        ("GET", re.compile(r"^/api/network/media/(?P<asset_id>med_[a-z0-9]+)$"), "h_net_media", "optional"),
+        ("GET", re.compile(rf"^/api/network/media/{_MED_RE}$"), "h_net_media", "optional"),
         *extra_routes(),
     ]
 

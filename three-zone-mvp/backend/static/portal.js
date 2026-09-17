@@ -1104,9 +1104,11 @@ $("#composer").onsubmit = async event => {
       return;
     }
     if (state.kind === "youtube") {
+      const youtubeUrl = (form.youtube_url.value || "").trim();
+      if (!youtubeUrl) throw Error("paste a YouTube watch, shorts, or youtu.be URL");
       status.textContent = "Publishing YouTube clip…";
       const published = await api("POST", "/api/network/posts", {
-        youtube_url: form.youtube_url.value,
+        youtube_url: youtubeUrl,
         caption: form.caption.value,
         sport: form.sport.value,
         visibility: form.visibility.value,

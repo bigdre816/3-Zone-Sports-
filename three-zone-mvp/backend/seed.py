@@ -259,8 +259,8 @@ def _backfill_kc_huddle(db: Database) -> None:
          "A team that plays for each other. Kansas City Youth Soccer."),
         ("pst_kc_vball", "med_yt_kc_vball", "8vlsXetUOus", "volleyball",
          "Northview volleyball — set, swing, Kansas City."),
-        ("pst_kc_baseball", "med_yt_kc_baseball", "pRpeEdMmmQ0", "soccer",
-         "Walk-up energy on a Kansas City soccer night. Watch it in the Huddle."),
+        ("pst_kc_baseball", "med_yt_kc_baseball", "pRpeEdMmmQ0", "baseball",
+         "KC Metro Baseball walk-off energy. Watch it in the Huddle."),
     ]
     author = "prf_demo_viewer"
     for i, (post_id, asset_id, video_id, sport, caption) in enumerate(clips):
@@ -330,6 +330,9 @@ def _backfill_kc_huddle(db: Database) -> None:
         "rights_version,started_at,ended_at,last_seq,last_heartbeat_at,qualified_seconds,"
         "state,close_reason,digest,canonical_json,property_id) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        ("VS-KC-CHRIS", "evt_kc_football", "demo-chris", "chris", "lease_kc_chris",
+        ("VS-KC-CHRIS", "evt_kc_live_bball", "demo-chris", "chris", "lease_kc_chris",
          None, 1, now, None, 0, now, 0, "open", None, None, None, "school_ridgeview"),
+    )
+    db.execute(
+        "UPDATE view_sessions SET event_id='evt_kc_live_bball' WHERE session_id='VS-KC-CHRIS'",
     )
