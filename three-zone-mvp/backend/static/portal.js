@@ -647,15 +647,21 @@ function huddleLiveCard(event) {
   </div>`;
 }
 
+function huddleHeroEvent(events) {
+  const ridgeview = e => (e.title || "").toLowerCase().includes("ridgeview");
+  return events.find(e => e.status === "live" && ridgeview(e))
+    || events.find(e => e.status === "live")
+    || events.find(ridgeview)
+    || events[0];
+}
+
 async function loadHuddleLive() {
   const root = $("#huddle-live");
   if (!root) return;
   try {
     const live = await api("GET", "/api/member/live");
     const events = live.events || [];
-    const hero = events.find(e => e.status === "live")
-      || events.find(e => (e.title || "").toLowerCase().includes("ridgeview"))
-      || events[0];
+    const hero = huddleHeroEvent(events);
     if (!hero) { root.innerHTML = ""; return; }
     root.innerHTML = huddleLiveCard(hero);
     root.querySelectorAll("[data-event]").forEach(button => button.onclick = () => {
