@@ -104,12 +104,14 @@ img, video, canvas, svg {
 .brand {
   color: var(--text);
   text-decoration: none;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.055em;
+  font-size: 14px;
   text-transform: uppercase;
   flex-shrink: 0;
 }
+
+.brand-dot { color: var(--accent); }
 
 #portal h1,
 #huddle-title {
@@ -403,6 +405,12 @@ footer a {
 }
 
 footer a:hover { color: var(--text); }
+
+.footer-brand {
+  color: var(--text);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
 
 .page-view { max-width: 640px; }
 .page-view h1 {
@@ -1119,11 +1127,11 @@ dialog::backdrop {
   bottom: 0;
   z-index: 10;
   display: none;
-  background: rgba(5, 5, 5, 0.92);
+  background: rgba(7, 7, 7, 0.94);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid var(--line);
-  padding: 8px max(10px, var(--safe-right)) calc(10px + var(--safe-bottom)) max(10px, var(--safe-left));
+  padding: 7px max(8px, var(--safe-right)) calc(8px + var(--safe-bottom)) max(8px, var(--safe-left));
   justify-content: space-around;
   align-items: center;
   width: 100%;
@@ -1136,33 +1144,63 @@ dialog::backdrop {
   background: transparent;
   color: var(--muted);
   border: 0;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-decoration: none;
   text-transform: uppercase;
-  min-height: var(--touch);
+  min-height: 54px;
   min-width: var(--touch);
   display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
   align-items: center;
   justify-content: center;
-  padding: 8px;
+  padding: 5px 8px;
+  position: relative;
 }
 
-.bottom-nav a.active { color: var(--text); }
+.bottom-nav a svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.bottom-nav a.active {
+  color: var(--accent);
+  box-shadow: none;
+}
+
+.bottom-nav a.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
 
 .bottom-nav #bottom-create {
   width: 52px;
   height: 52px;
-  border-radius: 50%;
+  border-radius: 16px;
   background: var(--accent);
   color: var(--ink);
-  font-size: 24px;
-  font-weight: 500;
+  font-size: 29px;
+  font-weight: 400;
   min-width: 52px;
   min-height: 52px;
   padding: 0;
+  transform: translateY(-8px);
+  box-shadow: 0 8px 24px rgba(200, 245, 66, 0.16);
 }
+
+.bottom-nav #bottom-create span { transform: translateY(-1px); }
 
 .liked {
   color: var(--ink);
@@ -1280,6 +1318,11 @@ dialog::backdrop {
   #portal h1,
   #huddle-title {
     font-size: clamp(28px, 8vw, 44px);
+  }
+
+  .portal-intro {
+    margin-top: 8px;
+    margin-bottom: 24px;
   }
 
   .feed-col { max-width: none; width: 100%; }
