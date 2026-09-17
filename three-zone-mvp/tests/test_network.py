@@ -9,6 +9,7 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
+from dataclasses import replace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -568,7 +569,7 @@ class PhotoMediaAndDeleteTests(unittest.TestCase):
         self.assertIsNone(opened["redirect_url"])
 
         httpd = make_http_server(
-            self.cp.config, self.cp, "/tmp",
+            replace(self.cp.config, http_port=0), self.cp, "/tmp",
             provider=self.provider, photo_storage=self.net.photo_storage,
         )
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -608,7 +609,7 @@ class PhotoMediaAndDeleteTests(unittest.TestCase):
         token = upload["upload_url"].rsplit("/", 1)[-1]
         payload = b"\xff\xd8\xff raw-upload-bytes"
         httpd = make_http_server(
-            self.cp.config, self.cp, "/tmp",
+            replace(self.cp.config, http_port=0), self.cp, "/tmp",
             provider=self.provider, photo_storage=self.net.photo_storage,
         )
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -708,7 +709,7 @@ class FakeClipUploadBytesTests(unittest.TestCase):
             b"HUDDLE-REAL-CLIP"
         )
         httpd = make_http_server(
-            self.cp.config, self.cp, "/tmp/tz-clip-media",
+            replace(self.cp.config, http_port=0), self.cp, "/tmp/tz-clip-media",
             provider=self.provider, photo_storage=self.net.photo_storage,
         )
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
