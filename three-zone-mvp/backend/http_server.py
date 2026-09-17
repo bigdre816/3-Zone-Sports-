@@ -33,6 +33,9 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 _STATIC_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
                  ".css": "text/css; charset=utf-8"}
 _EVENT_RE = r"(?P<event_id>evt_[a-z0-9_]+)"
+_POST_RE = r"(?P<post_id>pst_[a-z0-9_]+)"
+_CMT_RE = r"(?P<comment_id>cmt_[a-z0-9_]+)"
+_MED_RE = r"(?P<asset_id>med_[a-z0-9_]+)"
 _BIND_ALL_HOSTS = frozenset({"0.0.0.0", "::", ""})
 
 
@@ -88,6 +91,7 @@ def _routes():
         ("POST", re.compile(r"^/api/member/friends/(?P<handle>[a-z][a-z0-9_]{2,31})/unfriend$"), "h_member_unfriend", "member"),
         ("POST", re.compile(r"^/api/member/blocks/(?P<handle>[a-z][a-z0-9_]{2,31})$"), "h_member_block", "member"),
         ("POST", re.compile(r"^/api/member/blocks/(?P<handle>[a-z][a-z0-9_]{2,31})/delete$"), "h_member_unblock", "member"),
+        ("GET", re.compile(r"^/api/member/teams$"), "h_member_teams", "member"),
         ("POST", re.compile(r"^/api/member/follows/teams/(?P<team_id>[A-Za-z0-9_-]+)$"), "h_member_follow_team", "member"),
         ("POST", re.compile(r"^/api/member/follows/teams/(?P<team_id>[A-Za-z0-9_-]+)/delete$"), "h_member_unfollow_team", "member"),
         ("GET", re.compile(r"^/api/member/studio/sources$"), "h_member_studio_sources", "member"),
@@ -97,11 +101,11 @@ def _routes():
         ("GET", re.compile(r"^/api/member/watch-parties/(?P<party_id>party_[a-z0-9]+)$"), "h_member_party_get", "member"),
         ("POST", re.compile(r"^/api/member/watch-parties/(?P<party_id>party_[a-z0-9]+)/join$"), "h_member_party_join", "member"),
         ("POST", re.compile(r"^/api/member/watch-parties/(?P<party_id>party_[a-z0-9]+)/messages$"), "h_member_party_message", "member"),
-        ("POST", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/share$"), "h_member_post_share", "member"),
-        ("POST", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/like$"), "h_member_post_like", "member"),
-        ("PUT", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/like$"), "h_member_post_like", "member"),
-        ("POST", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/unlike$"), "h_member_post_unlike", "member"),
-        ("DELETE", re.compile(r"^/api/member/posts/(?P<post_id>pst_[a-z0-9]+)/like$"), "h_member_post_unlike", "member"),
+        ("POST", re.compile(rf"^/api/member/posts/{_POST_RE}/share$"), "h_member_post_share", "member"),
+        ("POST", re.compile(rf"^/api/member/posts/{_POST_RE}/like$"), "h_member_post_like", "member"),
+        ("PUT", re.compile(rf"^/api/member/posts/{_POST_RE}/like$"), "h_member_post_like", "member"),
+        ("POST", re.compile(rf"^/api/member/posts/{_POST_RE}/unlike$"), "h_member_post_unlike", "member"),
+        ("DELETE", re.compile(rf"^/api/member/posts/{_POST_RE}/like$"), "h_member_post_unlike", "member"),
         ("GET", re.compile(r"^/api/member/saved$"), "h_member_saved", "member"),
         ("POST", re.compile(rf"^/api/member/events/{_EVENT_RE}/playback$"), "h_member_playback", "member"),
         ("POST", re.compile(r"^/api/member/archive/(?P<archive_id>[A-Za-z0-9_-]+)/playback$"), "h_archive_playback", "member"),
@@ -175,9 +179,9 @@ def _routes():
         ("POST", re.compile(r"^/api/network/webhooks/media$"), "h_net_webhook", "none"),
         ("POST", re.compile(r"^/api/network/provider/fake/upload/(?P<token>[A-Za-z0-9_-]+)$"), "h_net_fake_upload", "none"),
         ("POST", re.compile(r"^/api/network/posts$"), "h_net_post_create", "member"),
-        ("GET", re.compile(r"^/api/network/posts/(?P<post_id>pst_[a-z0-9]+)$"), "h_net_post_get", "optional"),
-        ("POST", re.compile(r"^/api/network/posts/(?P<post_id>pst_[a-z0-9]+)$"), "h_net_post_update", "member"),
-        ("POST", re.compile(r"^/api/network/posts/(?P<post_id>pst_[a-z0-9]+)/delete$"), "h_net_post_delete", "member"),
+        ("GET", re.compile(rf"^/api/network/posts/{_POST_RE}$"), "h_net_post_get", "optional"),
+        ("POST", re.compile(rf"^/api/network/posts/{_POST_RE}$"), "h_net_post_update", "member"),
+        ("POST", re.compile(rf"^/api/network/posts/{_POST_RE}/delete$"), "h_net_post_delete", "member"),
         ("GET", re.compile(r"^/api/network/feed$"), "h_net_feed", "optional"),
         ("POST", re.compile(r"^/api/network/games$"), "h_net_game_create", "member"),
         ("GET", re.compile(r"^/api/network/games/(?P<game_id>gme_[a-z0-9]+)$"), "h_net_game_get", "optional"),
@@ -191,7 +195,7 @@ def _routes():
         ("POST", re.compile(r"^/api/network/unreact$"), "h_net_unreact", "member"),
         ("GET", re.compile(r"^/api/network/comments$"), "h_net_comments", "optional"),
         ("POST", re.compile(r"^/api/network/comments$"), "h_net_comment_create", "member"),
-        ("POST", re.compile(r"^/api/network/comments/(?P<comment_id>cmt_[a-z0-9]+)/delete$"), "h_net_comment_delete", "member"),
+        ("POST", re.compile(rf"^/api/network/comments/{_CMT_RE}/delete$"), "h_net_comment_delete", "member"),
         ("POST", re.compile(r"^/api/network/saves$"), "h_net_save", "member"),
         ("POST", re.compile(r"^/api/network/saves/delete$"), "h_net_unsave", "member"),
         ("POST", re.compile(r"^/api/network/shares$"), "h_net_share", "member"),
@@ -201,11 +205,12 @@ def _routes():
         ("GET", re.compile(r"^/api/network/review$"), "h_net_review", "operator"),
         ("POST", re.compile(r"^/api/network/review/games/(?P<game_id>gme_[a-z0-9]+)$"), "h_net_review_game", "operator"),
         ("POST", re.compile(r"^/api/network/review/cases/(?P<case_id>mod_[a-z0-9]+)$"), "h_net_review_case", "operator"),
+        ("POST", re.compile(rf"^/api/network/review/posts/{_POST_RE}$"), "h_net_review_post", "operator"),
         ("POST", re.compile(r"^/api/network/profiles/(?P<profile_id>prf_[a-z0-9]+)/verify$"), "h_net_verify", "operator"),
         ("GET", re.compile(r"^/api/network/evidence/(?P<subject_type>game|clip|post)/(?P<subject_id>[A-Za-z0-9_-]+)$"), "h_net_evidence", "owner"),
         ("GET", re.compile(r"^/api/network/evidence/(?P<subject_type>game|clip|post)/(?P<subject_id>[A-Za-z0-9_-]+)\.csv$"), "h_net_evidence_csv", "owner"),
         ("GET", re.compile(r"^/api/network/evidence/(?P<subject_type>game|clip|post)/(?P<subject_id>[A-Za-z0-9_-]+)\.html$"), "h_net_evidence_html", "owner"),
-        ("GET", re.compile(r"^/api/network/media/(?P<asset_id>med_[a-z0-9]+)$"), "h_net_media", "optional"),
+        ("GET", re.compile(rf"^/api/network/media/{_MED_RE}$"), "h_net_media", "optional"),
         *extra_routes(),
     ]
 
@@ -243,9 +248,10 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             frame_src += " " + origin
         return (
             "default-src 'none'; "
-            "script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://esm.sh; style-src 'self'; img-src 'self' data:; "
+            "script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://esm.sh; style-src 'self'; "
+            "img-src 'self' data: https://i.ytimg.com https://img.youtube.com; "
             f"media-src {media_src}; connect-src {connect_src}; "
-            f"frame-src {frame_src}; "
+            f"frame-src {frame_src} https://www.youtube-nocookie.com https://www.youtube.com; "
             "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
         )
 
@@ -268,10 +274,12 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             return True, None
         return False, None
 
-    def _base_headers(self, no_store: bool = True) -> None:
+    def _base_headers(self, no_store: bool = True, referrer_policy: str = "no-referrer") -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
-        self.send_header("Referrer-Policy", "no-referrer")
+        # API and media stay no-referrer. HTML pages send origin so YouTube
+        # embeds can play (Error 153 when the parent is no-referrer).
+        self.send_header("Referrer-Policy", referrer_policy)
         self.send_header("Content-Security-Policy", self._csp())
         if no_store:
             self.send_header("Cache-Control", "no-store")
@@ -519,7 +527,11 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         with open(full, "rb") as handle:
             body = handle.read()
         self.send_response(200)
-        self._base_headers(no_store=True)
+        html = ext in (".html", ".htm")
+        self._base_headers(
+            no_store=True,
+            referrer_policy="strict-origin-when-cross-origin" if html else "no-referrer",
+        )
         self.send_header("Content-Type", _STATIC_TYPES.get(ext, "application/octet-stream"))
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -766,6 +778,9 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
 
     def h_member_unblock(self, p, b, u):
         self._send_json(200, self.network.unblock_member(u, p["handle"]))
+
+    def h_member_teams(self, p, b, u):
+        self._send_json(200, self.network.list_member_teams(u))
 
     def h_member_follow_team(self, p, b, u):
         self._send_json(200, self.network.follow_team(u, p["team_id"]))
@@ -1380,6 +1395,12 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
     def h_net_review_case(self, p, b, u):
         b = b or {}
         self._send_json(200, self.network.decide_moderation(u, p["case_id"], b.get("action", ""), b.get("reason", "")))
+
+    def h_net_review_post(self, p, b, u):
+        b = b or {}
+        self._send_json(200, {
+            "post": self.network.decide_post(u, p["post_id"], b.get("action", ""), b.get("reason", "")),
+        })
 
     def h_net_verify(self, p, b, u):
         b = b or {}

@@ -18,9 +18,10 @@ from .control_plane import (
     AuthError, ConflictError, ControlError, ForbiddenError, NotFoundError, ValidationError,
 )
 from .db import dumps, loads
-from .media_provider import ProviderError
 from .huddle import HuddleExtensions
+from .media_provider import ProviderError
 from .points import PointsLedger
+from .youtube import parse_youtube_id, youtube_embed_url, youtube_poster_url
 
 
 class RateLimitError(ControlError):
@@ -35,7 +36,7 @@ SPORTS = {"basketball", "football", "soccer", "baseball", "volleyball", "other"}
 VISIBILITY = {"private", "connections", "team", "public"}
 PUBLICATION = {"draft", "processing", "published", "restricted", "removed"}
 LEVELS = {"youth", "middle_school", "high_school", "aau_club", "college", "other"}
-SOURCE_TYPES = {"three_zone_capture", "member_upload", "school_upload", "partner_feed", "other"}
+SOURCE_TYPES = {"three_zone_capture", "member_upload", "school_upload", "partner_feed", "youtube", "other"}
 UPLOAD_STATES = {
     "created", "authorized", "uploading", "uploaded", "processing",
     "ready", "failed", "quarantined", "expired",
@@ -842,6 +843,21 @@ class NetworkService(HuddleExtensions):
         )
         return asset_id
 
+    def _ensure_youtube_asset(self, owner_profile_id: str, video_id: str) -> str:
+        existing = self.db.query_one(
+            "SELECT media_asset_id FROM media_assets WHERE provider='youtube' AND provider_uid=?",
+            (video_id,),
+        )
+        if existing:
+            return existing["media_asset_id"]
+        asset_id = _id("med")
+        self.db.execute(
+            "INSERT INTO media_assets VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (asset_id, owner_profile_id, "youtube", video_id, "youtube",
+             None, None, "ready", "video/youtube", _now(), _now()),
+        )
+        return asset_id
+
     def _asset_from_uid(self, owner_profile_id, uid, kind, duration):
         existing = self.db.query_one(
             "SELECT media_asset_id FROM media_assets WHERE provider=? AND provider_uid=?",
@@ -908,7 +924,14 @@ class NetworkService(HuddleExtensions):
         asset_id = data.get("media_asset_id")
         job_id = data.get("upload_job_id")
         clip_id = data.get("clip_id")
+        has_youtube_field = "youtube_url" in data or "youtube_id" in data
+        youtube_id = parse_youtube_id(data.get("youtube_url") or data.get("youtube_id") or "")
+        if youtube_id:
+            asset_id = self._ensure_youtube_asset(profile["profile_id"], youtube_id)
+            job_id = None
         status = "published"
+        if has_youtube_field and not youtube_id:
+            raise ValidationError("paste a YouTube watch, shorts, or youtu.be URL", "bad_youtube")
         if job_id:
             job = dict(self._row("upload_jobs", "upload_job_id", job_id, "upload not found", "upload_not_found"))
             if job["owner_profile_id"] != profile["profile_id"]:
@@ -993,6 +1016,32 @@ class NetworkService(HuddleExtensions):
         self._audit("POST_REMOVED", post_id, "member", user["user_id"])
         return {"ok": True, "publication_status": "removed"}
 
+    def decide_post(self, operator, post_id: str, action: str, reason: str = "") -> dict:
+        self.cp.require_operator(operator)
+        post = dict(self._row("posts", "post_id", post_id, "post not found", "post_not_found"))
+        mapping = {"restrict": "restricted", "remove": "removed", "restore": "published"}
+        if action not in mapping:
+            raise ValidationError("action must be restrict, remove, or restore", "bad_action")
+        current = post["publication_status"]
+        if action == "restore":
+            if current not in ("restricted", "removed"):
+                raise ValidationError(
+                    "restore requires a restricted or removed post", "bad_status",
+                )
+        elif current not in ("published", "restricted"):
+            raise ValidationError(
+                "only published or restricted posts can be moderated", "bad_status",
+            )
+        status = mapping[action]
+        self.db.execute(
+            "UPDATE posts SET publication_status=?, updated_at=? WHERE post_id=?",
+            (status, _now(), post_id),
+        )
+        self._audit("POST_MODERATED", post_id, "operator", operator["user_id"],
+                    {"action": action, "reason": reason, "from": post["publication_status"],
+                     "to": status})
+        return self.post_view(operator, post_id)
+
     def post_view(self, viewer, post_id: str) -> dict:
         post = self.require_post(viewer, post_id)
         return self._serialize_post(viewer, post)
@@ -1003,6 +1052,7 @@ class NetworkService(HuddleExtensions):
         reacted = False
         saved = False
         can_delete = False
+        actor = None
         if viewer:
             actor = self.ensure_profile(viewer)
             reacted = bool(self.db.query_one(
@@ -1050,6 +1100,8 @@ class NetworkService(HuddleExtensions):
                 "saved_by_me": saved,
             },
             "viewer_can_delete": can_delete,
+            "viewer_is_author": bool(viewer and actor and actor["profile_id"] == post["author_profile_id"]),
+            "viewer_can_moderate": bool(viewer and self._staff(viewer)),
         }
         card.update(self._post_tags(post["post_id"]))
         if post["clip_id"]:
@@ -1082,11 +1134,35 @@ class NetworkService(HuddleExtensions):
                     "label": "This moment is no longer available.",
                 }
         elif post["media_asset_id"]:
-            card["provenance"] = {"label": "Member Upload", "source_type": "member_upload"}
-            card["media"] = {
-                "kind": "photo",
-                "playback_url": f"/api/network/media/{post['media_asset_id']}",
-            }
+            raw_asset = self.db.query_one(
+                "SELECT * FROM media_assets WHERE media_asset_id=?",
+                (post["media_asset_id"],),
+            )
+            if not raw_asset:
+                card["content_state"] = "unavailable"
+                return card
+            asset = dict(raw_asset)
+            if asset.get("provider") == "youtube" or asset.get("kind") == "youtube":
+                vid = asset["provider_uid"]
+                card["provenance"] = {"label": "YouTube clip", "source_type": "youtube"}
+                card["media"] = {
+                    "kind": "youtube",
+                    "youtube_id": vid,
+                    "playback_url": youtube_embed_url(vid),
+                    "poster_url": youtube_poster_url(vid),
+                }
+            elif asset.get("kind") == "clip":
+                card["provenance"] = {"label": "Member Upload", "source_type": "member_upload"}
+                card["media"] = {
+                    "kind": "clip",
+                    "playback_url": f"/api/network/media/{post['media_asset_id']}",
+                }
+            else:
+                card["provenance"] = {"label": "Member Upload", "source_type": "member_upload"}
+                card["media"] = {
+                    "kind": "photo",
+                    "playback_url": f"/api/network/media/{post['media_asset_id']}",
+                }
         return card
 
     def feed(self, viewer, mode: str = "for_you", sport: str | None = None,
@@ -1672,7 +1748,7 @@ class NetworkService(HuddleExtensions):
         })
         self._notify(self._subject_owner(subject_type, subject_id), "comment",
                      actor["profile_id"], subject_type, subject_id)
-        return self.comment_view(comment_id)
+        return self.comment_view(comment_id, user)
 
     def list_comments(self, viewer, subject_type: str, subject_id: str) -> dict:
         self._require_subject(viewer, subject_type, subject_id)
@@ -1681,7 +1757,7 @@ class NetworkService(HuddleExtensions):
             "ORDER BY created_at ASC",
             (subject_type, subject_id),
         )
-        return {"comments": [self.comment_view(r["comment_id"]) for r in rows]}
+        return {"comments": [self.comment_view(r["comment_id"], viewer) for r in rows]}
 
     def delete_comment(self, user, comment_id: str) -> dict:
         row = dict(self._row("comments", "comment_id", comment_id, "comment not found", "comment_not_found"))
@@ -1692,15 +1768,25 @@ class NetworkService(HuddleExtensions):
         self.db.execute("UPDATE comments SET deleted_at=? WHERE comment_id=?", (_now(), comment_id))
         return {"ok": True}
 
-    def comment_view(self, comment_id: str) -> dict:
+    def comment_view(self, comment_id: str, viewer=None) -> dict:
         row = dict(self._row("comments", "comment_id", comment_id, "comment not found", "comment_not_found"))
         author = dict(self._row("profiles", "profile_id", row["author_profile_id"]))
+        can_delete = False
+        if viewer:
+            actor = self.ensure_profile(viewer)
+            owner = self._subject_owner(row["subject_type"], row["subject_id"])
+            can_delete = (
+                row["author_profile_id"] == actor["profile_id"]
+                or owner == actor["profile_id"]
+                or self._staff(viewer)
+            )
         return {
             "comment_id": row["comment_id"],
             "author": self.public_profile(author),
             "body": row["body"],
             "created_at": row["created_at"],
             "parent_comment_id": row["parent_comment_id"] if "parent_comment_id" in row.keys() else None,
+            "viewer_can_delete": can_delete,
         }
 
     def save_item(self, user, subject_type: str, subject_id: str) -> dict:
@@ -1835,7 +1921,21 @@ class NetworkService(HuddleExtensions):
         reports = [dict(r) for r in self.db.query(
             "SELECT * FROM content_reports ORDER BY created_at DESC LIMIT 100"
         )]
-        return {"games": games, "uploads": uploads, "cases": cases, "reports": reports}
+        post_rows = self.db.query(
+            "SELECT * FROM posts ORDER BY created_at DESC LIMIT 40"
+        )
+        posts = []
+        for row in post_rows:
+            post = dict(row)
+            try:
+                posts.append(self._serialize_post(operator, post))
+            except Exception:
+                posts.append({
+                    "post_id": post["post_id"], "caption": post["caption"],
+                    "sport": post["sport"], "publication_status": post["publication_status"],
+                    "author_profile_id": post["author_profile_id"], "created_at": post["created_at"],
+                })
+        return {"games": games, "uploads": uploads, "cases": cases, "reports": reports, "posts": posts}
 
     def decide_game(self, operator, game_id: str, action: str, reason: str = "") -> dict:
         self.cp.require_operator(operator)

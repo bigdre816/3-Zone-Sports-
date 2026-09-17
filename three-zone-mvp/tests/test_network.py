@@ -9,6 +9,7 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
+from dataclasses import replace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -396,6 +397,12 @@ class SocialAndModerationTests(unittest.TestCase):
         post = self._post()
         comment = self.net.add_comment(self.other, "post", post["post_id"], "Nice play")
         stranger = self.cp.register_viewer("stranger1", "password123", "Stranger")["user"]
+        listed_stranger = self.net.list_comments(stranger, "post", post["post_id"])
+        self.assertFalse(listed_stranger["comments"][0]["viewer_can_delete"])
+        listed_author = self.net.list_comments(self.other, "post", post["post_id"])
+        self.assertTrue(listed_author["comments"][0]["viewer_can_delete"])
+        listed_owner = self.net.list_comments(self.member, "post", post["post_id"])
+        self.assertTrue(listed_owner["comments"][0]["viewer_can_delete"])
         with self.assertRaises(ForbiddenError):
             self.net.delete_comment(stranger, comment["comment_id"])
         self.net.delete_comment(self.other, comment["comment_id"])
@@ -568,7 +575,7 @@ class PhotoMediaAndDeleteTests(unittest.TestCase):
         self.assertIsNone(opened["redirect_url"])
 
         httpd = make_http_server(
-            self.cp.config, self.cp, "/tmp",
+            replace(self.cp.config, http_port=0), self.cp, "/tmp",
             provider=self.provider, photo_storage=self.net.photo_storage,
             bind_host="127.0.0.1", bind_port=0,
         )
@@ -609,7 +616,7 @@ class PhotoMediaAndDeleteTests(unittest.TestCase):
         token = upload["upload_url"].rsplit("/", 1)[-1]
         payload = b"\xff\xd8\xff raw-upload-bytes"
         httpd = make_http_server(
-            self.cp.config, self.cp, "/tmp",
+            replace(self.cp.config, http_port=0), self.cp, "/tmp",
             provider=self.provider, photo_storage=self.net.photo_storage,
             bind_host="127.0.0.1", bind_port=0,
         )
@@ -710,7 +717,7 @@ class FakeClipUploadBytesTests(unittest.TestCase):
             b"HUDDLE-REAL-CLIP"
         )
         httpd = make_http_server(
-            self.cp.config, self.cp, "/tmp/tz-clip-media",
+            replace(self.cp.config, http_port=0), self.cp, "/tmp/tz-clip-media",
             provider=self.provider, photo_storage=self.net.photo_storage,
             bind_host="127.0.0.1", bind_port=0,
         )

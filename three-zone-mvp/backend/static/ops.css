@@ -221,6 +221,11 @@ summary { cursor: pointer; font-weight: 600; }
 .audit .a { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .audit .a .act { color: var(--accent); min-width: 150px; }
 .audit .a .who { color: var(--muted); min-width: 100px; }
+.review-post {
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; margin: 8px 0;
+}
+.review-post iframe { width: 100%; min-height: 180px; border: 0; border-radius: 8px; background: #000; }
 
 .toast {
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);

@@ -2095,6 +2095,13 @@ async function init() {
   await restoreSession();
 }
 
+function huddleReviewActions(status) {
+  if (status === "published") return [["restrict", "Restrict"], ["remove", "Remove"]];
+  if (status === "restricted") return [["restore", "Restore"], ["remove", "Remove"]];
+  if (status === "removed") return [["restore", "Restore"]];
+  return [];
+}
+
 async function refreshNetwork() {
   try {
     const data = await api("GET", "/api/network/review");
@@ -2110,6 +2117,42 @@ async function refreshNetwork() {
     add("Uploads", data.uploads, (u) => `${u.upload_job_id} ${u.intended_type} ${u.status} ${u.error_code || ""}`);
     add("Open cases", data.cases, (c) => `${c.case_id} ${c.subject_type} ${c.subject_id} ${c.classifier_result}`);
     add("Reports", data.reports, (r) => `${r.report_id} ${r.subject_type} ${r.reason}`);
+    const huddleHead = el("h3", "", "Huddle posts");
+    box.appendChild(huddleHead);
+    const posts = data.posts || [];
+    if (!posts.length) box.appendChild(el("p", "muted", "None"));
+    posts.forEach((post) => {
+      const card = el("div", "review-post");
+      const media = post.media || {};
+      const caption = (post.caption || "").slice(0, 140);
+      const author = (post.author && post.author.handle) || post.author_profile_id || "";
+      const playback = media.kind === "youtube" && media.playback_url ? String(media.playback_url) : "";
+      const safePlayback = playback.replace(/"/g, "");
+      const actions = huddleReviewActions(post.publication_status);
+      const buttons = actions.map(([action, label]) =>
+        `<button type="button" data-post="${post.post_id}" data-action="${action}"${action === "remove" ? ' class="danger"' : ""}>${label}</button>`
+      ).join("");
+      card.innerHTML = `<p><strong></strong></p>
+        <p class="muted"></p>
+        ${safePlayback ? `<iframe src="${safePlayback}" title="YouTube review" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen loading="lazy"></iframe>` : ""}
+        <div class="btn-row">${buttons}</div>`;
+      card.querySelector("strong").textContent = `${post.post_id} · ${post.sport || ""} · ${post.publication_status || ""}`;
+      card.querySelector(".muted").textContent = `@${author} — ${caption}`;
+      box.appendChild(card);
+    });
+    box.querySelectorAll("[data-post]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await api("POST", `/api/network/review/posts/${btn.dataset.post}`, {
+            action: btn.dataset.action, reason: "ops review",
+          });
+          toast("Post " + btn.dataset.action, "ok");
+          refreshNetwork();
+        } catch (err) {
+          toast("Post decision failed: " + err.message, "bad");
+        }
+      });
+    });
   } catch (e) {
     toast("Network queue failed: " + e.message, "bad");
   }

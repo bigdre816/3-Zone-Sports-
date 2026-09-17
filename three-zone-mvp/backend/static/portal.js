@@ -19,6 +19,7 @@ const state = {
   profile: null, signedIn: false, mode: "for_you", sport: "", kind: "photo", tab: "posts",
   maxClipSeconds: 60, minClipSeconds: 5, studioDuration: 90, previewing: false, gameId: null,
   lastClipId: null, lastPostId: null, heroEventId: null, notifyTimer: null,
+  feedItems: [], friendItems: [], bootingPortal: false,
 };
 
 function pendingPlayback() {
@@ -243,8 +244,12 @@ function applyRoute() {
     $("#portal").classList.remove("hidden");
     const name = MEMBER_VIEWS.has(view) ? view : "huddle";
     setView(name);
-    if (name === "huddle" || name === "feed") { loadFeed(); loadFriends(); startFeedPoll(); }
-    else stopFeedPoll();
+    if (name === "huddle" || name === "feed") {
+      if (!state.bootingPortal) {
+        loadFeed(); loadFriends(); loadTeams(); loadHuddleLive();
+      }
+      startFeedPoll();
+    } else stopFeedPoll();
     if (name === "live" || name === "watch") { loadCatalog(); startLivePoll(); }
     else stopLivePoll();
     if ((location.hash || "").replace(/^#/, "") === "archives") {
@@ -272,6 +277,10 @@ function mediaTag(item) {
   if (item.content_state === "removed" || item.publication_status === "removed") {
     return mediaUnavailable("This post was removed");
   }
+  if (item.media && item.media.kind === "youtube" && item.media.playback_url) {
+    const src = escapeText(item.media.playback_url);
+    return `<div class="yt-wrap"><iframe src="${src}" title="YouTube clip" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen loading="lazy"></iframe></div>`;
+  }
   const url = (item.media && item.media.playback_url) || null;
   const id = item.derived_media_asset_id || item.media_asset_id || item.source_media_asset_id;
   if (!url && !id) return mediaUnavailable("This moment is no longer available.");
@@ -283,6 +292,13 @@ function mediaTag(item) {
   return photo
     ? `<img alt="Community sports moment" src="${src}" />`
     : `<video src="${src}" controls playsinline muted></video>`;
+}
+
+function huddleModerationActions(status) {
+  if (status === "published") return [["restrict", "Restrict"], ["remove", "Remove from Huddle"]];
+  if (status === "restricted") return [["restore", "Restore"], ["remove", "Remove from Huddle"]];
+  if (status === "removed") return [["restore", "Restore"]];
+  return [];
 }
 
 function postCard(item) {
@@ -299,22 +315,39 @@ function postCard(item) {
   ).join(" · ");
   const blocked = item.content_state === "restricted" || item.content_state === "removed" || item.content_state === "unavailable";
   const liked = item.viewer_liked || (item.engagement && item.engagement.liked_by_me);
+  const saved = item.viewer_saved || (item.engagement && item.engagement.saved_by_me);
   const likeCount = (item.engagement && item.engagement.likes) || item.like_count || 0;
-  const canDelete = item.viewer_can_delete || (
+  const canDelete = item.viewer_can_delete || item.viewer_is_author || (
     state.profile && item.author && state.profile.profile_id === item.author.profile_id
   );
   const deleteBtn = canDelete
-    ? `<button type="button" class="icon-action danger" data-delete-post="${item.post_id}" aria-label="Delete"><span class="ia-icon" aria-hidden="true">⌫</span></button>`
+    ? `<button type="button" class="icon-action danger" data-delete-post="${item.post_id}" aria-label="Remove my post"><span class="ia-icon" aria-hidden="true">⌫</span></button>`
     : "";
+  const ownerRow = item.viewer_is_author ? `<div class="owner-row">
+      <button type="button" class="quiet" data-edit="${item.post_id}">Edit caption</button>
+      <button type="button" class="quiet" data-visibility="${item.post_id}" data-current="${escapeText(item.visibility)}">Audience: ${escapeText(item.visibility)}</button>
+      <button type="button" class="quiet" data-comments-toggle="${item.post_id}" data-on="${item.comments_enabled ? "1" : "0"}">${item.comments_enabled ? "Turn comments off" : "Turn comments on"}</button>
+    </div>` : "";
+  const staffActions = huddleModerationActions(item.publication_status);
+  const staffRow = item.viewer_can_moderate && staffActions.length ? `<div class="owner-row">${
+    staffActions.map(([action, label]) =>
+      `<button type="button" class="quiet" data-moderate="${escapeText(item.post_id)}" data-action="${action}">${label}</button>`
+    ).join("")
+  }</div>` : "";
   const whisperParts = [item.sport, tags, provenance].filter(Boolean);
   const whisper = whisperParts.length
     ? `<p class="post-whisper">${item.sport ? escapeText(item.sport) : ""}${tags ? (item.sport ? " · " : "") + tags : ""}${provenance ? ((item.sport || tags) ? " · " : "") + provenance : ""}</p>`
     : "";
-  const actions = blocked ? "" : `<div class="actions icon-row" role="group" aria-label="Post actions">
+  const commentForm = !blocked && item.comments_enabled !== false
+    ? `<form class="comment-form" data-subject="post:${item.post_id}">
+      <label>Comment <input name="body" maxlength="500" placeholder="Add a quiet note" /></label>
+      <button type="submit">Comment</button>
+    </form>` : "";
+  const actions = blocked ? ownerRow + staffRow : `<div class="actions icon-row" role="group" aria-label="Post actions">
       <button type="button" class="icon-action ${liked ? "liked" : ""}" data-like="post:${item.post_id}" aria-label="Like">
         <span class="ia-icon" aria-hidden="true">♥</span><span class="ia-count">${likeCount}</span>
       </button>
-      <button type="button" class="icon-action" data-save="post:${item.post_id}" aria-label="Save">
+      <button type="button" class="icon-action" data-save="post:${item.post_id}" data-saved="${saved ? "1" : "0"}" aria-label="${saved ? "Unsave" : "Save"}">
         <span class="ia-icon" aria-hidden="true">🔖</span>
       </button>
       <button type="button" class="icon-action" data-share="post:${item.post_id}" aria-label="Share">
@@ -330,15 +363,13 @@ function postCard(item) {
       <button type="button" class="quiet" data-report="post:${item.post_id}">Report</button>
       <button type="button" class="quiet" data-block="${escapeText(item.author.handle)}">Block</button>
     </div>
+    ${ownerRow}${staffRow}
     <div class="comments" data-comments="post:${item.post_id}"></div>
-    <form class="comment-form" data-subject="post:${item.post_id}">
-      <label>Comment <input name="body" maxlength="500" placeholder="Add a quiet note" /></label>
-      <button type="submit">Comment</button>
-    </form>`;
+    ${commentForm}`;
   const caption = item.caption
     ? `<p class="post-caption">${escapeText(item.caption)}</p>`
     : "";
-  return `<article class="post-card">
+  return `<article class="post-card" data-post-id="${escapeText(item.post_id || "")}">
     <div class="post-media">${mediaTag(item)}</div>
     <div class="post-body">
       <header class="post-meta"><strong>${escapeText(item.author.display_name)}</strong>
@@ -356,9 +387,17 @@ async function loadComments(root) {
     const [type, id] = el.dataset.comments.split(":");
     try {
       const data = await api("GET", `/api/network/comments?subject_type=${type}&subject_id=${id}`);
-      el.innerHTML = (data.comments || []).slice(-3).map(c =>
-        `<p><strong>${escapeText(c.author.display_name)}</strong> ${escapeText(c.body)}</p>`
+      el.innerHTML = (data.comments || []).slice(-8).map(c =>
+        `<p><strong>${escapeText(c.author.display_name)}</strong> ${escapeText(c.body)}
+         ${c.viewer_can_delete ? `<button type="button" class="quiet" data-del-comment="${escapeText(c.comment_id)}">Remove</button>` : ""}</p>`
       ).join("") || "";
+      el.querySelectorAll("[data-del-comment]").forEach(btn => btn.onclick = async () => {
+        try {
+          await api("POST", `/api/network/comments/${btn.dataset.delComment}/delete`);
+          toast("Comment removed");
+          loadComments(root);
+        } catch (error) { toast(error.message); }
+      });
     } catch (_) { /* keep empty */ }
   });
 }
@@ -400,8 +439,19 @@ function bindCards(root) {
   });
   root.querySelectorAll("[data-save]").forEach(btn => btn.onclick = async () => {
     const [type, id] = btn.dataset.save.split(":");
-    try { await api("POST", "/api/network/saves", { subject_type: type, subject_id: id }); toast("Saved"); }
-    catch (error) { toast(error.message); }
+    try {
+      if (btn.dataset.saved === "1") {
+        await api("POST", "/api/network/saves/delete", { subject_type: type, subject_id: id });
+        btn.dataset.saved = "0";
+        btn.setAttribute("aria-label", "Save");
+        toast("Removed from Saved");
+      } else {
+        await api("POST", "/api/network/saves", { subject_type: type, subject_id: id });
+        btn.dataset.saved = "1";
+        btn.setAttribute("aria-label", "Unsave");
+        toast("Saved");
+      }
+    } catch (error) { toast(error.message); }
   });
   root.querySelectorAll("[data-share]").forEach(btn => btn.onclick = async () => {
     const [type, id] = btn.dataset.share.split(":");
@@ -439,7 +489,7 @@ function bindCards(root) {
   });
   root.querySelectorAll("[data-delete-post]").forEach(btn => btn.onclick = async () => {
     const id = btn.dataset.deletePost;
-    if (!window.confirm("Delete this photo post?")) return;
+    if (!window.confirm("Remove this post from the Huddle?")) return;
     try {
       await api("POST", `/api/network/posts/${id}/delete`);
       toast("Post deleted");
@@ -447,6 +497,43 @@ function bindCards(root) {
     } catch (error) { toast(error.message); }
   });
   root.querySelectorAll("[data-open-game]").forEach(btn => btn.onclick = () => openGame(btn.dataset.openGame));
+  root.querySelectorAll("[data-edit]").forEach(btn => btn.onclick = async () => {
+    const caption = prompt("Edit caption");
+    if (caption == null) return;
+    try {
+      await api("POST", `/api/network/posts/${btn.dataset.edit}`, { caption });
+      toast("Caption updated");
+      loadFeed();
+    } catch (error) { toast(error.message); }
+  });
+  root.querySelectorAll("[data-visibility]").forEach(btn => btn.onclick = async () => {
+    const next = prompt("Audience: public, connections, team, or private", btn.dataset.current || "public");
+    if (!next) return;
+    try {
+      await api("POST", `/api/network/posts/${btn.dataset.visibility}`, { visibility: next.trim() });
+      toast("Audience updated");
+      loadFeed();
+    } catch (error) { toast(error.message); }
+  });
+  root.querySelectorAll("[data-comments-toggle]").forEach(btn => btn.onclick = async () => {
+    const on = btn.dataset.on !== "1";
+    try {
+      await api("POST", `/api/network/posts/${btn.dataset.commentsToggle}`, { comments_enabled: on });
+      toast(on ? "Comments on" : "Comments off");
+      loadFeed();
+    } catch (error) { toast(error.message); }
+  });
+  root.querySelectorAll("[data-moderate]").forEach(btn => btn.onclick = async () => {
+    const action = btn.dataset.action;
+    const input = prompt("Reason for " + action, "operator review");
+    if (input == null) return;
+    const reason = input.trim() || "operator review";
+    try {
+      await api("POST", `/api/network/review/posts/${btn.dataset.moderate}`, { action, reason });
+      toast("Post " + action);
+      loadFeed();
+    } catch (error) { toast(error.message); }
+  });
   root.querySelectorAll(".comment-form").forEach(form => form.onsubmit = async event => {
     event.preventDefault();
     const [type, id] = form.dataset.subject.split(":");
@@ -473,7 +560,7 @@ function liveCard(event) {
   }
   const board = event.scoreboard || {};
   const score = board.home != null
-    ? `<p class="sub">${escapeText(board.period || "")} ${escapeText(board.clock || "")} · ${board.home}–${board.away}</p>`
+    ? `<p class="sub">${escapeText(board.period || "")} ${escapeText(board.clock || "")} · ${escapeText(board.home)}–${escapeText(board.away)}</p>`
     : "";
   return `<article><span class="pill">${pill}</span><h3>${escapeText(event.title)}</h3>${score}${action}</article>`;
 }
@@ -501,8 +588,9 @@ async function loadCatalog() {
       const board = hero.scoreboard || {};
       $("#live-hero").innerHTML = `<div class="live-hero">
         <span class="pill">${escapeText((hero.status || "").toUpperCase())}</span>
+        <p class="sub">${escapeText(hero.category || "high school")} · in your zone</p>
         <h3>${escapeText(hero.title)}</h3>
-        <div class="scoreboard"><span>${board.home ?? "—"}</span><small>${escapeText(board.period || "")} ${escapeText(board.clock || "")}</small><span>${board.away ?? "—"}</span></div>
+        <div class="scoreboard"><span>${escapeText(board.home ?? "—")}</span><small>${escapeText(board.period || "")} ${escapeText(board.clock || "")}</small><span>${escapeText(board.away ?? "—")}</span></div>
         ${hero.status === "live" ? `<button type="button" data-event="${hero.event_id}">Watch live</button>` : "<p class='sub'>Watch live unlocks when the game starts.</p>"}
         <p class="post-whisper">Community theater — the gym, the field, the stands.</p>
       </div>`;
@@ -561,17 +649,113 @@ async function loadSaved() {
   } catch (error) { toast(error.message); }
 }
 
+function renderClipRow() {
+  const row = $("#friends-row");
+  if (!row) return;
+  const add = `<button type="button" class="friend-chip add-clip" id="friends-add-clip"><span class="avatar">+</span>Add clip</button>`;
+  const friends = (state.friendItems || []).map(item =>
+    `<div class="friend-chip"><span class="avatar">${escapeText((item.display_name || "?").slice(0, 1))}</span>
+     ${escapeText((item.display_name || "Friend").split(" ")[0])}<small>${escapeText(item.activity === "watching_live" ? "Live" : (item.activity || ""))}</small></div>`
+  ).join("");
+  const clips = (state.feedItems || []).filter(item => item.media && item.post_id).slice(0, 8).map(item => {
+    const poster = item.media.poster_url || "";
+    const src = poster ? `<img src="${escapeText(poster)}" alt="">` : escapeText((item.sport || "C").slice(0, 1).toUpperCase());
+    const label = escapeText(item.sport || "clip");
+    return `<button type="button" class="friend-chip clip-chip" data-jump-post="${escapeText(item.post_id)}">
+      <span class="avatar">${src}</span>${label}</button>`;
+  }).join("");
+  row.classList.remove("hidden");
+  row.innerHTML = add + friends + clips;
+  const addBtn = $("#friends-add-clip");
+  if (addBtn) addBtn.onclick = () => {
+    $("#create-dialog").showModal();
+    const yt = document.querySelector(".create-choices [data-kind='youtube']");
+    if (yt) yt.click();
+  };
+  row.querySelectorAll("[data-jump-post]").forEach(btn => btn.onclick = () => {
+    const card = document.querySelector(`[data-post-id="${btn.dataset.jumpPost}"]`);
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
 async function loadFriends() {
   try {
     const data = await api("GET", "/api/member/friends/activity");
-    const row = $("#friends-row");
-    if (!data.items || !data.items.length) { row.classList.add("hidden"); row.innerHTML = ""; return; }
-    row.classList.remove("hidden");
-    row.innerHTML = data.items.map(item =>
-      `<div class="friend-chip"><span class="avatar">${escapeText((item.display_name || "?").slice(0, 1))}</span>
-       ${escapeText(item.display_name)}<small>${escapeText(item.activity)}</small></div>`
+    state.friendItems = data.items || [];
+  } catch (_) {
+    state.friendItems = [];
+  }
+  renderClipRow();
+}
+
+async function loadTeams() {
+  const root = $("#my-teams");
+  if (!root) return;
+  try {
+    const data = await api("GET", "/api/member/teams");
+    const mine = data.teams || [];
+    const extra = (data.catalog || []).slice(0, 3);
+    const chips = mine.map(team =>
+      `<button type="button" class="team-chip" data-unfollow="${escapeText(team.team_id)}">
+        <strong>${escapeText(team.name)}</strong><small>${escapeText(team.sport)}</small></button>`
     ).join("");
-  } catch (_) { $("#friends-row").classList.add("hidden"); }
+    const add = extra.map(team =>
+      `<button type="button" class="team-chip add" data-follow-team="${escapeText(team.team_id)}">
+        <strong>+ ${escapeText(team.name)}</strong><small>Add team</small></button>`
+    ).join("");
+    root.innerHTML = (chips + add) || "<p class='empty'>Follow a team to pin it here.</p>";
+    root.querySelectorAll("[data-follow-team]").forEach(btn => btn.onclick = async () => {
+      try {
+        await api("POST", `/api/member/follows/teams/${btn.dataset.followTeam}`);
+        loadTeams();
+      } catch (error) { toast(error.message); }
+    });
+    root.querySelectorAll("[data-unfollow]").forEach(btn => btn.onclick = async () => {
+      try {
+        await api("POST", `/api/member/follows/teams/${btn.dataset.unfollow}/delete`);
+        loadTeams();
+      } catch (error) { toast(error.message); }
+    });
+  } catch (_) {
+    root.innerHTML = "<p class='empty'>Teams unavailable.</p>";
+  }
+}
+
+function huddleLiveCard(event) {
+  const board = event.scoreboard || {};
+  const live = event.status === "live";
+  return `<div class="huddle-live">
+    <div class="huddle-live-copy">
+      <span class="pill">${live ? "LIVE" : escapeText((event.status || "").toUpperCase())}</span>
+      <p class="sub">${escapeText(event.category || "high school")} · Kansas City</p>
+      <h3>${escapeText(event.title)}</h3>
+      <div class="scoreboard"><span>${escapeText(board.home ?? "—")}</span><small>${escapeText(board.period || "")} ${escapeText(board.clock || "")}</small><span>${escapeText(board.away ?? "—")}</span></div>
+      ${live ? `<button type="button" data-event="${escapeText(event.event_id)}">Watch live</button>` : "<p class='sub'>Watch live unlocks when the game starts.</p>"}
+    </div>
+  </div>`;
+}
+
+function huddleHeroEvent(events) {
+  const ridgeview = e => (e.title || "").toLowerCase().includes("ridgeview");
+  return events.find(e => e.status === "live" && ridgeview(e))
+    || events.find(e => e.status === "live")
+    || events.find(ridgeview)
+    || events[0];
+}
+
+async function loadHuddleLive() {
+  const root = $("#huddle-live");
+  if (!root) return;
+  try {
+    const live = await api("GET", "/api/member/live");
+    const events = live.events || [];
+    const hero = huddleHeroEvent(events);
+    if (!hero) { root.innerHTML = ""; return; }
+    root.innerHTML = huddleLiveCard(hero);
+    root.querySelectorAll("[data-event]").forEach(button => button.onclick = () => {
+      playMedia(`/api/member/events/${button.dataset.event}/playback`, hero.title, "Authorized playback lease issued");
+    });
+  } catch (_) { root.innerHTML = ""; }
 }
 
 async function loadNotifications() {
@@ -795,6 +979,8 @@ async function loadFeed() {
   try {
     const sport = state.sport ? `&sport=${encodeURIComponent(state.sport)}` : "";
     const data = await api("GET", `/api/member/feed?view=${state.mode}${sport}`);
+    state.feedItems = data.items || [];
+    renderClipRow();
     if (!data.items.length) {
       root.innerHTML = "<div class='empty-frame'><span class='empty-kicker'>Awaiting a sideline shot</span><p class='empty'>Nothing in this huddle yet. Parent-shot moments and packed-gym energy land here.</p></div>";
       return;
@@ -855,22 +1041,27 @@ async function loadPortal() {
     $("#notify-badge").textContent = me.unread_notifications;
     $("#notify-badge").classList.remove("hidden");
   }
-  await Promise.all([loadFeed(), loadCatalog(), loadNotifications()]);
-  if (!state.notifyTimer) {
-    state.notifyTimer = setInterval(() => { if (state.signedIn) loadNotifications(); }, 30000);
-  }
-  const pending = pendingPlayback();
-  if (pending) {
-    clearPendingPlayback();
-    if (pending.kind === "archive") {
-      location.hash = "watch";
-      await playMedia(`/api/member/archive/${pending.id}/playback`, "Archive playback", "Authorized archive playback");
-    } else {
-      location.hash = "live";
-      await playMedia(`/api/member/events/${pending.id}/playback`, "Live playback", "Authorized playback lease issued");
+  state.bootingPortal = true;
+  try {
+    await Promise.all([loadFeed(), loadCatalog(), loadNotifications(), loadFriends(), loadTeams(), loadHuddleLive()]);
+    if (!state.notifyTimer) {
+      state.notifyTimer = setInterval(() => { if (state.signedIn) loadNotifications(); }, 30000);
     }
+    const pending = pendingPlayback();
+    if (pending) {
+      clearPendingPlayback();
+      if (pending.kind === "archive") {
+        location.hash = "watch";
+        await playMedia(`/api/member/archive/${pending.id}/playback`, "Archive playback", "Authorized archive playback");
+      } else {
+        location.hash = "live";
+        await playMedia(`/api/member/events/${pending.id}/playback`, "Live playback", "Authorized playback lease issued");
+      }
+    }
+    applyRoute();
+  } finally {
+    state.bootingPortal = false;
   }
-  applyRoute();
 }
 
 function authError(error) {
@@ -980,10 +1171,13 @@ $("#notify-btn").onclick = () => { location.hash = "notifications"; };
 $$(".create-choices [data-kind]").forEach(btn => btn.onclick = () => {
   state.kind = btn.dataset.kind;
   $("#composer").classList.remove("hidden");
-  $("#composer-kind").textContent = btn.dataset.kind === "game" ? "Full Game" : btn.dataset.kind === "clip" ? "Clip" : "Photo";
+  const labels = { game: "Full Game", clip: "Clip", youtube: "YouTube clip", photo: "Photo" };
+  $("#composer-kind").textContent = labels[state.kind] || "Photo";
   $("#game-fields").classList.toggle("hidden", state.kind !== "game");
   $("#composer-tags").classList.toggle("hidden", state.kind === "game");
   $("#game-fields").querySelector("[name=rights_attestation]").required = state.kind === "game";
+  $("#composer-file-wrap").classList.toggle("hidden", state.kind === "youtube");
+  $("#composer-youtube-wrap").classList.toggle("hidden", state.kind !== "youtube");
   $("#composer-file").accept = state.kind === "photo" ? "image/*" : "video/*";
 });
 $("#composer-file").onchange = () => {
@@ -1049,6 +1243,24 @@ $("#composer").onsubmit = async event => {
       $("#create-dialog").close();
       openGame(game.game.game_id);
       return;
+    }
+    if (state.kind === "youtube") {
+      const youtubeUrl = (form.youtube_url.value || "").trim();
+      if (!youtubeUrl) throw Error("paste a YouTube watch, shorts, or youtu.be URL");
+      status.textContent = "Publishing YouTube clip…";
+      const published = await api("POST", "/api/network/posts", {
+        youtube_url: youtubeUrl,
+        caption: form.caption.value,
+        sport: form.sport.value,
+        visibility: form.visibility.value,
+        tagged_handles: parseList(form.tagged_handles.value),
+        tagged_team_ids: parseList(form.tagged_teams.value),
+      });
+      status.textContent = "";
+      toast("Published");
+      $("#create-dialog").close();
+      loadFeed();
+      return published;
     }
     status.textContent = "Requesting direct upload…";
     const upload = await api("POST", "/api/network/uploads", { kind: state.kind });

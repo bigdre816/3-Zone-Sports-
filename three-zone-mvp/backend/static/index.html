@@ -71,6 +71,10 @@
       </header>
 
       <section id="view-huddle" class="view">
+        <div id="friends-row" class="friends-row" aria-label="People and clips"></div>
+        <div class="section-title huddle-teams-head"><h2>My Teams</h2><span>Follow schools and clubs in Kansas City and your zone.</span></div>
+        <div id="my-teams" class="teams-row"></div>
+        <div id="huddle-live"></div>
         <div class="chip-row" role="tablist" aria-label="Feed mode">
           <button type="button" class="chip active" data-mode="for_you">For you</button>
           <button type="button" class="chip" data-mode="following">Following</button>
@@ -82,8 +86,9 @@
           <button type="button" class="chip" data-sport="football">Football</button>
           <button type="button" class="chip" data-sport="soccer">Soccer</button>
           <button type="button" class="chip" data-sport="volleyball">Volleyball</button>
+          <button type="button" class="chip" data-sport="baseball">Baseball</button>
         </div>
-        <div id="friends-row" class="friends-row hidden"></div>
+        <div class="section-title huddle-feed-head"><h2>Top Moments For You</h2><span>Watchable clips, including YouTube.</span></div>
         <div id="feed-list" class="feed-col" aria-label="Feed"></div>
       </section>
 
@@ -114,7 +119,7 @@
       <section id="view-studio" class="view hidden">
         <p class="eyebrow">CREATE A CLIP</p>
         <h2>Studio.</h2>
-        <p class="sub">Turn entitled games into governed, source-linked moments. 5–60 seconds. Creating a clip is not permission to publish it.</p>
+        <p class="sub">Turn full games into governed, source-linked moments. 5–60 seconds. Creating a clip is not permission to publish it.</p>
         <label>Source game
           <select id="studio-source"></select>
         </label>
@@ -219,7 +224,7 @@
     <section id="view-about" class="view page-view hidden">
       <h1>About Three-Zone</h1>
       <p>Three-Zone Sports Access is the member site for live high-school and youth games, schedules, and archives. Treasure verifies the member. Three-Zone authorizes playback. Every watch is recorded in the audit trail.</p>
-      <p class="sub">Signed-in members can also post photos and clips, upload a full game, trim a moment in Studio, and share media in Inbox. Feed ranking is sports-relevance, not engagement addiction.</p>
+      <p class="sub">Signed-in members can also post photos, YouTube clips, and Studio trims, upload a full game, and share media in Inbox. Feed ranking is sports-relevance, not engagement addiction. Members control their own posts, comments, saves, and audience.</p>
     </section>
     <section id="view-support" class="view page-view hidden">
       <h1>Support</h1>
@@ -279,11 +284,15 @@
     <div class="create-choices">
       <button type="button" data-kind="photo">Photo</button>
       <button type="button" data-kind="clip">Clip</button>
+      <button type="button" data-kind="youtube">YouTube</button>
       <button type="button" data-kind="game">Full Game</button>
     </div>
     <form id="composer" class="hidden">
       <p id="composer-kind" class="eyebrow"></p>
-      <label>File <input id="composer-file" type="file" accept="image/*,video/*" /></label>
+      <label id="composer-file-wrap">File <input id="composer-file" type="file" accept="image/*,video/*" /></label>
+      <label id="composer-youtube-wrap" class="hidden">YouTube URL
+        <input id="composer-youtube" name="youtube_url" placeholder="https://youtu.be/… or youtube.com/watch?v=" autocomplete="off" />
+      </label>
       <img id="composer-photo" class="hidden" alt="Selected photo preview" />
       <video id="composer-preview" class="hidden" controls playsinline muted></video>
       <label>Caption <textarea name="caption" rows="3"></textarea></label>
