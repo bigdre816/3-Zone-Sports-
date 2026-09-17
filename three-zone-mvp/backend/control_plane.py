@@ -148,6 +148,8 @@ SITE_ROUTES = [
      "purpose": "Revoke the HTTP-only member session cookie"},
     {"method": "GET", "path": "/api/member/me", "tier": "member",
      "purpose": "Current verified member identity"},
+    {"method": "POST", "path": "/api/member/ws-ticket", "tier": "member",
+     "purpose": "Mint a single-use WebSocket ticket; the session token never touches the handshake"},
     {"method": "GET", "path": "/api/member/live", "tier": "member",
      "purpose": "Authorized live and upcoming games"},
     {"method": "GET", "path": "/api/member/schedules", "tier": "member",

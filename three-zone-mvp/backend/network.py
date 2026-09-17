@@ -20,6 +20,7 @@ from .control_plane import (
 from .db import dumps, loads
 from .huddle import HuddleExtensions
 from .media_provider import ProviderError
+from .points import PointsLedger
 from .youtube import parse_youtube_id, youtube_embed_url, youtube_poster_url
 
 
@@ -103,6 +104,7 @@ class NetworkService(HuddleExtensions):
                 webhook_secret=getattr(cp.config, "fake_webhook_secret", "fake-webhook-secret"),
             )
         self.limiter = RateLimiter()
+        self.points = PointsLedger(cp)
 
     # -- helpers -----------------------------------------------------------
     def _audit(self, event_type, subject_id=None, actor_type="member", actor_id="system",
@@ -117,6 +119,39 @@ class NetworkService(HuddleExtensions):
 
     def _staff(self, user) -> bool:
         return bool(user and user.get("role") in ("operator", "owner", "admin"))
+
+    def points_for(self, user) -> dict:
+        profile = self.ensure_profile(user)
+        return self.points.total_for_profile(profile["profile_id"])
+
+    def _award_post_published(self, user, post_id: str, clip_id: str | None) -> None:
+        profile = self.ensure_profile(user)
+        if clip_id:
+            self.points.award(
+                beneficiary_profile_id=profile["profile_id"],
+                event_type="clip.published", subject_type="clip", subject_id=clip_id,
+                actor_profile_id=profile["profile_id"], actor_user=user,
+            )
+        else:
+            self.points.award(
+                beneficiary_profile_id=profile["profile_id"],
+                event_type="post.published", subject_type="post", subject_id=post_id,
+                actor_profile_id=profile["profile_id"], actor_user=user,
+            )
+
+    def _award_game_completed(self, game_id: str) -> None:
+        game = self.db.query_one("SELECT * FROM games WHERE game_id=?", (game_id,))
+        if not game or not game["uploader_profile_id"]:
+            return
+        uploader = self.db.query_one(
+            "SELECT * FROM profiles WHERE profile_id=?", (game["uploader_profile_id"],)
+        )
+        actor_user = self.cp.get_user(uploader["user_id"]) if uploader else None
+        self.points.award(
+            beneficiary_profile_id=game["uploader_profile_id"],
+            event_type="game.completed", subject_type="game", subject_id=game_id,
+            actor_profile_id=game["uploader_profile_id"], actor_user=actor_user,
+        )
 
     def _owner(self, user) -> bool:
         return bool(user and user.get("role") in ("owner", "admin"))
@@ -859,12 +894,21 @@ class NetworkService(HuddleExtensions):
                     "INSERT OR IGNORE INTO game_media VALUES (?,?,?,?)",
                     (job["intended_object_id"], asset_id, "source", _now()),
                 )
+                self._award_game_completed(job["intended_object_id"])
         if job["intended_type"] in ("photo", "clip") and job.get("intended_object_id"):
             self.db.execute(
                 "UPDATE posts SET media_asset_id=?, publication_status='published', published_at=?, "
                 "updated_at=? WHERE post_id=? AND publication_status IN ('draft','processing')",
                 (asset_id, _now(), _now(), job["intended_object_id"]),
             )
+            post = self.db.query_one("SELECT * FROM posts WHERE post_id=?", (job["intended_object_id"],))
+            if post:
+                owner = self.db.query_one(
+                    "SELECT * FROM profiles WHERE profile_id=?", (post["author_profile_id"],)
+                )
+                actor_user = self.cp.get_user(owner["user_id"]) if owner else None
+                if actor_user:
+                    self._award_post_published(actor_user, post["post_id"], post["clip_id"])
 
     # -- posts / feed ------------------------------------------------------
     def create_post(self, user, data: dict) -> dict:
@@ -935,6 +979,7 @@ class NetworkService(HuddleExtensions):
             self._outbox(post_id, "network.post.published", {
                 "post_id": post_id, "author_profile_id": profile["profile_id"], "sport": sport,
             })
+            self._award_post_published(user, post_id, clip_id)
         return self.post_view(user, post_id)
 
     def update_post(self, user, post_id: str, data: dict) -> dict:
@@ -1561,6 +1606,11 @@ class NetworkService(HuddleExtensions):
             "destination": "huddle",
             "publication_decision": "allowed",
         })
+        self.points.award(
+            beneficiary_profile_id=profile["profile_id"],
+            event_type="clip.published", subject_type="clip", subject_id=clip_id,
+            actor_profile_id=profile["profile_id"], actor_user=user,
+        )
         return result
 
     def clip_view(self, viewer, clip_id: str) -> dict:
@@ -1640,6 +1690,7 @@ class NetworkService(HuddleExtensions):
             raise ValidationError("unsupported subject", "bad_subject")
         self._require_subject(user, subject_type, subject_id)
         actor = self.ensure_profile(user)
+        owner_id = self._subject_owner(subject_type, subject_id)
         self.db.execute(
             "INSERT OR IGNORE INTO reactions VALUES (?,?,?,?,?,?)",
             (_id("rct"), actor["profile_id"], subject_type, subject_id, kind, _now()),
@@ -1649,8 +1700,13 @@ class NetworkService(HuddleExtensions):
         self._outbox(subject_id, "network.reaction", {
             "actor": actor["profile_id"], "subject_type": subject_type, "subject_id": subject_id, "kind": kind,
         })
-        owner = self._subject_owner(subject_type, subject_id)
-        self._notify(owner, "like", actor["profile_id"], subject_type, subject_id)
+        self._notify(owner_id, "like", actor["profile_id"], subject_type, subject_id)
+        if owner_id and owner_id != actor["profile_id"]:
+            self.points.award(
+                beneficiary_profile_id=owner_id,
+                event_type="reaction.received", subject_type=subject_type, subject_id=subject_id,
+                actor_profile_id=actor["profile_id"], actor_user=user,
+            )
         likes, _ = self._counts(subject_type, subject_id)
         return {"ok": True, "liked": True, "like_count": likes}
 
@@ -1660,6 +1716,7 @@ class NetworkService(HuddleExtensions):
             "DELETE FROM reactions WHERE actor_profile_id=? AND subject_type=? AND subject_id=? AND kind=?",
             (actor["profile_id"], subject_type, subject_id, kind),
         )
+        self.points.reverse_reaction(actor["profile_id"], subject_type, subject_id, actor_user=user)
         likes, _ = self._counts(subject_type, subject_id)
         return {"ok": True, "liked": False, "like_count": likes}
 

@@ -627,7 +627,7 @@ class ConfigTests(unittest.TestCase):
             self.assertFalse(bind_separate_websocket())
             os.environ.pop("RENDER", None)
             os.environ["TZ_WS_PORT"] = "8765"
-            self.assertTrue(bind_separate_websocket())
+            self.assertFalse(bind_separate_websocket())
             os.environ["TZ_WS_PORT"] = "0"
             self.assertFalse(bind_separate_websocket())
         finally:

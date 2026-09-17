@@ -29,10 +29,13 @@ from .config import Config
 from .control_plane import ControlPlane
 from .db import Database, dumps, loads
 from .portal import PortalService
+from .ws_tickets import TICKET_PREFIX, TicketError, consume_ticket
 
 SUBPROTOCOL = "tz-session"
-_PATH_PREFIX = "/ws/events/"
-_PARTY_PREFIX = "/ws/watch-parties/"
+PATH_PREFIX = "/ws/events/"
+PARTY_PREFIX = "/ws/watch-parties/"
+_PATH_PREFIX = PATH_PREFIX
+_PARTY_PREFIX = PARTY_PREFIX
 
 
 class Hub:
@@ -65,10 +68,33 @@ class Hub:
         morsel = jar.get("tz_member_session")
         return morsel.value if morsel else None
 
+    def _target_from_path(self, path: str) -> str | None:
+        route = (path or "").split("?", 1)[0]
+        if route.startswith(_PATH_PREFIX):
+            return route[len(_PATH_PREFIX):].strip("/") or None
+        if route.startswith(_PARTY_PREFIX):
+            return route[len(_PARTY_PREFIX):].strip("/") or None
+        return None
+
     def _user_from_request(self, request):
         token = self._offered_token(request)
+        target_id = self._target_from_path(getattr(request, "path", "") or "")
+        if token and token.startswith(TICKET_PREFIX):
+            raw = token[len(TICKET_PREFIX):]
+            try:
+                return consume_ticket(self.cp, raw, target_id or "")
+            except TicketError as exc:
+                self.cp.audit_log(
+                    "system", "ws.ticket.rejected", target_id,
+                    {"reason": exc.code, "legal_effect": "provenance_only"},
+                )
+                raise LookupError(exc.code) from exc
         if token:
-            return self.cp.verify_session(token)
+            self.cp.audit_log(
+                "system", "ws.ticket.rejected", target_id,
+                {"reason": "session_token_not_allowed", "legal_effect": "provenance_only"},
+            )
+            raise LookupError("session token not allowed")
         sid = self._cookie_session(request)
         if sid:
             _row, user = self.portal.session(sid)
@@ -274,7 +300,7 @@ async def ws_main(config: Config, bind_socket: bool = True) -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(sig, _graceful)
-        except (NotImplementedError, ValueError):  # pragma: no cover
+        except (NotImplementedError, ValueError, RuntimeError):  # pragma: no cover
             pass
 
     tasks = [asyncio.create_task(hub.outbox_loop()),

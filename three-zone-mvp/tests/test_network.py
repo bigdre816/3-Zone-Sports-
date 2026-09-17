@@ -577,6 +577,7 @@ class PhotoMediaAndDeleteTests(unittest.TestCase):
         httpd = make_http_server(
             replace(self.cp.config, http_port=0), self.cp, "/tmp",
             provider=self.provider, photo_storage=self.net.photo_storage,
+            bind_host="127.0.0.1", bind_port=0,
         )
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
@@ -617,6 +618,7 @@ class PhotoMediaAndDeleteTests(unittest.TestCase):
         httpd = make_http_server(
             replace(self.cp.config, http_port=0), self.cp, "/tmp",
             provider=self.provider, photo_storage=self.net.photo_storage,
+            bind_host="127.0.0.1", bind_port=0,
         )
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
@@ -717,6 +719,7 @@ class FakeClipUploadBytesTests(unittest.TestCase):
         httpd = make_http_server(
             replace(self.cp.config, http_port=0), self.cp, "/tmp/tz-clip-media",
             provider=self.provider, photo_storage=self.net.photo_storage,
+            bind_host="127.0.0.1", bind_port=0,
         )
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()

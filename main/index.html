@@ -3,33 +3,118 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Three-Zone Sports — live games, schedules, teams, and archives." />
+  <meta name="description" content="Three-Zone Sports — live games, schedules, teams, schools, and archives in one place." />
   <meta name="theme-color" content="#0f141a" />
-  <title>Three-Zone Sports</title>
-  <style>
-    :root { --bg:#0f141a; --text:#e8edf3; --muted:#9aa7b6; --accent:#6ea8ff; }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
-      font: 16px/1.5 "Segoe UI", Inter, system-ui, sans-serif;
-      display: grid; place-items: center; padding: 32px;
-    }
-    main { max-width: 36rem; }
-    .eyebrow { letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-size: .8rem; }
-    h1 { margin: .4rem 0 1rem; font-size: 2.2rem; }
-    p { color: var(--muted); }
-    a.btn {
-      display: inline-block; margin-top: 1.25rem; padding: 12px 22px; border-radius: 8px;
-      background: var(--accent); color: var(--bg); font-weight: 650; text-decoration: none;
-    }
-  </style>
+  <title>Three-Zone Sports · Live Games & Archives</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%236ea8ff' width='100' height='100'/><text x='50' y='70' font-size='60' font-weight='bold' text-anchor='middle' fill='%230f141a'>3</text></svg>" />
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
+  <header>
+    <a href="/" class="brand">Three-Zone<small>Sports</small></a>
+    <button class="mobile-menu-toggle" id="menu-toggle" type="button" aria-label="Menu">Menu</button>
+    <nav id="main-nav" aria-label="Primary">
+      <a href="/live/">Live</a>
+      <a href="/schedules/">Schedule</a>
+      <a href="/teams/">Teams</a>
+      <a href="/schools/">Schools</a>
+      <a href="/clips/">Clips</a>
+      <a href="/archives/">Archive</a>
+      <a href="/app/" data-signin>My Zone</a>
+      <a href="/app/" data-signin>Account</a>
+    </nav>
+    <div class="header-actions">
+      <a class="btn" href="/app/" data-signin>Sign In</a>
+    </div>
+  </header>
+
   <main>
-    <p class="eyebrow">Three-Zone Sports</p>
-    <h1>Your sports. One place.</h1>
-    <p>Live games, schedules, teams, and archives. The public site is on GitHub Pages.</p>
-    <a class="btn" href="https://3zonesports.com/">Open 3zonesports.com</a>
+    <section>
+      <p class="eyebrow">Three-Zone Sports</p>
+      <h1>Your sports. One place.</h1>
+      <p class="subtitle">Live games, upcoming schedules, the teams and schools you follow, and replays — without wiring anything yourself.</p>
+      <div class="hero-actions">
+        <a class="btn" href="/app/" data-signin>Sign In</a>
+        <a class="btn secondary" href="/live/">Explore Sports</a>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-header">
+        <div>
+          <h2>Live Now</h2>
+          <p>Games happening right now.</p>
+        </div>
+        <a href="/live/">View all</a>
+      </div>
+      <div id="live-events" class="cards">
+        <div class="unavailable">Loading live games…</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-header">
+        <div>
+          <h2>Upcoming</h2>
+          <p>Next games on the schedule.</p>
+        </div>
+        <a href="/schedules/">View schedule</a>
+      </div>
+      <div id="upcoming-events" class="cards">
+        <div class="unavailable">Loading schedule…</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-header">
+        <div>
+          <h2>Follow</h2>
+          <p>My Teams · My Schools · My Zone</p>
+        </div>
+      </div>
+      <div class="cards">
+        <a class="card" href="/teams/">
+          <h3>My Teams</h3>
+          <p>Find the programs you care about and keep their games close.</p>
+        </a>
+        <a class="card" href="/schools/">
+          <h3>My Schools</h3>
+          <p>School calendars and archives, organized by the place you belong.</p>
+        </a>
+        <a class="card" href="/app/" data-signin>
+          <h3>My Zone</h3>
+          <p>Sign in to watch entitled games and save the moments that matter.</p>
+        </a>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-header">
+        <div>
+          <h2>Replays &amp; Clips</h2>
+          <p>Past games stay tied to the verified event.</p>
+        </div>
+        <a href="/archives/">View archive</a>
+      </div>
+      <div id="archive-preview" class="cards">
+        <div class="unavailable">Loading replays…</div>
+      </div>
+    </section>
   </main>
+
+  <footer>
+    <p>Three-Zone Sports · <a href="/">3zonesports.com</a></p>
+    <p>Verified live games and school archives. Rights-cleared playback for authorized members.</p>
+  </footer>
+
+  <script src="/config.js"></script>
+  <script src="/site.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      ThreeZoneSite.loadLive(document.getElementById('live-events'), 3);
+      ThreeZoneSite.loadSchedules(document.getElementById('upcoming-events'), 3);
+      ThreeZoneSite.loadArchives(document.getElementById('archive-preview'), 3);
+    });
+  </script>
 </body>
 </html>
