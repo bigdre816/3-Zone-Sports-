@@ -157,6 +157,8 @@ class PublicSiteTests(unittest.TestCase):
         self.assertIn("Three-Zone Sports", page)
         self.assertIn("https://3zonesports.com/", page)
         self.assertTrue(config.get("cleanUrls"))
+        self.assertIsNone(config.get("framework"))
+        self.assertEqual(config.get("outputDirectory"), ".")
         for needle in FORBIDDEN_VISIBLE:
             self.assertNotIn(needle, page, f"Vercel landing leaked {needle!r}")
         self.assertNotIn("/ops", page)
