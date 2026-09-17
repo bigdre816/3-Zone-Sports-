@@ -149,6 +149,20 @@ class PublicSiteTests(unittest.TestCase):
             httpd.shutdown()
             httpd.server_close()
 
+    def test_vercel_root_directory_main_is_a_public_static_site(self):
+        """Vercel project 3-zone-sports has Root Directory `main` (not the git branch)."""
+        root = REPO / "main"
+        page = (root / "index.html").read_text(encoding="utf-8")
+        config = json.loads((root / "vercel.json").read_text(encoding="utf-8"))
+        self.assertIn("Three-Zone Sports", page)
+        self.assertIn("https://3zonesports.com/", page)
+        self.assertTrue(config.get("cleanUrls"))
+        for needle in FORBIDDEN_VISIBLE:
+            self.assertNotIn(needle, page, f"Vercel landing leaked {needle!r}")
+        self.assertNotIn("/ops", page)
+        self.assertNotIn("demo-viewer", page)
+        self.assertNotIn("Stories", page)
+
 
 if __name__ == "__main__":
     os.chdir(str(REPO / "three-zone-mvp"))
