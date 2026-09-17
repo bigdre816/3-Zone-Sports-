@@ -111,7 +111,14 @@ img, video, canvas, svg {
   flex-shrink: 0;
 }
 
-.brand-dot { color: var(--accent); }
+.brand .brand-dot,
+.footer-brand .brand-dot {
+  color: var(--accent);
+  display: inline-block;
+  font-size: 1.2em;
+  line-height: 0;
+  text-shadow: 0 0 12px rgba(200, 245, 66, 0.3);
+}
 
 #portal h1,
 #huddle-title {
