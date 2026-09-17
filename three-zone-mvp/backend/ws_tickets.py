@@ -55,7 +55,9 @@ def redeem(db, ticket: str, event_id: str = "") -> tuple[str, str] | None:
     """Burn ``ticket`` and return (credential_kind, credential), or None.
 
     None covers every failure the caller must treat identically: unknown,
-    already used, expired, or bound to a different event.
+    already used, expired, or bound to a different event. A ticket bound to an
+    event is rejected on every other path, including paths that carry no event
+    id at all -- binding narrows authority and can never widen it.
     """
     if not ticket or not ticket.startswith(TICKET_PREFIX):
         return None
@@ -74,6 +76,9 @@ def redeem(db, ticket: str, event_id: str = "") -> tuple[str, str] | None:
     credential = row["credential"] if not isinstance(row, tuple) else row[3]
     if float(expires_at or 0) < _now():
         return None
-    if bound_event and event_id and bound_event != event_id:
+    # Authority must never widen: a ticket bound to one event is valid only
+    # on that event's path. An empty ``event_id`` (watch-party or any other
+    # non-event path) is a *different* target, not a wildcard.
+    if bound_event and bound_event != event_id:
         return None
     return str(kind), str(credential)

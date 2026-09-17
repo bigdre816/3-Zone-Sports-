@@ -53,7 +53,9 @@ def main() -> int:
     public_host, public_port = config.http_host, config.http_port
     if use_gateway:
         internal_http = int(os.environ.get("TZ_INTERNAL_HTTP_PORT", "0")) or (public_port + 1)
-        internal_ws = int(os.environ.get("TZ_WS_PORT", "8765")) or 8765
+        # config.ws_port is already resolved from --ws-port and TZ_WS_PORT;
+        # re-reading the environment here would ignore an explicit override.
+        internal_ws = int(config.ws_port) or 8765
         public_origin = (
             os.environ.get("TZ_WS_PUBLIC_ORIGIN", "").strip()
             or os.environ.get("RENDER_EXTERNAL_URL", "").strip()

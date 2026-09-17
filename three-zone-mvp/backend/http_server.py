@@ -366,6 +366,22 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             self._cookie("tz_member_session"),
         )
 
+    def _client_ip(self) -> str:
+        """Real client address, even when the same-port gateway fronts us.
+
+        Behind backend/gateway.py every socket arrives from loopback, so the
+        peer address alone would collapse every visitor into one bucket and
+        turn a per-IP login limit into a global one. X-Forwarded-For is only
+        trusted when the immediate peer *is* the loopback gateway; from any
+        other peer the header is attacker-controlled and ignored.
+        """
+        peer = self.client_address[0] if self.client_address else ""
+        if peer in ("127.0.0.1", "::1", "localhost"):
+            forwarded = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+            if forwarded:
+                return forwarded
+        return peer or "unknown"
+
     def _cookie(self, name: str) -> str | None:
         raw = self.headers.get("Cookie")
         if not raw:
@@ -648,7 +664,7 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         self._send_json(200, payload, set_cookie=("tz_member_session", sid, "/", self.cp.config.session_ttl))
 
     def h_auth_login(self, p, b, u):
-        self.network.check_login_rate(self.client_address[0] if self.client_address else "unknown")
+        self.network.check_login_rate(self._client_ip())
         body = b or {}
         result = self.cp.password_login(body.get("username", ""), body.get("password", ""))
         self._auth_cookie_response(result)
@@ -715,13 +731,26 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         Sec-WebSocket-Protocol, so the long-lived session credential never does.
         """
         event_id = str((b or {}).get("event_id") or "").strip()
-        sid = self._cookie("tz_member_session")
-        if sid:
+        bearer = bearer_from_header(self.headers.get("Authorization")) or ""
+        sid = self._cookie("tz_member_session") or ""
+        # resolve_identity() prefers the bearer token, so the ticket must stand
+        # for that same credential. When both are present they must resolve to
+        # the same member: a disagreement is rejected outright rather than
+        # silently picking one, which would mint a ticket for the wrong user.
+        if bearer and sid:
+            try:
+                _row, cookie_user = self.portal.session(sid)
+            except Exception:
+                cookie_user = None
+            if not cookie_user or cookie_user["user_id"] != u["user_id"]:
+                self._send_json(401, {"error": "credential mismatch",
+                                      "code": "credential_mismatch"})
+                return
+        if bearer:
+            kind, credential = "bearer", bearer
+        elif sid:
             kind, credential = "cookie", sid
         else:
-            credential = bearer_from_header(self.headers.get("Authorization")) or ""
-            kind = "bearer"
-        if not credential:
             self._send_json(401, {"error": "no session credential"})
             return
         ticket, ttl = ws_tickets.mint(

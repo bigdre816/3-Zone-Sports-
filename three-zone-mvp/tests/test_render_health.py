@@ -56,6 +56,7 @@ class RenderHealthProcessTests(unittest.TestCase):
             "TZ_DATABASE_PATH": str(Path(data_dir) / "three_zone.sqlite3"),
             "TZ_DATA_DIR": data_dir,
             "TZ_ALLOWED_ORIGINS": "https://3zonesports.com",
+            "RENDER_EXTERNAL_URL": f"http://127.0.0.1:{http_port}",
             "PYTHONUNBUFFERED": "1",
         })
         proc = subprocess.Popen(
@@ -90,13 +91,34 @@ class RenderHealthProcessTests(unittest.TestCase):
             self.assertEqual(body["home"], "/")
             self.assertIn("tz_member_session=", cookie)
             self.assertIn("Secure", cookie)
+            # With the same-port gateway the hub is reachable on loopback only:
+            # it is not a second public port, and the browser reaches it through
+            # the one public port Render exposes.
             probe = socket.socket()
             probe.settimeout(0.5)
             try:
-                result = probe.connect_ex(("127.0.0.1", ws_port))
+                loopback = probe.connect_ex(("127.0.0.1", ws_port))
             finally:
                 probe.close()
-            self.assertNotEqual(result, 0, "separate WS port should not listen on Render")
+            self.assertEqual(loopback, 0, "hub should listen on loopback behind the gateway")
+
+            host_ip = socket.gethostbyname(socket.gethostname())
+            if host_ip and not host_ip.startswith("127."):
+                probe = socket.socket()
+                probe.settimeout(0.5)
+                try:
+                    external = probe.connect_ex((host_ip, ws_port))
+                finally:
+                    probe.close()
+                self.assertNotEqual(external, 0, "hub must not be publicly bound")
+
+            # The advertised socket base must be a browser destination, never
+            # a bind address, and it must ride the public origin.
+            with urllib.request.urlopen(f"http://127.0.0.1:{http_port}/api/config", timeout=5) as resp:
+                cfg = json.loads(resp.read())
+            self.assertTrue(cfg["ws_enabled"], cfg)
+            self.assertTrue(cfg["ws_url_base"].startswith(("ws://", "wss://")), cfg)
+            self.assertNotIn("0.0.0.0", cfg["ws_url_base"])
         finally:
             try:
                 os.killpg(proc.pid, 15)

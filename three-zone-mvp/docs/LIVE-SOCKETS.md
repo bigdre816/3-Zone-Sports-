@@ -91,3 +91,29 @@ change.
 The deployment stays `TZ_ENV=demo` with demo live media, fake UGC and photo
 storage and demo XRPL. What this change delivers is a publicly functional
 real-time application-control channel — a different, earlier milestone.
+
+
+## Review findings closed (PR #78)
+
+1. **Ticket authority can only narrow.** An event-bound ticket is rejected on
+   every other path, including paths that carry no event id at all (the
+   watch-party path). An absent event id is a different target, never a
+   wildcard.
+2. **Minting binds the credential that actually authenticated.** Identity
+   resolution prefers the bearer token, so the ticket does too. When a request
+   carries both a bearer token and a member cookie they must resolve to the
+   same member; a disagreement returns `401 credential_mismatch` instead of
+   silently choosing one.
+3. **The gateway honours the resolved socket port.** `run.py` passes
+   `config.ws_port` (already resolved from `--ws-port` / `TZ_WS_PORT`) rather
+   than re-reading the environment and ignoring an explicit override.
+4. **Per-IP accounting stays per-IP.** Behind the gateway every connection
+   arrives from loopback, which would collapse the per-IP login limit and the
+   per-IP socket limit into a single global bucket. Both the HTTP server and
+   the Hub read `X-Forwarded-For`, and only when the immediate peer is the
+   loopback gateway; from any other peer the header is attacker-controlled and
+   ignored.
+
+Covered by `tests/test_ws_gateway_tickets.py`; `tests/test_render_health.py`
+now asserts the hub listens on loopback only and that the advertised
+`ws_url_base` is a browser destination rather than a bind address.

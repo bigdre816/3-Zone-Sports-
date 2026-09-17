@@ -36,6 +36,22 @@ _PATH_PREFIX = "/ws/events/"
 _PARTY_PREFIX = "/ws/watch-parties/"
 
 
+def _client_ip(ws, request) -> str:
+    """Real client address for per-IP accounting behind the gateway.
+
+    backend/gateway.py splices the raw TCP stream from loopback, so
+    ``remote_address`` is 127.0.0.1 for every viewer; without this every
+    connection would share one per-IP budget. The forwarded header is trusted
+    only when the immediate peer is loopback.
+    """
+    peer = ws.remote_address[0] if ws.remote_address else ""
+    if peer in ("127.0.0.1", "::1"):
+        forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        if forwarded:
+            return forwarded
+    return peer or "unknown"
+
+
 class Hub:
     def __init__(self, cp: ControlPlane, portal: PortalService | None = None):
         self.cp = cp
@@ -103,7 +119,7 @@ class Hub:
         request = ws.request
         path = request.path
         origin = request.headers.get("Origin")
-        peer = ws.remote_address[0] if ws.remote_address else "unknown"
+        peer = _client_ip(ws, request)
 
         if origin is not None and origin not in self.cp.config.allowed_origins:
             await ws.close(1008, "origin not allowed")
