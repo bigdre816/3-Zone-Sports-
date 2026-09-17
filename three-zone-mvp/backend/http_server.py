@@ -421,6 +421,21 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def _client_ip(self) -> str:
+        """The visitor's address for per-IP accounting.
+
+        Behind the same-port gateway the TCP peer is always loopback, so every
+        visitor would share one bucket. ``X-TZ-Client-IP`` is written by the
+        gateway (which strips any inbound copy) and is therefore trusted only
+        when the immediate peer *is* that loopback gateway.
+        """
+        peer = self.client_address[0] if self.client_address else ""
+        if peer in ("127.0.0.1", "::1", "localhost"):
+            forwarded = (self.headers.get("X-TZ-Client-IP") or "").strip()
+            if forwarded:
+                return forwarded
+        return peer or "unknown"
+
     def do_GET(self):
         self._dispatch("GET")
 
@@ -676,7 +691,7 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         self._send_json(200, payload, set_cookie=("tz_member_session", sid, "/", self.cp.config.session_ttl))
 
     def h_auth_login(self, p, b, u):
-        self.network.check_login_rate(self.client_address[0] if self.client_address else "unknown")
+        self.network.check_login_rate(self._client_ip())
         body = b or {}
         result = self.cp.password_login(body.get("username", ""), body.get("password", ""))
         self._auth_cookie_response(result)
