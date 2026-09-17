@@ -18,6 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import demo_media
+from . import ws_tickets
 from .control_plane import ControlError, ControlPlane
 from .identity import bearer_from_header, resolve_identity, resolve_identity_optional
 from .mastery import article_html, full_page_html, load_markdown
@@ -68,6 +69,7 @@ def _routes():
         ("GET", re.compile(r"^/api/member/feed$"), "h_member_feed", "optional"),
         ("GET", re.compile(r"^/api/member/notifications$"), "h_member_notifications", "member"),
         ("POST", re.compile(r"^/api/member/notifications/(?P<notification_id>ntf_[a-z0-9]+)/read$"), "h_member_notification_read", "member"),
+        ("POST", re.compile(r"^/api/member/ws-ticket$"), "h_member_ws_ticket", "member"),
         ("GET", re.compile(r"^/api/member/settings$"), "h_member_settings", "member"),
         ("POST", re.compile(r"^/api/member/settings$"), "h_member_settings_update", "member"),
         ("GET", re.compile(r"^/api/member/friends/activity$"), "h_member_friends_activity", "member"),
@@ -364,6 +366,22 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             self._cookie("tz_member_session"),
         )
 
+    def _client_ip(self) -> str:
+        """Real client address, even when the same-port gateway fronts us.
+
+        Behind backend/gateway.py every socket arrives from loopback, so the
+        peer address alone would collapse every visitor into one bucket and
+        turn a per-IP login limit into a global one. X-Forwarded-For is only
+        trusted when the immediate peer *is* the loopback gateway; from any
+        other peer the header is attacker-controlled and ignored.
+        """
+        peer = self.client_address[0] if self.client_address else ""
+        if peer in ("127.0.0.1", "::1", "localhost"):
+            forwarded = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+            if forwarded:
+                return forwarded
+        return peer or "unknown"
+
     def _cookie(self, name: str) -> str | None:
         raw = self.headers.get("Cookie")
         if not raw:
@@ -646,7 +664,7 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         self._send_json(200, payload, set_cookie=("tz_member_session", sid, "/", self.cp.config.session_ttl))
 
     def h_auth_login(self, p, b, u):
-        self.network.check_login_rate(self.client_address[0] if self.client_address else "unknown")
+        self.network.check_login_rate(self._client_ip())
         body = b or {}
         result = self.cp.password_login(body.get("username", ""), body.get("password", ""))
         self._auth_cookie_response(result)
@@ -705,6 +723,41 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
 
     def h_member_notification_read(self, p, b, u):
         self._send_json(200, self.network.mark_notification_read(u, p["notification_id"]))
+
+    def h_member_ws_ticket(self, p, b, u):
+        """Mint a short-lived, single-use ticket for the live socket handshake.
+
+        The caller is already authenticated here; only the ticket travels in
+        Sec-WebSocket-Protocol, so the long-lived session credential never does.
+        """
+        event_id = str((b or {}).get("event_id") or "").strip()
+        bearer = bearer_from_header(self.headers.get("Authorization")) or ""
+        sid = self._cookie("tz_member_session") or ""
+        # resolve_identity() prefers the bearer token, so the ticket must stand
+        # for that same credential. When both are present they must resolve to
+        # the same member: a disagreement is rejected outright rather than
+        # silently picking one, which would mint a ticket for the wrong user.
+        if bearer and sid:
+            try:
+                _row, cookie_user = self.portal.session(sid)
+            except Exception:
+                cookie_user = None
+            if not cookie_user or cookie_user["user_id"] != u["user_id"]:
+                self._send_json(401, {"error": "credential mismatch",
+                                      "code": "credential_mismatch"})
+                return
+        if bearer:
+            kind, credential = "bearer", bearer
+        elif sid:
+            kind, credential = "cookie", sid
+        else:
+            self._send_json(401, {"error": "no session credential"})
+            return
+        ticket, ttl = ws_tickets.mint(
+            self.cp.db, user_id=u["user_id"], credential_kind=kind,
+            credential=credential, event_id=event_id,
+        )
+        self._send_json(200, {"ticket": ticket, "expires_in": ttl})
 
     def h_member_settings(self, p, b, u):
         self._send_json(200, self.network.get_settings(u))

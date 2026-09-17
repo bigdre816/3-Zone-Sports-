@@ -25,6 +25,7 @@ from http.cookies import SimpleCookie
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
+from . import ws_tickets
 from .config import Config
 from .control_plane import ControlPlane
 from .db import Database, dumps, loads
@@ -33,6 +34,22 @@ from .portal import PortalService
 SUBPROTOCOL = "tz-session"
 _PATH_PREFIX = "/ws/events/"
 _PARTY_PREFIX = "/ws/watch-parties/"
+
+
+def _client_ip(ws, request) -> str:
+    """Real client address for per-IP accounting behind the gateway.
+
+    backend/gateway.py splices the raw TCP stream from loopback, so
+    ``remote_address`` is 127.0.0.1 for every viewer; without this every
+    connection would share one per-IP budget. The forwarded header is trusted
+    only when the immediate peer is loopback.
+    """
+    peer = ws.remote_address[0] if ws.remote_address else ""
+    if peer in ("127.0.0.1", "::1"):
+        forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        if forwarded:
+            return forwarded
+    return peer or "unknown"
 
 
 class Hub:
@@ -65,9 +82,21 @@ class Hub:
         morsel = jar.get("tz_member_session")
         return morsel.value if morsel else None
 
-    def _user_from_request(self, request):
+    def _user_from_request(self, request, event_id: str = ""):
         token = self._offered_token(request)
+        if token and token.startswith(ws_tickets.TICKET_PREFIX):
+            # Preferred path: short-lived single-use ticket minted over an
+            # already-authenticated HTTP request. Burned here on first use.
+            redeemed = ws_tickets.redeem(self.cp.db, token, event_id)
+            if not redeemed:
+                raise LookupError("invalid or expired ticket")
+            kind, credential = redeemed
+            if kind == "cookie":
+                _row, user = self.portal.session(credential)
+                return user
+            return self.cp.verify_session(credential)
         if token:
+            # Legacy control-plane path: session token offered as subprotocol.
             return self.cp.verify_session(token)
         sid = self._cookie_session(request)
         if sid:
@@ -90,13 +119,16 @@ class Hub:
         request = ws.request
         path = request.path
         origin = request.headers.get("Origin")
-        peer = ws.remote_address[0] if ws.remote_address else "unknown"
+        peer = _client_ip(ws, request)
 
         if origin is not None and origin not in self.cp.config.allowed_origins:
             await ws.close(1008, "origin not allowed")
             return
+        # Tickets may be bound to one event; give the redeemer the path's id.
+        path_event = path[len(_PATH_PREFIX):].strip("/") if path.startswith(_PATH_PREFIX) else ""
         try:
-            user = self._user_from_request(request)
+            user = self._user_from_request(request, path_event)
+
         except Exception:
             await ws.close(1008, "invalid session")
             return

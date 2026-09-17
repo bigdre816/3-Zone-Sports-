@@ -159,6 +159,10 @@ class Config:
     http_port: int = 8000
     ws_host: str = "127.0.0.1"
     ws_port: int = 8765
+    # Public origin the browser should use for live sockets. Set when the
+    # same-port gateway fronts this process (backend/gateway.py); empty means
+    # no public socket surface and ws_enabled stays false.
+    gateway_public_origin: str = ""
     database_url: str = ""
     database_path: str = "data/three_zone.sqlite3"
     data_dir: str = "data"
@@ -477,16 +481,34 @@ class Config:
                 + "; ".join(problems)
             )
 
+    def public_ws_url_base(self) -> str:
+        """Browser-reachable base for live sockets, or "" when unavailable.
+
+        With the same-port gateway in front of this process the sockets share
+        the public HTTPS origin. Without it, a separate listener is only
+        reachable when it is bound to a concrete host -- 0.0.0.0/:: is a bind
+        address, never a destination, so we report no socket surface at all
+        and clients keep polling.
+        """
+        if self.gateway_public_origin:
+            origin = self.gateway_public_origin.rstrip("/")
+            if origin.startswith("https://"):
+                origin = "wss://" + origin[len("https://"):]
+            elif origin.startswith("http://"):
+                origin = "ws://" + origin[len("http://"):]
+            return f"{origin}/ws/events/"
+        if self.ws_host in ("0.0.0.0", "::"):
+            return ""
+        scheme = "wss" if (self.is_production or str(self.public_base_url).startswith("https://")) else "ws"
+        return f"{scheme}://{self.ws_host}:{self.ws_port}/ws/events/"
+
     def public_config(self) -> dict:
         """Client-visible configuration. Never includes secrets."""
         host = self.cloudflare_playback_host
         return {
             "env": self.env,
-            "ws_url_base": (
-                ("wss" if (self.is_production or str(self.public_base_url).startswith("https://")) else "ws")
-                + f"://{self.ws_host}:{self.ws_port}/ws/events/"
-            ),
-            "ws_enabled": self.ws_host not in ("0.0.0.0", "::"),
+            "ws_url_base": self.public_ws_url_base(),
+            "ws_enabled": bool(self.public_ws_url_base()),
             "session_ttl": self.session_ttl,
             "lease_ttl": self.lease_ttl,
             "heartbeat_timeout": self.heartbeat_timeout,
