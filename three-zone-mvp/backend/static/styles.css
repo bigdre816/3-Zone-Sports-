@@ -1423,6 +1423,17 @@ dialog::backdrop {
     display: none;
   }
 
+  #view-huddle .chip-row {
+    display: none;
+  }
+
+  .huddle-live {
+    padding: 12px 14px;
+    margin-bottom: 8px;
+  }
+
+  .huddle-live h3 { font-size: 16px; }
+
   .huddle-feed-head {
     display: none;
   }
