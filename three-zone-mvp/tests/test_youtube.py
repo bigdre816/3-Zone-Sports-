@@ -8,7 +8,12 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import threading
+import urllib.request
+from dataclasses import replace
+
 from backend.control_plane import ForbiddenError, ValidationError
+from backend.http_server import make_http_server
 from backend.youtube import parse_youtube_id, youtube_embed_url, youtube_poster_url
 from tests.test_network import build_net
 
@@ -89,6 +94,29 @@ class YoutubePostTests(unittest.TestCase):
         self.assertIn("team_northview_bball", ids)
         queue = self.net.review_queue(self.worker)
         self.assertTrue(any(p.get("media", {}).get("kind") == "youtube" for p in queue["posts"]))
+
+
+class YoutubeEmbedHeaderTests(unittest.TestCase):
+    def test_html_sends_origin_referrer_api_stays_closed(self):
+        cp, _portal, net, provider = build_net()
+        httpd = make_http_server(
+            replace(cp.config, http_port=0), cp, "/tmp",
+            provider=provider, photo_storage=net.photo_storage,
+        )
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            with urllib.request.urlopen(f"http://{host}:{port}/", timeout=5) as resp:
+                self.assertEqual(
+                    resp.headers.get("Referrer-Policy"),
+                    "strict-origin-when-cross-origin",
+                )
+            with urllib.request.urlopen(f"http://{host}:{port}/api/health", timeout=5) as resp:
+                self.assertEqual(resp.headers.get("Referrer-Policy"), "no-referrer")
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
 
 
 if __name__ == "__main__":

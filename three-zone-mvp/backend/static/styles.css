@@ -1398,12 +1398,16 @@ dialog::backdrop {
 
   #portal h1,
   #huddle-title {
-    font-size: clamp(28px, 8vw, 44px);
+    font-size: clamp(26px, 7vw, 36px);
   }
 
   .portal-intro {
-    margin-top: 8px;
-    margin-bottom: 24px;
+    margin-top: 4px;
+    margin-bottom: 12px;
+  }
+
+  .portal-intro .sub {
+    display: none;
   }
 
   .feed-col { max-width: none; width: 100%; }

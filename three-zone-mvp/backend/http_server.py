@@ -260,10 +260,12 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             return True, None
         return False, None
 
-    def _base_headers(self, no_store: bool = True) -> None:
+    def _base_headers(self, no_store: bool = True, referrer_policy: str = "no-referrer") -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
-        self.send_header("Referrer-Policy", "no-referrer")
+        # API and media stay no-referrer. HTML pages send origin so YouTube
+        # embeds can play (Error 153 when the parent is no-referrer).
+        self.send_header("Referrer-Policy", referrer_policy)
         self.send_header("Content-Security-Policy", self._csp())
         if no_store:
             self.send_header("Cache-Control", "no-store")
@@ -511,7 +513,11 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         with open(full, "rb") as handle:
             body = handle.read()
         self.send_response(200)
-        self._base_headers(no_store=True)
+        html = ext in (".html", ".htm")
+        self._base_headers(
+            no_store=True,
+            referrer_policy="strict-origin-when-cross-origin" if html else "no-referrer",
+        )
         self.send_header("Content-Type", _STATIC_TYPES.get(ext, "application/octet-stream"))
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

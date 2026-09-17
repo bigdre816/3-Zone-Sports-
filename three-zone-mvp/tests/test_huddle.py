@@ -254,6 +254,7 @@ class HuddleShellTests(unittest.TestCase):
         self.assertIn('a.setAttribute("aria-current", "page")', js)
         self.assertIn("youtube_url", js)
         self.assertIn('kind === "youtube"', js)
+        self.assertIn('referrerpolicy="strict-origin-when-cross-origin"', js)
         self.assertIn("My Teams", html)
         self.assertIn("YouTube", html)
         self.assertIn("Kansas City", html)

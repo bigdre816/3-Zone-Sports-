@@ -2116,7 +2116,7 @@ async function refreshNetwork() {
       const safePlayback = playback.replace(/"/g, "");
       card.innerHTML = `<p><strong></strong></p>
         <p class="muted"></p>
-        ${safePlayback ? `<iframe src="${safePlayback}" title="YouTube review" allowfullscreen loading="lazy"></iframe>` : ""}
+        ${safePlayback ? `<iframe src="${safePlayback}" title="YouTube review" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen loading="lazy"></iframe>` : ""}
         <div class="btn-row">
           <button type="button" data-post="${post.post_id}" data-action="restrict">Restrict</button>
           <button type="button" data-post="${post.post_id}" data-action="restore">Restore</button>

@@ -196,7 +196,7 @@ function mediaTag(item) {
   }
   if (item.media && item.media.kind === "youtube" && item.media.playback_url) {
     const src = escapeText(item.media.playback_url);
-    return `<div class="yt-wrap"><iframe src="${src}" title="YouTube clip" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen loading="lazy"></iframe></div>`;
+    return `<div class="yt-wrap"><iframe src="${src}" title="YouTube clip" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen loading="lazy"></iframe></div>`;
   }
   const url = (item.media && item.media.playback_url) || null;
   const id = item.derived_media_asset_id || item.media_asset_id || item.source_media_asset_id;
