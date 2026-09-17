@@ -1078,7 +1078,14 @@ class NetworkService(HuddleExtensions):
                     "label": "This moment is no longer available.",
                 }
         elif post["media_asset_id"]:
-            asset = dict(self._row("media_assets", "media_asset_id", post["media_asset_id"]))
+            raw_asset = self.db.query_one(
+                "SELECT * FROM media_assets WHERE media_asset_id=?",
+                (post["media_asset_id"],),
+            )
+            if not raw_asset:
+                card["content_state"] = "unavailable"
+                return card
+            asset = dict(raw_asset)
             if asset.get("provider") == "youtube" or asset.get("kind") == "youtube":
                 vid = asset["provider_uid"]
                 card["provenance"] = {"label": "YouTube clip", "source_type": "youtube"}

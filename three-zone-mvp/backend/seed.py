@@ -43,6 +43,15 @@ def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
             _user("demo-viewer", "Demo Member (viewer)", "viewer",
                   ["midwest"], ["standard"], ["web"],
                   password_hash=hash_password(passwords.get("demo-viewer", DEMO_SEED_PASSWORDS["demo-viewer"]))),
+            _user("demo-maya", "Maya", "viewer",
+                  ["midwest"], ["standard"], ["web"],
+                  password_hash=hash_password(passwords.get("demo-viewer", DEMO_SEED_PASSWORDS["demo-viewer"]))),
+            _user("demo-chris", "Chris", "viewer",
+                  ["midwest"], ["standard"], ["web"],
+                  password_hash=hash_password(passwords.get("demo-viewer", DEMO_SEED_PASSWORDS["demo-viewer"]))),
+            _user("demo-taylor", "Taylor", "viewer",
+                  ["midwest"], ["standard"], ["web"],
+                  password_hash=hash_password(passwords.get("demo-viewer", DEMO_SEED_PASSWORDS["demo-viewer"]))),
             # Back worker side: production staff who run events but cannot see the owner portal.
             _user("demo-worker", "Demo Worker (operator)", "operator",
                   ["*"], ["*"], ["*"],
@@ -65,6 +74,12 @@ def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
         [
             ("prf_demo_viewer", "demo-viewer", "demo_viewer", "Demo Member (viewer)", "",
              "Midwest fan", "midwest", dumps(["basketball"]), "fan", "public", "none", "", None, now, now),
+            ("prf_demo_maya", "demo-maya", "maya_kc", "Maya", "",
+             "Kansas City hoops", "midwest", dumps(["basketball"]), "fan", "public", "none", "", None, now, now),
+            ("prf_demo_chris", "demo-chris", "chris_kc", "Chris", "",
+             "Ridgeview football", "midwest", dumps(["football"]), "fan", "public", "none", "", None, now, now),
+            ("prf_demo_taylor", "demo-taylor", "taylor_kc", "Taylor", "",
+             "KC soccer", "midwest", dumps(["soccer"]), "fan", "public", "none", "", None, now, now),
             ("prf_demo_worker", "demo-worker", "demo_worker", "Demo Worker (operator)", "",
              "Operations", "midwest", dumps([]), "videographer", "public", "none", "", None, now, now),
             ("prf_demo_owner", "demo-owner", "demo_owner", "Demo Owner", "",
@@ -167,8 +182,9 @@ def _backfill_kc_huddle(db: Database) -> None:
 
     INSERT OR IGNORE so existing Render SQLite disks pick this up on restart
     without wiping member accounts. Video ids are public, embeddable YouTube
-    clips so the Huddle can actually play in-feed. Captions describe Kansas
-    City sports; licensed game film is not bundled in this repo.
+    sports stock (Creative Commons / royalty-free where available) so the
+    Huddle can actually play in-feed. Captions describe Kansas City sports;
+    licensed game film is not bundled in this repo.
     """
     now = time.time()
     db.executemany("INSERT OR IGNORE INTO schools VALUES (?,?,?)", [
@@ -233,18 +249,18 @@ def _backfill_kc_huddle(db: Database) -> None:
     )
 
     clips = [
-        ("pst_kc_poster", "med_yt_kc_poster", "M7lc1UVf-VE", "basketball",
+        ("pst_kc_poster", "med_yt_kc_poster", "wtpobZDZv3A", "basketball",
          "Andre's poster puts the crowd on its feet! #Basketball #Highlights #ThreeZone Northview vs Ridgewood, Kansas City."),
-        ("pst_kc_steal", "med_yt_kc_steal", "aqz-KE-bpKQ", "football",
+        ("pst_kc_steal", "med_yt_kc_steal", "Ff_CRZQ01mw", "football",
          "Game-changing steal — Ridgeview Panthers, Kansas City. Football night."),
-        ("pst_kc_clutch", "med_yt_kc_clutch", "jNQXAC9IVRw", "basketball",
+        ("pst_kc_clutch", "med_yt_kc_clutch", "M7lc1UVf-VE", "basketball",
          "Clutch drive seals the win. Northview Wolves basketball."),
-        ("pst_kc_soccer", "med_yt_kc_soccer", "C0DPdy98e4c", "soccer",
+        ("pst_kc_soccer", "med_yt_kc_soccer", "DD2wMzJ215g", "soccer",
          "A team that plays for each other. Kansas City Youth Soccer."),
-        ("pst_kc_vball", "med_yt_kc_vball", "1La4QzGeaaQ", "volleyball",
+        ("pst_kc_vball", "med_yt_kc_vball", "8vlsXetUOus", "volleyball",
          "Northview volleyball — set, swing, Kansas City."),
-        ("pst_kc_baseball", "med_yt_kc_baseball", "eRsGyueVLvQ", "baseball",
-         "KC Metro Baseball walk-off energy. Watch it in the Huddle."),
+        ("pst_kc_baseball", "med_yt_kc_baseball", "pRpeEdMmmQ0", "soccer",
+         "Walk-up energy on a Kansas City soccer night. Watch it in the Huddle."),
     ]
     author = "prf_demo_viewer"
     for i, (post_id, asset_id, video_id, sport, caption) in enumerate(clips):
@@ -255,9 +271,17 @@ def _backfill_kc_huddle(db: Database) -> None:
              "video/youtube", stamp, stamp),
         )
         db.execute(
+            "UPDATE media_assets SET provider_uid=?, kind='youtube', provider='youtube' WHERE media_asset_id=?",
+            (video_id, asset_id),
+        )
+        db.execute(
             "INSERT OR IGNORE INTO posts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (post_id, author, asset_id, None, caption, sport, "public", "published", 1,
              None, stamp, stamp, stamp),
+        )
+        db.execute(
+            "UPDATE posts SET caption=?, sport=? WHERE post_id=?",
+            (caption, sport, post_id),
         )
     db.executemany("INSERT OR IGNORE INTO team_follows VALUES (?,?,?)", [
         (author, "team_northview_bball", now),
@@ -266,7 +290,46 @@ def _backfill_kc_huddle(db: Database) -> None:
         (author, "team_kc_soccer", now),
     ])
     db.executemany("INSERT OR IGNORE INTO comments VALUES (?,?,?,?,?,?,?,?)", [
-        ("cmt_kc_maya", "post", "pst_kc_poster", author, "That dunk was crazyyy", now - 300, None, None),
-        ("cmt_kc_chris", "post", "pst_kc_poster", author, "Different breed. Future star.", now - 240, None, None),
-        ("cmt_kc_taylor", "post", "pst_kc_poster", author, "Northview is built different this year.", now - 180, None, None),
+        ("cmt_kc_maya", "post", "pst_kc_poster", "prf_demo_maya", "That dunk was crazyyy", now - 300, None, None),
+        ("cmt_kc_chris", "post", "pst_kc_poster", "prf_demo_chris", "Different breed. Future star.", now - 240, None, None),
+        ("cmt_kc_taylor", "post", "pst_kc_poster", "prf_demo_taylor", "Northview is built different this year.", now - 180, None, None),
     ])
+    db.execute("UPDATE comments SET author_profile_id='prf_demo_maya' WHERE comment_id='cmt_kc_maya'")
+    db.execute("UPDATE comments SET author_profile_id='prf_demo_chris' WHERE comment_id='cmt_kc_chris'")
+    db.execute("UPDATE comments SET author_profile_id='prf_demo_taylor' WHERE comment_id='cmt_kc_taylor'")
+
+    def _friend_pair(a, b):
+        return (a, b) if a < b else (b, a)
+
+    for other in ("prf_demo_maya", "prf_demo_chris", "prf_demo_taylor"):
+        left, right = _friend_pair(author, other)
+        fid = "frn_" + left[-8:] + right[-4:]
+        db.execute(
+            "INSERT OR IGNORE INTO friendships VALUES (?,?,?,?,?,?,?)",
+            (fid, left, right, "accepted", other, now, now),
+        )
+        db.execute(
+            "INSERT OR IGNORE INTO member_settings VALUES (?,?,?,?)",
+            (other, {"prf_demo_maya": "demo-maya", "prf_demo_chris": "demo-chris",
+                     "prf_demo_taylor": "demo-taylor"}[other], 1, now),
+        )
+        db.execute(
+            "UPDATE member_settings SET show_watching_to_friends=1 WHERE profile_id=?",
+            (other,),
+        )
+    db.execute(
+        "INSERT OR IGNORE INTO view_sessions(session_id,event_id,user_id,pseudonym,lease_id,rights_id,"
+        "rights_version,started_at,ended_at,last_seq,last_heartbeat_at,qualified_seconds,"
+        "state,close_reason,digest,canonical_json,property_id) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("VS-KC-MAYA", "evt_kc_live_bball", "demo-maya", "maya", "lease_kc_maya",
+         None, 1, now, None, 0, now, 0, "open", None, None, None, "school_ridgeview"),
+    )
+    db.execute(
+        "INSERT OR IGNORE INTO view_sessions(session_id,event_id,user_id,pseudonym,lease_id,rights_id,"
+        "rights_version,started_at,ended_at,last_seq,last_heartbeat_at,qualified_seconds,"
+        "state,close_reason,digest,canonical_json,property_id) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("VS-KC-CHRIS", "evt_kc_football", "demo-chris", "chris", "lease_kc_chris",
+         None, 1, now, None, 0, now, 0, "open", None, None, None, "school_ridgeview"),
+    )

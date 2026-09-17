@@ -19,6 +19,7 @@ const state = {
   profile: null, signedIn: false, mode: "for_you", sport: "", kind: "photo", tab: "posts",
   maxClipSeconds: 60, minClipSeconds: 5, studioDuration: 90, previewing: false, gameId: null,
   lastClipId: null, lastPostId: null, heroEventId: null, notifyTimer: null,
+  feedItems: [], friendItems: [],
 };
 
 function pendingPlayback() {
@@ -278,7 +279,7 @@ function postCard(item) {
   const caption = item.caption
     ? `<p class="post-caption">${escapeText(item.caption)}</p>`
     : "";
-  return `<article class="post-card">
+  return `<article class="post-card" data-post-id="${escapeText(item.post_id || "")}">
     <div class="post-media">${mediaTag(item)}</div>
     <div class="post-body">
       <header class="post-meta"><strong>${escapeText(item.author.display_name)}</strong>
@@ -556,30 +557,43 @@ async function loadSaved() {
   } catch (error) { toast(error.message); }
 }
 
+function renderClipRow() {
+  const row = $("#friends-row");
+  if (!row) return;
+  const add = `<button type="button" class="friend-chip add-clip" id="friends-add-clip"><span class="avatar">+</span>Add clip</button>`;
+  const friends = (state.friendItems || []).map(item =>
+    `<div class="friend-chip"><span class="avatar">${escapeText((item.display_name || "?").slice(0, 1))}</span>
+     ${escapeText((item.display_name || "Friend").split(" ")[0])}<small>${escapeText(item.activity === "watching_live" ? "Live" : (item.activity || ""))}</small></div>`
+  ).join("");
+  const clips = (state.feedItems || []).filter(item => item.media && item.post_id).slice(0, 8).map(item => {
+    const poster = item.media.poster_url || "";
+    const src = poster ? `<img src="${escapeText(poster)}" alt="">` : escapeText((item.sport || "C").slice(0, 1).toUpperCase());
+    const label = escapeText(item.sport || "clip");
+    return `<button type="button" class="friend-chip clip-chip" data-jump-post="${escapeText(item.post_id)}">
+      <span class="avatar">${src}</span>${label}</button>`;
+  }).join("");
+  row.classList.remove("hidden");
+  row.innerHTML = add + friends + clips;
+  const addBtn = $("#friends-add-clip");
+  if (addBtn) addBtn.onclick = () => {
+    $("#create-dialog").showModal();
+    const yt = document.querySelector(".create-choices [data-kind='youtube']");
+    if (yt) yt.click();
+  };
+  row.querySelectorAll("[data-jump-post]").forEach(btn => btn.onclick = () => {
+    const card = document.querySelector(`[data-post-id="${btn.dataset.jumpPost}"]`);
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
 async function loadFriends() {
   try {
     const data = await api("GET", "/api/member/friends/activity");
-    const row = $("#friends-row");
-    const add = `<button type="button" class="friend-chip add-clip" id="friends-add-clip"><span class="avatar">+</span>Add clip</button>`;
-    const items = (data.items || []).map(item =>
-      `<div class="friend-chip"><span class="avatar">${escapeText((item.display_name || "?").slice(0, 1))}</span>
-       ${escapeText(item.display_name)}<small>${escapeText(item.activity === "watching_live" ? "Watching live" : item.activity)}</small></div>`
-    ).join("");
-    row.classList.remove("hidden");
-    row.innerHTML = add + items;
-    const addBtn = $("#friends-add-clip");
-    if (addBtn) addBtn.onclick = () => {
-      $("#create-dialog").showModal();
-      const yt = document.querySelector(".create-choices [data-kind='youtube']");
-      if (yt) yt.click();
-    };
+    state.friendItems = data.items || [];
   } catch (_) {
-    const row = $("#friends-row");
-    row.classList.remove("hidden");
-    row.innerHTML = `<button type="button" class="friend-chip add-clip" id="friends-add-clip"><span class="avatar">+</span>Add clip</button>`;
-    const addBtn = $("#friends-add-clip");
-    if (addBtn) addBtn.onclick = () => $("#create-dialog").showModal();
+    state.friendItems = [];
   }
+  renderClipRow();
 }
 
 async function loadTeams() {
@@ -857,6 +871,8 @@ async function loadFeed() {
   try {
     const sport = state.sport ? `&sport=${encodeURIComponent(state.sport)}` : "";
     const data = await api("GET", `/api/member/feed?view=${state.mode}${sport}`);
+    state.feedItems = data.items || [];
+    renderClipRow();
     if (!data.items.length) {
       root.innerHTML = "<div class='empty-frame'><span class='empty-kicker'>Awaiting a sideline shot</span><p class='empty'>Nothing in this huddle yet. Parent-shot moments and packed-gym energy land here.</p></div>";
       return;

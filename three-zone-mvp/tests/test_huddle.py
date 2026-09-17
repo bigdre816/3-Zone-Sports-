@@ -259,6 +259,10 @@ class HuddleShellTests(unittest.TestCase):
         self.assertIn("YouTube", html)
         self.assertIn("Kansas City", html)
         self.assertIn("Add clip", js)
+        self.assertIn("clip-chip", js)
+        self.assertIn("data-jump-post", js)
+        self.assertLess(html.find('id="friends-row"'), html.find('id="huddle-live"'))
+        self.assertNotIn("Stories", js)
 
 
 if __name__ == "__main__":

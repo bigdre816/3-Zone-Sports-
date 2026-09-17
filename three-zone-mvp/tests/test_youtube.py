@@ -89,6 +89,9 @@ class YoutubePostTests(unittest.TestCase):
         sports = {i["sport"] for i in yt}
         self.assertTrue({"basketball", "football", "soccer"} <= sports)
         self.assertTrue(any("Kansas City" in (i["caption"] or "") for i in yt))
+        self.assertTrue(all((i.get("media") or {}).get("poster_url") for i in yt))
+        activity = self.net.friends_activity(self.member)
+        self.assertGreaterEqual(len(activity["items"]), 1)
         teams = self.net.list_member_teams(self.member)
         ids = {t["team_id"] for t in teams["teams"]}
         self.assertIn("team_northview_bball", ids)
