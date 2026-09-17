@@ -227,10 +227,21 @@ class HuddleShellTests(unittest.TestCase):
         static = os.path.join(root, "backend", "static")
         with open(os.path.join(static, "index.html"), encoding="utf-8") as handle:
             html = handle.read()
-        for needle in ("THREEZONE.", "Huddle", "In your zone", "Post to Huddle",
+        for needle in ("THREEZONE", 'class="brand-dot"', "Huddle", "Live", "Saved", "Studio",
+                       "In your zone", "Post to Huddle",
                        "GOOD TO HAVE YOU COURTSIDE", "id=\"bottom-nav\"", "/api.js"):
             self.assertIn(needle, html)
+        self.assertIn('aria-label="Primary member navigation"', html)
+        self.assertEqual(html.count('data-view="huddle"'), 2)
+        self.assertEqual(html.count('data-view="live"'), 2)
+        self.assertEqual(html.count('data-view="saved"'), 2)
+        self.assertEqual(html.count('data-view="studio"'), 2)
         self.assertNotIn("Stories", html)
+        with open(os.path.join(static, "styles.css"), encoding="utf-8") as handle:
+            css = handle.read()
+        self.assertIn("--accent: #c8f542", css)
+        self.assertIn(".bottom-nav a.active", css)
+        self.assertIn(".bottom-nav a svg", css)
         with open(os.path.join(static, "api.js"), encoding="utf-8") as handle:
             api = handle.read()
         self.assertIn('credentials: "include"', api)
@@ -239,6 +250,8 @@ class HuddleShellTests(unittest.TestCase):
             js = handle.read()
         self.assertNotIn(" sessionStorage", js)
         self.assertIn("This moment is no longer available.", js)
+        self.assertIn('intro.classList.toggle("hidden", mapped !== "huddle")', js)
+        self.assertIn('a.setAttribute("aria-current", "page")', js)
 
 
 if __name__ == "__main__":

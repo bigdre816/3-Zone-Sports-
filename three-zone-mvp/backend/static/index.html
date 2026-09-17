@@ -9,7 +9,9 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="#huddle">THREEZONE.</a>
+    <a class="brand" href="#huddle" aria-label="THREEZONE home">
+      <span>THREEZONE</span><span class="brand-dot" aria-hidden="true">.</span>
+    </a>
     <nav id="section-nav" class="hidden desktop-nav" aria-label="Member">
       <a href="#huddle" data-view="huddle">Huddle</a>
       <a href="#live" data-view="live">Live</a>
@@ -237,16 +239,30 @@
     </section>
   </main>
 
-  <nav class="bottom-nav" id="bottom-nav" hidden>
-    <a href="#huddle" data-view="huddle">Huddle</a>
-    <a href="#live" data-view="live">Live</a>
-    <button type="button" id="bottom-create" aria-label="Create">+</button>
-    <a href="#saved" data-view="saved">Saved</a>
-    <a href="#studio" data-view="studio">Studio</a>
+  <nav class="bottom-nav" id="bottom-nav" aria-label="Primary member navigation" hidden>
+    <a href="#huddle" data-view="huddle">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v11H9l-5 3v-14Z" /></svg>
+      <span>Huddle</span>
+    </a>
+    <a href="#live" data-view="live">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10-6.5L8 5.5Z" /></svg>
+      <span>Live</span>
+    </a>
+    <button type="button" id="bottom-create" aria-label="Create">
+      <span aria-hidden="true">+</span>
+    </button>
+    <a href="#saved" data-view="saved">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.5h11v15L12 16l-5.5 3.5v-15Z" /></svg>
+      <span>Saved</span>
+    </a>
+    <a href="#studio" data-view="studio">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4 1.7 4.3L18 10l-4.3 1.7L12 16l-1.7-4.3L6 10l4.3-1.7L12 4Zm6 11 .8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8L18 15Z" /></svg>
+      <span>Studio</span>
+    </a>
   </nav>
 
   <footer>
-    Three-Zone Sports Access
+    <span class="footer-brand">THREEZONE<span class="brand-dot">.</span></span>
     <a href="https://3zonesports.com/">Public site</a>
     <a href="#about">About</a>
     <a href="#support">Support</a>

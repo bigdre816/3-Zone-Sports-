@@ -132,9 +132,15 @@ function showSignedIn(member, profile) {
 function setView(name) {
   const mapped = name === "feed" ? "huddle" : name === "watch" ? "live" : name;
   $$(".view").forEach(el => el.classList.toggle("hidden", el.id !== "view-" + mapped && el.id !== "view-" + name));
+  const intro = $(".portal-intro");
+  if (intro) intro.classList.toggle("hidden", mapped !== "huddle");
+  document.body.dataset.memberView = mapped;
   if (mapped === "game") $("#player-wrap").classList.add("hidden");
   $$("#section-nav a, #bottom-nav a").forEach(a => {
-    a.classList.toggle("active", a.dataset.view === mapped);
+    const active = a.dataset.view === mapped;
+    a.classList.toggle("active", active);
+    if (active) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
   });
 }
 
