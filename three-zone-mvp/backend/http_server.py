@@ -76,6 +76,7 @@ def _routes():
         ("POST", re.compile(r"^/api/member/friends/(?P<handle>[a-z][a-z0-9_]{2,31})/unfriend$"), "h_member_unfriend", "member"),
         ("POST", re.compile(r"^/api/member/blocks/(?P<handle>[a-z][a-z0-9_]{2,31})$"), "h_member_block", "member"),
         ("POST", re.compile(r"^/api/member/blocks/(?P<handle>[a-z][a-z0-9_]{2,31})/delete$"), "h_member_unblock", "member"),
+        ("GET", re.compile(r"^/api/member/teams$"), "h_member_teams", "member"),
         ("POST", re.compile(r"^/api/member/follows/teams/(?P<team_id>[A-Za-z0-9_-]+)$"), "h_member_follow_team", "member"),
         ("POST", re.compile(r"^/api/member/follows/teams/(?P<team_id>[A-Za-z0-9_-]+)/delete$"), "h_member_unfollow_team", "member"),
         ("GET", re.compile(r"^/api/member/studio/sources$"), "h_member_studio_sources", "member"),
@@ -189,6 +190,7 @@ def _routes():
         ("GET", re.compile(r"^/api/network/review$"), "h_net_review", "operator"),
         ("POST", re.compile(r"^/api/network/review/games/(?P<game_id>gme_[a-z0-9]+)$"), "h_net_review_game", "operator"),
         ("POST", re.compile(r"^/api/network/review/cases/(?P<case_id>mod_[a-z0-9]+)$"), "h_net_review_case", "operator"),
+        ("POST", re.compile(r"^/api/network/review/posts/(?P<post_id>pst_[a-z0-9]+)$"), "h_net_review_post", "operator"),
         ("POST", re.compile(r"^/api/network/profiles/(?P<profile_id>prf_[a-z0-9]+)/verify$"), "h_net_verify", "operator"),
         ("GET", re.compile(r"^/api/network/evidence/(?P<subject_type>game|clip|post)/(?P<subject_id>[A-Za-z0-9_-]+)$"), "h_net_evidence", "owner"),
         ("GET", re.compile(r"^/api/network/evidence/(?P<subject_type>game|clip|post)/(?P<subject_id>[A-Za-z0-9_-]+)\.csv$"), "h_net_evidence_csv", "owner"),
@@ -232,9 +234,10 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             frame_src += " " + origin
         return (
             "default-src 'none'; "
-            "script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://esm.sh; style-src 'self'; img-src 'self' data:; "
+            "script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://esm.sh; style-src 'self'; "
+            "img-src 'self' data: https://i.ytimg.com https://img.youtube.com; "
             f"media-src {media_src}; connect-src {connect_src}; "
-            f"frame-src {frame_src}; "
+            f"frame-src {frame_src} https://www.youtube-nocookie.com https://www.youtube.com; "
             "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
         )
 
@@ -729,6 +732,9 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
 
     def h_member_unblock(self, p, b, u):
         self._send_json(200, self.network.unblock_member(u, p["handle"]))
+
+    def h_member_teams(self, p, b, u):
+        self._send_json(200, self.network.list_member_teams(u))
 
     def h_member_follow_team(self, p, b, u):
         self._send_json(200, self.network.follow_team(u, p["team_id"]))
@@ -1343,6 +1349,12 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
     def h_net_review_case(self, p, b, u):
         b = b or {}
         self._send_json(200, self.network.decide_moderation(u, p["case_id"], b.get("action", ""), b.get("reason", "")))
+
+    def h_net_review_post(self, p, b, u):
+        b = b or {}
+        self._send_json(200, {
+            "post": self.network.decide_post(u, p["post_id"], b.get("action", ""), b.get("reason", "")),
+        })
 
     def h_net_verify(self, p, b, u):
         b = b or {}

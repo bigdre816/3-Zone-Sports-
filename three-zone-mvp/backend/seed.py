@@ -74,6 +74,7 @@ def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
 
     if _has_rows(db, "events"):
         _backfill_property_ids(db)
+        _backfill_kc_huddle(db)
         return False
 
     now = time.time()
@@ -142,6 +143,7 @@ def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
     db.execute("INSERT INTO audit(ts,actor,action,event_id,detail) VALUES (?,?,?,?,?)",
                (now, "system", "seed.loaded", None, dumps({"events": len(events)})))
     _backfill_property_ids(db)
+    _backfill_kc_huddle(db)
     return True
 
 
@@ -158,3 +160,113 @@ def _backfill_property_ids(db: Database) -> None:
     db.execute(
         "UPDATE events SET property_id='school_lakeside' WHERE event_id='evt_mw_volleyball'"
     )
+
+
+def _backfill_kc_huddle(db: Database) -> None:
+    """Kansas City metro high-school inventory and watchable YouTube clips.
+
+    INSERT OR IGNORE so existing Render SQLite disks pick this up on restart
+    without wiping member accounts. Video ids are public, embeddable YouTube
+    clips so the Huddle can actually play in-feed. Captions describe Kansas
+    City sports; licensed game film is not bundled in this repo.
+    """
+    now = time.time()
+    db.executemany("INSERT OR IGNORE INTO schools VALUES (?,?,?)", [
+        ("school_northview", "Northview High (Kansas City)", "midwest"),
+        ("school_ridgewood", "Ridgewood High (Kansas City)", "midwest"),
+        ("school_ridgeview", "Ridgeview High (Kansas City)", "midwest"),
+        ("school_westlake", "Westlake High (Kansas City)", "midwest"),
+    ])
+    db.executemany("INSERT OR IGNORE INTO teams VALUES (?,?,?,?,?)", [
+        ("team_northview_bball", "school_northview", "Northview Wolves Basketball", "basketball", "varsity"),
+        ("team_ridgewood_bball", "school_ridgewood", "Ridgewood Tigers Basketball", "basketball", "varsity"),
+        ("team_ridgeview_fb", "school_ridgeview", "Ridgeview Panthers Football", "football", "varsity"),
+        ("team_westlake_fb", "school_westlake", "Westlake Bulldogs Football", "football", "varsity"),
+        ("team_kc_soccer", "school_northview", "Kansas City Youth Soccer", "soccer", "varsity"),
+        ("team_northview_vb", "school_northview", "Northview Volleyball", "volleyball", "varsity"),
+        ("team_kc_baseball", "school_ridgewood", "KC Metro Baseball", "baseball", "varsity"),
+    ])
+
+    def add_event(event_id, title, status, offset_hours, category, scoreboard, school_id):
+        start = now + offset_hours * HOUR
+        db.execute(
+            "INSERT OR IGNORE INTO events(event_id,title,zone,category,status,scheduled_start,"
+            "production_mode,active_source,primary_last_seen,backup_last_seen,scoreboard,"
+            "replay_available,created_at,property_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (event_id, title, "midwest", category, status, start, "single_camera", "primary",
+             now if status == "live" else None, None, dumps(scoreboard or {}),
+             1 if status == "archive" else 0, now, school_id),
+        )
+        db.execute(
+            "INSERT OR IGNORE INTO rights(event_id,version,territory,destination,package,"
+            "live_start,live_end,replay_start,replay_end,authority,source_reference,active,"
+            "revoked,revocation_reason,archive_retention_days,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (event_id, 1, "midwest", "web", "standard", start - HOUR, start + 3 * HOUR,
+             start - HOUR, start + 30 * DAY, "Kansas City Metro Athletics",
+             f"contract://{event_id}", 1, 0, None, 365, now),
+        )
+
+    add_event(
+        "evt_kc_bball", "Northview Wolves vs Ridgewood Tigers", "live", -0.4, "basketball",
+        {"home": 72, "away": 68, "period": "Final", "clock": "0:00"}, "school_northview",
+    )
+    add_event(
+        "evt_kc_live_bball", "Ridgeview Panthers vs Westlake Bulldogs", "live", -0.2, "basketball",
+        {"home": 58, "away": 52, "period": "Q4", "clock": "4:27"}, "school_ridgeview",
+    )
+    add_event(
+        "evt_kc_football", "Ridgeview High vs Westlake", "green", 0.5, "football",
+        {"home": 21, "away": 14, "period": "Q3", "clock": "6:12"}, "school_ridgeview",
+    )
+    add_event(
+        "evt_kc_soccer", "Kansas City Youth Soccer", "scheduled", 8.0, "soccer",
+        None, "school_northview",
+    )
+    add_event(
+        "evt_kc_vball", "Northview Volleyball", "green", 1.5, "volleyball",
+        {"home": 2, "away": 1, "period": "Set 3", "clock": "24-22"}, "school_northview",
+    )
+    add_event(
+        "evt_kc_baseball", "KC Metro Baseball", "archive", -20.0, "baseball",
+        {"home": 5, "away": 3, "period": "Final", "clock": "--"}, "school_ridgewood",
+    )
+
+    clips = [
+        ("pst_kc_poster", "med_yt_kc_poster", "M7lc1UVf-VE", "basketball",
+         "Andre's poster puts the crowd on its feet! #Basketball #Highlights #ThreeZone Northview vs Ridgewood, Kansas City."),
+        ("pst_kc_steal", "med_yt_kc_steal", "aqz-KE-bpKQ", "football",
+         "Game-changing steal — Ridgeview Panthers, Kansas City. Football night."),
+        ("pst_kc_clutch", "med_yt_kc_clutch", "jNQXAC9IVRw", "basketball",
+         "Clutch drive seals the win. Northview Wolves basketball."),
+        ("pst_kc_soccer", "med_yt_kc_soccer", "C0DPdy98e4c", "soccer",
+         "A team that plays for each other. Kansas City Youth Soccer."),
+        ("pst_kc_vball", "med_yt_kc_vball", "1La4QzGeaaQ", "volleyball",
+         "Northview volleyball — set, swing, Kansas City."),
+        ("pst_kc_baseball", "med_yt_kc_baseball", "eRsGyueVLvQ", "baseball",
+         "KC Metro Baseball walk-off energy. Watch it in the Huddle."),
+    ]
+    author = "prf_demo_viewer"
+    for i, (post_id, asset_id, video_id, sport, caption) in enumerate(clips):
+        stamp = now - i * 3600
+        db.execute(
+            "INSERT OR IGNORE INTO media_assets VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (asset_id, author, "youtube", video_id, "youtube", None, None, "ready",
+             "video/youtube", stamp, stamp),
+        )
+        db.execute(
+            "INSERT OR IGNORE INTO posts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (post_id, author, asset_id, None, caption, sport, "public", "published", 1,
+             None, stamp, stamp, stamp),
+        )
+    db.executemany("INSERT OR IGNORE INTO team_follows VALUES (?,?,?)", [
+        (author, "team_northview_bball", now),
+        (author, "team_ridgeview_fb", now),
+        (author, "team_ridgewood_bball", now),
+        (author, "team_kc_soccer", now),
+    ])
+    db.executemany("INSERT OR IGNORE INTO comments VALUES (?,?,?,?,?,?,?,?)", [
+        ("cmt_kc_maya", "post", "pst_kc_poster", author, "That dunk was crazyyy", now - 300, None, None),
+        ("cmt_kc_chris", "post", "pst_kc_poster", author, "Different breed. Future star.", now - 240, None, None),
+        ("cmt_kc_taylor", "post", "pst_kc_poster", author, "Northview is built different this year.", now - 180, None, None),
+    ])

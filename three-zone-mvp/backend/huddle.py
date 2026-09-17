@@ -119,6 +119,27 @@ class HuddleExtensions:
             for r in self.db.query("SELECT team_id FROM team_follows WHERE profile_id=?", (profile_id,))
         }
 
+    def list_member_teams(self, user) -> dict:
+        profile = self.ensure_profile(user)
+        followed = self._followed_team_ids(profile["profile_id"])
+        rows = [dict(r) for r in self.db.query("SELECT * FROM teams ORDER BY name")]
+        mine = []
+        catalog = []
+        for team in rows:
+            item = {
+                "team_id": team["team_id"],
+                "name": team["name"],
+                "sport": team["sport"],
+                "level": team["level"],
+                "school_id": team["school_id"],
+                "following": team["team_id"] in followed,
+            }
+            if item["following"]:
+                mine.append(item)
+            else:
+                catalog.append(item)
+        return {"teams": mine, "catalog": catalog[:12]}
+
     def _is_blocked(self, a: str, b: str) -> bool:
         return bool(self.db.query_one(
             "SELECT 1 FROM member_blocks WHERE "

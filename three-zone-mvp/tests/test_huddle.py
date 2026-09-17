@@ -252,6 +252,12 @@ class HuddleShellTests(unittest.TestCase):
         self.assertIn("This moment is no longer available.", js)
         self.assertIn('intro.classList.toggle("hidden", mapped !== "huddle")', js)
         self.assertIn('a.setAttribute("aria-current", "page")', js)
+        self.assertIn("youtube-nocookie.com", js)
+        self.assertIn("youtube_url", js)
+        self.assertIn("My Teams", html)
+        self.assertIn("YouTube", html)
+        self.assertIn("Kansas City", html)
+        self.assertIn("Add clip", js)
 
 
 if __name__ == "__main__":
