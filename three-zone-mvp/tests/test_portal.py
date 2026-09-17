@@ -157,6 +157,8 @@ class PortalTests(unittest.TestCase):
         self.assertNotIn("if (!state.session) return;", app_js)
         self.assertIn('querySelectorAll("#app [data-pane]")', app_js)
         self.assertIn("POST", app_js)
+        self.assertIn("async function refreshNetwork()", app_js)
+        self.assertIn("function huddleReviewActions", app_js)
         self.assertGreater(len(app_js.splitlines()), 500)
 
     def test_investment_tracker_is_not_on_the_site(self):

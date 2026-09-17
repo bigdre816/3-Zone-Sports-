@@ -214,6 +214,13 @@ function mediaTag(item) {
     : `<video src="${src}" controls playsinline muted></video>`;
 }
 
+function huddleModerationActions(status) {
+  if (status === "published") return [["restrict", "Restrict"], ["remove", "Remove from Huddle"]];
+  if (status === "restricted") return [["restore", "Restore"], ["remove", "Remove from Huddle"]];
+  if (status === "removed") return [["restore", "Restore"]];
+  return [];
+}
+
 function postCard(item) {
   const badge = item.author && item.author.verification_badge
     ? `<span class="pill">${escapeText(item.author.verification_badge.replaceAll("_", " "))}</span>` : "";
@@ -241,11 +248,12 @@ function postCard(item) {
       <button type="button" class="quiet" data-visibility="${item.post_id}" data-current="${escapeText(item.visibility)}">Audience: ${escapeText(item.visibility)}</button>
       <button type="button" class="quiet" data-comments-toggle="${item.post_id}" data-on="${item.comments_enabled ? "1" : "0"}">${item.comments_enabled ? "Turn comments off" : "Turn comments on"}</button>
     </div>` : "";
-  const staffRow = item.viewer_can_moderate ? `<div class="owner-row">
-      <button type="button" class="quiet" data-moderate="${item.post_id}" data-action="restrict">Restrict</button>
-      <button type="button" class="quiet" data-moderate="${item.post_id}" data-action="restore">Restore</button>
-      <button type="button" class="quiet" data-moderate="${item.post_id}" data-action="remove">Remove from Huddle</button>
-    </div>` : "";
+  const staffActions = huddleModerationActions(item.publication_status);
+  const staffRow = item.viewer_can_moderate && staffActions.length ? `<div class="owner-row">${
+    staffActions.map(([action, label]) =>
+      `<button type="button" class="quiet" data-moderate="${escapeText(item.post_id)}" data-action="${action}">${label}</button>`
+    ).join("")
+  }</div>` : "";
   const whisperParts = [item.sport, tags, provenance].filter(Boolean);
   const whisper = whisperParts.length
     ? `<p class="post-whisper">${item.sport ? escapeText(item.sport) : ""}${tags ? (item.sport ? " · " : "") + tags : ""}${provenance ? ((item.sport || tags) ? " · " : "") + provenance : ""}</p>`

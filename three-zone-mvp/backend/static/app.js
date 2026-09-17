@@ -2088,6 +2088,13 @@ async function init() {
   await restoreSession();
 }
 
+function huddleReviewActions(status) {
+  if (status === "published") return [["restrict", "Restrict"], ["remove", "Remove"]];
+  if (status === "restricted") return [["restore", "Restore"], ["remove", "Remove"]];
+  if (status === "removed") return [["restore", "Restore"]];
+  return [];
+}
+
 async function refreshNetwork() {
   try {
     const data = await api("GET", "/api/network/review");
@@ -2114,14 +2121,14 @@ async function refreshNetwork() {
       const author = (post.author && post.author.handle) || post.author_profile_id || "";
       const playback = media.kind === "youtube" && media.playback_url ? String(media.playback_url) : "";
       const safePlayback = playback.replace(/"/g, "");
+      const actions = huddleReviewActions(post.publication_status);
+      const buttons = actions.map(([action, label]) =>
+        `<button type="button" data-post="${post.post_id}" data-action="${action}"${action === "remove" ? ' class="danger"' : ""}>${label}</button>`
+      ).join("");
       card.innerHTML = `<p><strong></strong></p>
         <p class="muted"></p>
         ${safePlayback ? `<iframe src="${safePlayback}" title="YouTube review" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen loading="lazy"></iframe>` : ""}
-        <div class="btn-row">
-          <button type="button" data-post="${post.post_id}" data-action="restrict">Restrict</button>
-          <button type="button" data-post="${post.post_id}" data-action="restore">Restore</button>
-          <button type="button" data-post="${post.post_id}" data-action="remove" class="danger">Remove</button>
-        </div>`;
+        <div class="btn-row">${buttons}</div>`;
       card.querySelector("strong").textContent = `${post.post_id} · ${post.sport || ""} · ${post.publication_status || ""}`;
       card.querySelector(".muted").textContent = `@${author} — ${caption}`;
       box.appendChild(card);

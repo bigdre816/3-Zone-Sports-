@@ -258,6 +258,7 @@ class HuddleShellTests(unittest.TestCase):
         self.assertIn("viewer_can_delete", js)
         self.assertIn("if (input == null) return", js)
         self.assertIn("escapeText(board.home ?? \"—\")", js)
+        self.assertIn("function huddleModerationActions", js)
         self.assertIn("function huddleHeroEvent", js)
         self.assertIn("e.status === \"live\" && ridgeview(e)", js)
         self.assertIn("bootingPortal", js)
