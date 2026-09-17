@@ -38,11 +38,15 @@ function clearPendingPlayback() {
 const player = {
   config: null, hls: null, ws: null, viewSession: null,
   heartbeatTimer: null, leaseTimer: null, seq: 0, eventId: null,
+  pollTimer: null, reconnectTimer: null, livePollTimer: null, feedPollTimer: null,
+  socketUp: false,
 };
 
 function stopPortalMedia(reason) {
   if (player.heartbeatTimer) { clearInterval(player.heartbeatTimer); player.heartbeatTimer = null; }
   if (player.leaseTimer) { clearInterval(player.leaseTimer); player.leaseTimer = null; }
+  if (player.pollTimer) { clearInterval(player.pollTimer); player.pollTimer = null; }
+  if (player.reconnectTimer) { clearTimeout(player.reconnectTimer); player.reconnectTimer = null; }
   if (player.viewSession) {
     const sid = player.viewSession.session_id;
     player.viewSession = null;
@@ -50,8 +54,120 @@ function stopPortalMedia(reason) {
   }
   if (player.hls) { try { player.hls.destroy(); } catch (_) {} player.hls = null; }
   if (player.ws) { try { player.ws.close(); } catch (_) {} player.ws = null; }
+  player.socketUp = false;
   const v = $("#video");
   if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
+}
+
+function applyScoreboard(board) {
+  if (!board) return;
+  const hero = document.querySelector("#live-hero .scoreboard");
+  if (hero) {
+    hero.innerHTML = `<span>${board.home ?? "—"}</span><small>${escapeText(board.period || "")} ${escapeText(board.clock || "")}</small><span>${board.away ?? "—"}</span>`;
+  }
+}
+
+async function mintSocketTicket(body) {
+  if (!player.config) player.config = await api("GET", "/api/config");
+  return api("POST", "/api/member/ws-ticket", body);
+}
+
+function handleSocketMessage(eventId, msg) {
+  if (msg.type === "rights.revoked") {
+    toast("Playback stopped — rights revoked");
+    $("#player-state").textContent = "Rights revoked";
+    stopPortalMedia("rights_revoked");
+  } else if (msg.type === "rights.restored") {
+    toast("Rights restored — reopen to resume");
+  } else if (msg.type === "score.update") {
+    applyScoreboard(msg.scoreboard || {});
+  } else if (msg.type === "event.state") {
+    const snap = msg.snapshot || {};
+    if (snap.scoreboard) applyScoreboard(snap.scoreboard);
+    if (snap.replay_pending) $("#player-state").textContent = "Recording pending";
+  } else if (msg.type === "moment.published") {
+    loadLiveMoments(eventId);
+  }
+}
+
+async function refetchCanonical(eventId) {
+  try {
+    const data = await api("GET", `/api/events/${eventId}`);
+    const event = data.event || data;
+    if (event && event.scoreboard) applyScoreboard(event.scoreboard);
+  } catch (_) { /* fail closed to last painted state */ }
+}
+
+function startWatchPoll(eventId) {
+  if (player.pollTimer) clearInterval(player.pollTimer);
+  player.pollTimer = setInterval(() => {
+    if (!player.socketUp) refetchCanonical(eventId);
+  }, 2000);
+}
+
+function scheduleSocketReconnect(eventId) {
+  if (player.reconnectTimer) clearTimeout(player.reconnectTimer);
+  player.reconnectTimer = setTimeout(() => connectEventSocket(eventId), 1500);
+}
+
+async function connectEventSocket(eventId) {
+  if (!player.config) {
+    try { player.config = await api("GET", "/api/config"); } catch (_) { return; }
+  }
+  if (!player.config.ws_enabled || !player.config.ws_url_base) {
+    startWatchPoll(eventId);
+    return;
+  }
+  if (player.ws) { try { player.ws.close(); } catch (_) {} }
+  let ticket;
+  try { ticket = await mintSocketTicket({ event_id: eventId }); }
+  catch (_) { startWatchPoll(eventId); return; }
+  const url = ticket.ws_url || (player.config.ws_url_base + eventId);
+  let ws;
+  try { ws = new WebSocket(url, ["tz-session", "ticket." + ticket.ticket]); }
+  catch (_) { startWatchPoll(eventId); return; }
+  player.ws = ws;
+  ws.onopen = async () => {
+    player.socketUp = true;
+    if (player.pollTimer) { clearInterval(player.pollTimer); player.pollTimer = null; }
+    await refetchCanonical(eventId);
+  };
+  ws.onclose = () => {
+    player.socketUp = false;
+    startWatchPoll(eventId);
+    if (player.eventId === eventId) scheduleSocketReconnect(eventId);
+  };
+  ws.onerror = () => { player.socketUp = false; };
+  ws.onmessage = (evt) => {
+    let m; try { m = JSON.parse(evt.data); } catch (_) { return; }
+    handleSocketMessage(eventId, m);
+  };
+}
+
+async function connectPartySocket(partyId) {
+  if (!player.config) {
+    try { player.config = await api("GET", "/api/config"); } catch (_) { return; }
+  }
+  if (!player.config.ws_enabled || !player.config.ws_url_base) return;
+  let ticket;
+  try { ticket = await mintSocketTicket({ party_id: partyId }); }
+  catch (_) { return; }
+  const url = ticket.ws_url || player.config.ws_url_base.replace("/ws/events/", "/ws/watch-parties/") + partyId;
+  let ws;
+  try { ws = new WebSocket(url, ["tz-session", "ticket." + ticket.ticket]); }
+  catch (_) { return; }
+  ws.onmessage = (evt) => {
+    let m; try { m = JSON.parse(evt.data); } catch (_) { return; }
+    if (m.type === "rights.revoked") {
+      toast("Game rights revoked. Chat stays up; video uses the playback lease.");
+    } else if (m.type === "score.update") {
+      applyScoreboard(m.scoreboard || {});
+    } else if (m.type === "comment.created" || m.type === "reaction.created") {
+      toast("Watch-party update");
+    } else if (m.type === "moment.published") {
+      if (state.heroEventId) loadLiveMoments(state.heroEventId);
+    }
+  };
 }
 
 function attachPortalMedia(url, mediaType) {
@@ -67,46 +183,6 @@ function attachPortalMedia(url, mediaType) {
   }
   v.src = url;
   v.play().catch(() => {});
-}
-
-function connectEventSocket(eventId) {
-  if (!player.config || !player.config.ws_enabled || !player.config.ws_url_base) return;
-  if (player.ws) { try { player.ws.close(); } catch (_) {} }
-  const url = player.config.ws_url_base + eventId;
-  let ws;
-  try { ws = new WebSocket(url, ["tz-session"]); }
-  catch (_) { return; }
-  player.ws = ws;
-  ws.onmessage = (msg) => {
-    let m; try { m = JSON.parse(msg.data); } catch (_) { return; }
-    if (m.type === "rights.revoked") {
-      toast("Playback stopped — rights revoked");
-      $("#player-state").textContent = "Rights revoked";
-      stopPortalMedia("rights_revoked");
-    } else if (m.type === "moment.published") {
-      loadLiveMoments(eventId);
-    } else if (m.type === "event.state" && m.snapshot && m.snapshot.replay_pending) {
-      $("#player-state").textContent = "Recording pending";
-    }
-  };
-}
-
-function connectPartySocket(partyId) {
-  if (!player.config || !player.config.ws_enabled || !player.config.ws_url_base) return;
-  const url = player.config.ws_url_base.replace("/ws/events/", "/ws/watch-parties/") + partyId;
-  let ws;
-  try { ws = new WebSocket(url, ["tz-session"]); }
-  catch (_) { return; }
-  ws.onmessage = (msg) => {
-    let m; try { m = JSON.parse(msg.data); } catch (_) { return; }
-    if (m.type === "rights.revoked") {
-      toast("Game rights revoked. Chat stays up; video uses the playback lease.");
-    } else if (m.type === "comment.created" || m.type === "reaction.created") {
-      toast("Watch-party update");
-    } else if (m.type === "moment.published") {
-      if (state.heroEventId) loadLiveMoments(state.heroEventId);
-    }
-  };
 }
 
 function showSignedIn(member, profile) {
@@ -167,8 +243,10 @@ function applyRoute() {
     $("#portal").classList.remove("hidden");
     const name = MEMBER_VIEWS.has(view) ? view : "huddle";
     setView(name);
-    if (name === "huddle" || name === "feed") { loadFeed(); loadFriends(); }
-    if (name === "live" || name === "watch") loadCatalog();
+    if (name === "huddle" || name === "feed") { loadFeed(); loadFriends(); startFeedPoll(); }
+    else stopFeedPoll();
+    if (name === "live" || name === "watch") { loadCatalog(); startLivePoll(); }
+    else stopLivePoll();
     if ((location.hash || "").replace(/^#/, "") === "archives") {
       const archives = $("#archives");
       if (archives) archives.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -519,7 +597,17 @@ async function loadProfileTab() {
   if (!state.profile) return;
   const data = await api("GET", `/api/network/profiles/${state.profile.handle}/${state.tab}`);
   $("#profile-name").textContent = data.profile.display_name;
-  $("#profile-meta").textContent = `@${data.profile.handle} · ${data.profile.profile_type} · ${data.profile.market}`;
+  const pointsBit = state.points && typeof state.points.total === "number"
+    ? ` · ${state.points.total} pts`
+    : "";
+  $("#profile-meta").textContent = `@${data.profile.handle} · ${data.profile.profile_type} · ${data.profile.market}${pointsBit}`;
+  try {
+    const me = await api("GET", "/api/member/me");
+    renderPoints(me.points);
+    if (me.points && typeof me.points.total === "number") {
+      $("#profile-meta").textContent = `@${data.profile.handle} · ${data.profile.profile_type} · ${data.profile.market} · ${me.points.total} pts`;
+    }
+  } catch (_) { /* keep profile meta */ }
   const form = $("#profile-form");
   form.display_name.value = data.profile.display_name;
   form.handle.value = data.profile.handle;
@@ -727,9 +815,39 @@ async function loadPublicFeed() {
   } catch (_) { /* unsigned catalog is optional */ }
 }
 
+function startLivePoll() {
+  if (player.livePollTimer) return;
+  player.livePollTimer = setInterval(() => {
+    if (!player.socketUp) loadCatalog();
+  }, 5000);
+}
+function stopLivePoll() {
+  if (player.livePollTimer) { clearInterval(player.livePollTimer); player.livePollTimer = null; }
+}
+function startFeedPoll() {
+  if (player.feedPollTimer) return;
+  player.feedPollTimer = setInterval(() => { loadFeed(); }, 20000);
+}
+function stopFeedPoll() {
+  if (player.feedPollTimer) { clearInterval(player.feedPollTimer); player.feedPollTimer = null; }
+}
+
+function renderPoints(points) {
+  const total = points && typeof points.total === "number" ? points.total : 0;
+  const version = (points && points.rule_version) || "";
+  const meta = $("#profile-meta");
+  if (meta && !meta.dataset.base) meta.dataset.base = meta.textContent || "";
+  const pointsEl = $("#profile-points");
+  if (pointsEl) {
+    pointsEl.textContent = total + " pts" + (version ? " · " + version : "");
+  }
+  state.points = points;
+}
+
 async function loadPortal() {
   const me = await api("GET", "/api/member/me");
   showSignedIn(me.member, me.profile);
+  renderPoints(me.points);
   if (me.settings) {
     $("#profile-form").show_watching_to_friends.checked = !!me.settings.show_watching_to_friends;
   }

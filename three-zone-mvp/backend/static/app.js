@@ -1348,13 +1348,20 @@ function closeWs() {
   }
 }
 
-function connectWs(eventId) {
+async function connectWs(eventId) {
   if (!state.config || !state.session) return;
   closeWs();
-  const url = state.config.ws_url_base + eventId;
+  let ticket;
+  try {
+    ticket = await api("POST", "/api/member/ws-ticket", { event_id: eventId });
+  } catch (e) {
+    logSocket("ticket error: " + (e.message || e.code || "failed"));
+    return;
+  }
+  const url = ticket.ws_url || (state.config.ws_url_base + eventId);
   let ws;
   try {
-    ws = new WebSocket(url, ["tz-session", state.session]);
+    ws = new WebSocket(url, ["tz-session", "ticket." + ticket.ticket]);
   } catch (e) {
     logSocket("socket error: " + e.message);
     return;

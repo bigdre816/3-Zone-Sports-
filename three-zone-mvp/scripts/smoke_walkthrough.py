@@ -19,6 +19,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
@@ -98,18 +99,29 @@ class Client:
         return payload["session_token"], user
 
     async def ws_snapshot(self, event_id: str, token: str):
-        url = self.ws_base + event_id
+        status, ticket, _, _ = self.req(
+            "POST", "/api/member/ws-ticket", {"event_id": event_id}, token=token
+        )
+        if status != 200 or not ticket.get("ticket"):
+            raise RuntimeError(f"ws-ticket failed: {status} {ticket}")
+        url = ticket.get("ws_url") or (self.ws_base + event_id)
         async with websockets.connect(
             url,
             origin=self.origin,
-            subprotocols=["tz-session", token],
+            subprotocols=["tz-session", "ticket." + ticket["ticket"]],
             open_timeout=5,
             close_timeout=2,
         ) as ws:
             raw = await asyncio.wait_for(ws.recv(), timeout=5)
             msg = json.loads(raw)
             await ws.send(json.dumps({"type": "ping"}))
-            pong = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
+            deadline = time.time() + 5
+            pong = {}
+            while time.time() < deadline:
+                cand = json.loads(await asyncio.wait_for(ws.recv(), timeout=max(0.1, deadline - time.time())))
+                if cand.get("type") == "pong":
+                    pong = cand
+                    break
             return msg, pong
 
 
@@ -338,7 +350,7 @@ def run(client: Client) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Three-Zone member/worker/owner smoke")
     parser.add_argument("--base", default="http://127.0.0.1:8000")
-    parser.add_argument("--ws-base", default="ws://127.0.0.1:8765/ws/events")
+    parser.add_argument("--ws-base", default="ws://127.0.0.1:8000/ws/events")
     args = parser.parse_args()
     origin = args.base.rstrip("/")
     client = Client(args.base, origin, args.ws_base)

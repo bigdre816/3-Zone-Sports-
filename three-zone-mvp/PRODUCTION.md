@@ -22,8 +22,7 @@ The full user-friendly deployment guide is in **DEPLOY-3ZONESPORTS.md** at the r
 │  Member Backend (Render)                │
 │  https://[app].onrender.com             │
 │  - Python 3.12                          │
-│  - HTTP on :8000                        │
-│  - WebSocket on :8765                   │
+│  - HTTP + WebSocket on $PORT            │
 │  - SQLite on persistent disk            │
 └─────────────────────────────────────────┘
 ```
@@ -142,7 +141,9 @@ To add a new allowed origin:
 
 ## WebSocket Configuration
 
-The backend runs WebSocket server on a separate port (default 8765).
+The backend serves WebSockets on the same public `$PORT` as HTTP (`/ws/events/`
+and `/ws/watch-parties/`). Clients mint `POST /api/member/ws-ticket` and connect
+with `["tz-session", "ticket.<token>"]`. See `MEMBER_LIVE_CONTRACT.md`.
 
 For production:
 - WebSocket connects at `wss://[backend-domain]/ws/events/[event_id]`

@@ -33,6 +33,17 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 _STATIC_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
                  ".css": "text/css; charset=utf-8"}
 _EVENT_RE = r"(?P<event_id>evt_[a-z0-9_]+)"
+_BIND_ALL_HOSTS = frozenset({"0.0.0.0", "::", ""})
+
+
+def _request_host_name(host: str) -> str:
+    """Hostname from an HTTP Host header, without port."""
+    host = (host or "").strip()
+    if host.startswith("["):
+        end = host.find("]")
+        if end > 0:
+            return host[1:end].split("%", 1)[0].lower()
+    return host.rsplit(":", 1)[0].lower() if host.count(":") == 1 else host.lower()
 
 
 def _routes():
@@ -61,6 +72,7 @@ def _routes():
         ("POST", re.compile(r"^/api/auth/verify$"), "h_auth_verify", "none"),
         ("POST", re.compile(r"^/api/auth/logout$"), "h_auth_logout", "none"),
         ("GET", re.compile(r"^/api/member/me$"), "h_member_me", "member"),
+        ("POST", re.compile(r"^/api/member/ws-ticket$"), "h_member_ws_ticket", "member"),
         ("GET", re.compile(r"^/api/member/live$"), "h_member_live", "member"),
         ("GET", re.compile(r"^/api/member/schedules$"), "h_member_schedules", "member"),
         ("GET", re.compile(r"^/api/member/archives$"), "h_member_archives", "member"),
@@ -219,8 +231,7 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
     # -- security + CORS helpers ------------------------------------------
     def _csp(self) -> str:
         cfg = self.cp.config
-        scheme = "wss" if cfg.is_production else "ws"
-        ws_origin = f"{scheme}://{cfg.ws_host}:{cfg.ws_port}"
+        ws_origin = cfg.public_ws_origin()
         media_src = "'self' blob: mediastream:"
         connect_src = f"'self' {ws_origin}"
         host = cfg.cloudflare_playback_host
@@ -624,7 +635,14 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         self._send_json(200, run_sports_check(self.cp, u, b or {}))
 
     def h_config(self, p, b, u):
-        self._send_json(200, self.cp.config.public_config())
+        payload = self.cp.config.public_config()
+        host = (self.headers.get("Host") or "").strip()
+        if host and _request_host_name(host) not in _BIND_ALL_HOSTS:
+            proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+            scheme = "wss" if proto == "https" or self.cp.config.is_production else "ws"
+            payload["ws_url_base"] = f"{scheme}://{host}/ws/events/"
+            payload["ws_enabled"] = True
+        self._send_json(200, payload)
 
     def h_public_live(self, p, b, u):
         self._send_json(200, {"events": self.portal.public_live()})
@@ -676,6 +694,7 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         settings = self.network.get_settings(u)
         notes = self.network.list_notifications(u)
         first = (u["display_name"] or "Member").split()[0]
+        points = self.network.points_for(u)
         self._send_json(200, {
             "member": {
                 "member_id": u["user_id"],
@@ -690,7 +709,25 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             "profile": profile,
             "settings": settings,
             "unread_notifications": notes["unread_count"],
+            "points": points,
         })
+
+    def h_member_ws_ticket(self, p, b, u):
+        from .ws_tickets import mint_ticket
+
+        def ws_url_for(kind: str, target_id: str) -> str:
+            host = (self.headers.get("Host") or "").strip()
+            proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+            if host and _request_host_name(host) not in _BIND_ALL_HOSTS:
+                scheme = "wss" if proto == "https" or self.cp.config.is_production else "ws"
+                origin = f"{scheme}://{host}"
+            else:
+                origin = self.cp.config.public_ws_origin()
+            if kind == "party":
+                return f"{origin}/ws/watch-parties/{target_id}"
+            return f"{origin}/ws/events/{target_id}"
+
+        self._send_json(200, mint_ticket(self.cp, u, b or {}, ws_url_for))
 
     def h_member_feed(self, p, b, u):
         q = self._qs()
@@ -1420,7 +1457,8 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
 
 
 def make_http_server(config, cp: ControlPlane, media_dir: str,
-                     provider=None, photo_storage=None) -> ThreadingHTTPServer:
+                     provider=None, photo_storage=None,
+                     bind_host: str | None = None, bind_port: int | None = None) -> ThreadingHTTPServer:
     portal = PortalService(cp)
     provider = provider or build_provider(config)
     photo_storage = photo_storage or build_photo_storage(config)
@@ -1432,6 +1470,8 @@ def make_http_server(config, cp: ControlPlane, media_dir: str,
         "cp": cp, "portal": portal, "network": network, "moten": moten,
         "live_sessions": live_sessions, "media_dir": media_dir,
     })
-    httpd = ThreadingHTTPServer((config.http_host, config.http_port), handler)
+    host = config.http_host if bind_host is None else bind_host
+    port = config.http_port if bind_port is None else bind_port
+    httpd = ThreadingHTTPServer((host, port), handler)
     httpd.daemon_threads = True
     return httpd

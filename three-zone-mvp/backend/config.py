@@ -78,17 +78,13 @@ def running_on_render() -> bool:
 
 
 def bind_separate_websocket() -> bool:
-    """Whether to listen on ``TZ_WS_PORT`` (default 8765).
+    """Whether to listen on a second ``TZ_WS_PORT`` (legacy 8765).
 
-    Render only exposes ``$PORT``. A second listen looks like HTTP to the
-    platform port scanner and can keep the internal ``/healthz`` check from
-    ever succeeding. On Render the member app is same-origin HTTP; live
-    sockets stay disabled until a same-port upgrade exists.
+    Always false. The same-port gateway owns public ``$PORT`` and splices
+    ``/ws/*`` to the in-process Hub. A second listen on Render looks like
+    HTTP to the platform port scanner and can keep ``/healthz`` from succeeding.
     """
-    if running_on_render():
-        return False
-    raw = os.environ.get("TZ_WS_PORT", "8765").strip()
-    return raw not in ("", "0")
+    return False
 
 
 def _render_service_origins() -> list[str]:
@@ -218,6 +214,8 @@ class Config:
     moten_onchain_url: str = ""
     moten_shared_secret: str = ""
     moten_timeout_seconds: int = 5
+    ws_ticket_ttl: int = 45
+    ws_gateway_enabled: bool = True
 
     def __post_init__(self) -> None:
         """Keep live/UGC provider names and Cloudflare credential aliases in sync."""
@@ -477,16 +475,29 @@ class Config:
                 + "; ".join(problems)
             )
 
+    def public_ws_origin(self) -> str:
+        """Scheme+host (no path) for CSP connect-src and clients.
+
+        ``TZ_PUBLIC_BASE_URL`` is the marketing site (GitHub Pages), not the
+        API host, so it is never used as the WebSocket address.
+        """
+        render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
+        if render_host:
+            return f"wss://{render_host}"
+        host = "127.0.0.1" if self.http_host in ("0.0.0.0", "::") else self.http_host
+        scheme = "wss" if self.is_production else "ws"
+        return f"{scheme}://{host}:{self.http_port}"
+
+    def public_ws_url_base(self) -> str:
+        return self.public_ws_origin().rstrip("/") + "/ws/events/"
+
     def public_config(self) -> dict:
         """Client-visible configuration. Never includes secrets."""
         host = self.cloudflare_playback_host
         return {
             "env": self.env,
-            "ws_url_base": (
-                ("wss" if (self.is_production or str(self.public_base_url).startswith("https://")) else "ws")
-                + f"://{self.ws_host}:{self.ws_port}/ws/events/"
-            ),
-            "ws_enabled": self.ws_host not in ("0.0.0.0", "::"),
+            "ws_url_base": self.public_ws_url_base(),
+            "ws_enabled": True,
             "session_ttl": self.session_ttl,
             "lease_ttl": self.lease_ttl,
             "heartbeat_timeout": self.heartbeat_timeout,

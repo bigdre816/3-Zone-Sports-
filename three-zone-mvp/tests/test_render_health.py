@@ -1,7 +1,8 @@
-"""Render health check: $PORT /healthz must be 200 and 8765 must not steal HTTP."""
+"""Render health check: $PORT serves /healthz and /ws/*; 8765 must not steal HTTP."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import socket
@@ -13,6 +14,11 @@ import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+try:
+    import websockets
+except ImportError:  # pragma: no cover
+    websockets = None
 
 
 MVP = Path(__file__).resolve().parents[1]
@@ -55,7 +61,7 @@ class RenderHealthProcessTests(unittest.TestCase):
             "TZ_WS_PORT": str(ws_port),
             "TZ_DATABASE_PATH": str(Path(data_dir) / "three_zone.sqlite3"),
             "TZ_DATA_DIR": data_dir,
-            "TZ_ALLOWED_ORIGINS": "https://3zonesports.com",
+            "TZ_ALLOWED_ORIGINS": f"https://3zonesports.com,http://127.0.0.1:{http_port}",
             "PYTHONUNBUFFERED": "1",
         })
         proc = subprocess.Popen(
@@ -90,6 +96,40 @@ class RenderHealthProcessTests(unittest.TestCase):
             self.assertEqual(body["home"], "/")
             self.assertIn("tz_member_session=", cookie)
             self.assertIn("Secure", cookie)
+            with urllib.request.urlopen(f"http://127.0.0.1:{http_port}/api/config", timeout=5) as resp:
+                cfg = json.loads(resp.read())
+            self.assertTrue(cfg["ws_enabled"])
+            self.assertIn("/ws/events/", cfg["ws_url_base"])
+            self.assertNotIn("0.0.0.0", cfg["ws_url_base"])
+            ticket_req = urllib.request.Request(
+                f"http://127.0.0.1:{http_port}/api/member/ws-ticket",
+                data=json.dumps({"event_id": "evt_mw_basketball"}).encode(),
+                method="POST",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + body["session_token"],
+                    "Origin": f"http://127.0.0.1:{http_port}",
+                },
+            )
+            with urllib.request.urlopen(ticket_req, timeout=5) as resp:
+                ticket = json.loads(resp.read())
+            self.assertTrue(ticket.get("ticket"))
+            self.assertIn(f":{http_port}/ws/events/", ticket["ws_url"])
+            if websockets is None:
+                self.skipTest("websockets required for same-port upgrade check")
+
+            async def _upgrade():
+                async with websockets.connect(
+                    ticket["ws_url"],
+                    origin=f"http://127.0.0.1:{http_port}",
+                    subprotocols=["tz-session", "ticket." + ticket["ticket"]],
+                    open_timeout=5,
+                    close_timeout=2,
+                ) as ws:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=5)
+                    return json.loads(raw).get("type")
+
+            self.assertEqual(asyncio.run(_upgrade()), "event.state")
             probe = socket.socket()
             probe.settimeout(0.5)
             try:
