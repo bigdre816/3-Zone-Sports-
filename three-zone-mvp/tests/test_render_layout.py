@@ -72,6 +72,7 @@ class WorkspaceLayoutTests(unittest.TestCase):
         self.assertFalse((ROOT / "main" / "Moten_IP_Invention_Control_Plane_Master_Specification_v1_0.pdf").exists())
         cfg = (ROOT / "vercel.json").read_text(encoding="utf-8")
         self.assertIn('"outputDirectory": "main"', cfg)
+        self.assertTrue((ROOT / "main" / "package.json").is_file())
 
     def test_member_dockerfile_copies_from_its_own_directory(self):
         dockerfile = (MVP / "Dockerfile").read_text(encoding="utf-8")
