@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
 
 from websockets.asyncio.server import ServerConnection
@@ -22,6 +23,50 @@ from .ws_server import PATH_PREFIX, PARTY_PREFIX, SUBPROTOCOL, Hub
 _LOG = logging.getLogger("threezone.gateway")
 _MAX_HEADER = 64 * 1024
 _WS_PATHS = (PATH_PREFIX, PARTY_PREFIX)
+
+#: The one header downstream code may trust for per-visitor accounting. The
+#: gateway strips every inbound copy and writes exactly one value it chose
+#: itself, so a visitor cannot pick their own rate-limit bucket.
+CLIENT_IP_HEADER = "X-TZ-Client-IP"
+_STRIPPED = (b"x-tz-client-ip", b"x-forwarded-for")
+
+
+def _trust_upstream_proxy() -> bool:
+    override = os.environ.get("TZ_TRUST_UPSTREAM_PROXY")
+    if override is not None:
+        return override.strip().lower() in ("1", "true", "yes", "on")
+    return bool(os.environ.get("RENDER") or os.environ.get("RENDER_EXTERNAL_URL"))
+
+
+def _client_ip_from(header_lines: list[bytes], peer_ip: str) -> str:
+    """The visitor's address: the trusted proxy's chain head, else the TCP peer.
+
+    Off a trusted platform proxy the inbound chain is attacker-controlled and
+    is ignored entirely.
+    """
+    if _trust_upstream_proxy():
+        for raw in header_lines:
+            name, _sep, value = raw.partition(b":")
+            if name.strip().lower() == b"x-forwarded-for":
+                first = value.decode("latin1", "replace").split(",")[0].strip()
+                if first:
+                    return first
+    return peer_ip or "unknown"
+
+
+def _with_client_ip(header_bytes: bytes, peer_ip: str) -> bytes:
+    """Strip inbound spoofable headers, append exactly one canonical value."""
+    head, sep, rest = header_bytes.partition(b"\r\n\r\n")
+    lines = head.split(b"\r\n")
+    request_line, header_lines = lines[0], lines[1:]
+    client_ip = _client_ip_from(header_lines, peer_ip)
+    kept = [
+        raw for raw in header_lines
+        if raw.partition(b":")[0].strip().lower() not in _STRIPPED
+    ]
+    kept.append(f"{CLIENT_IP_HEADER}: {client_ip}".encode("latin1", "replace"))
+    kept.append(f"X-Forwarded-For: {client_ip}".encode("latin1", "replace"))
+    return b"\r\n".join([request_line, *kept]) + sep + rest
 
 
 def _is_ws_upgrade(header_bytes: bytes) -> bool:
@@ -140,7 +185,11 @@ class GatewayProtocol(asyncio.Protocol):
             return
         self.mode = "http"
         self.transport.pause_reading()
-        asyncio.create_task(self.gateway.splice_http(self.transport, header_bytes))
+        peer = self.transport.get_extra_info("peername")
+        peer_ip = peer[0] if peer else ""
+        asyncio.create_task(
+            self.gateway.splice_http(self.transport, _with_client_ip(header_bytes, peer_ip))
+        )
 
     def connection_lost(self, exc: Exception | None) -> None:
         return

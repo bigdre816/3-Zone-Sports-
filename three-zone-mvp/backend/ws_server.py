@@ -38,6 +38,23 @@ _PATH_PREFIX = PATH_PREFIX
 _PARTY_PREFIX = PARTY_PREFIX
 
 
+
+def _client_ip(ws, request) -> str:
+    """Per-connection accounting key, resolved the same way HTTP resolves it.
+
+    In gateway mode the socket is served in-process, so the peer is the real
+    client; behind a trusted platform proxy, or when the gateway wrote it, the
+    canonical ``X-TZ-Client-IP`` header carries the visitor. It is trusted only
+    from a loopback peer.
+    """
+    peer = ws.remote_address[0] if ws.remote_address else ""
+    if peer in ("127.0.0.1", "::1"):
+        forwarded = (request.headers.get("X-TZ-Client-IP") or "").strip()
+        if forwarded:
+            return forwarded
+    return peer or "unknown"
+
+
 class Hub:
     def __init__(self, cp: ControlPlane, portal: PortalService | None = None):
         self.cp = cp
@@ -116,7 +133,7 @@ class Hub:
         request = ws.request
         path = request.path
         origin = request.headers.get("Origin")
-        peer = ws.remote_address[0] if ws.remote_address else "unknown"
+        peer = _client_ip(ws, request)
 
         if origin is not None and origin not in self.cp.config.allowed_origins:
             await ws.close(1008, "origin not allowed")
