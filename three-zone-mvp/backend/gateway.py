@@ -17,9 +17,10 @@ TCP stream to one of two loopback listeners:
 Deliberately *not* implemented here: WebSocket framing, ping/pong, close-code
 translation, per-message limits, backpressure policy. Those all continue to
 live in the already-hardened Hub in ``ws_server.py`` and stay end-to-end
-between the browser and that Hub -- this layer only moves bytes. The same is
-true for HTTP: keep-alive, chunked bodies and streaming responses pass through
-untouched because nothing here parses past the first header block.
+between the browser and that Hub -- this layer only moves bytes. HTTP
+keep-alive bodies and streaming responses pass through untouched; each
+keep-alive request head is rewritten so the backend always sees the
+gateway-chosen client IP rather than loopback.
 
 Fan-out remains single-instance scoped. Running more than one Render instance
 requires shared pub/sub (Redis or a managed realtime layer) before viewers on
@@ -30,6 +31,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+
+from .config import running_on_render
 
 _HEAD_LIMIT = 64 * 1024
 _HEAD_TIMEOUT = 15.0
@@ -84,20 +87,27 @@ def _trust_upstream_proxy() -> bool:
         return True
     if override in ("0", "false", "no"):
         return False
-    return _on_render()
+    return running_on_render()
 
 
 def _client_ip_from(headers: dict[str, str], peer_ip: str) -> str:
     """The address per-IP accounting must use, chosen by the gateway alone.
 
-    On Render the TCP peer is Render's own proxy, so the visitor's address is
-    the left-most entry of the X-Forwarded-For chain that proxy wrote. Without
-    a trusted proxy in front, the only non-forgeable value is the TCP peer.
+    On Render the TCP peer is Render's own proxy. Prefer Cloudflare's
+    connecting-IP headers when present (those overwrite rather than append);
+    otherwise use the right-most X-Forwarded-For hop -- the address the
+    trusted proxy observed -- so a client-supplied prefix cannot pick the
+    bucket. Without a trusted proxy in front, the only non-forgeable value
+    is the TCP peer.
     """
     if _trust_upstream_proxy():
-        forwarded = (headers.get("x-forwarded-for") or "").split(",")[0].strip()
+        for key in ("cf-connecting-ip", "true-client-ip"):
+            value = (headers.get(key) or "").split(",")[0].strip()
+            if value:
+                return value
+        forwarded = (headers.get("x-forwarded-for") or "").strip()
         if forwarded:
-            return forwarded
+            return forwarded.split(",")[-1].strip()
     return peer_ip
 
 
@@ -119,11 +129,9 @@ def _with_forwarded(head: bytes, peer_ip: str, scheme: str) -> bytes:
             kept.append(line)
             continue
         name = line.split(b":", 1)[0].strip().lower()
-        if name in _STRIPPED:
-            continue
-        if name == b"x-forwarded-for":
-            name_s, _, value = line.decode("latin-1", "replace").partition(":")
-            headers["x-forwarded-for"] = value.strip()
+        _, _, value = line.decode("latin-1", "replace").partition(":")
+        headers[name.decode("latin-1")] = value.strip()
+        if name in _STRIPPED or name == b"x-forwarded-for":
             continue
         kept.append(line)
 
@@ -147,6 +155,74 @@ async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> N
             if not chunk:
                 break
             writer.write(chunk)
+            await writer.drain()
+    except (ConnectionResetError, BrokenPipeError, asyncio.IncompleteReadError):
+        pass
+    finally:
+        try:
+            writer.write_eof()
+        except Exception:
+            pass
+
+
+def _request_body_length(headers: dict[str, str]) -> int | None:
+    """Content-Length bytes, 0 if none, or None when the body is chunked."""
+    if "chunked" in headers.get("transfer-encoding", "").lower():
+        return None
+    raw = headers.get("content-length", "").strip()
+    if not raw:
+        return 0
+    try:
+        return max(int(raw), 0)
+    except ValueError:
+        return 0
+
+
+async def _forward_exactly(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, n: int
+) -> bool:
+    remaining = n
+    while remaining > 0:
+        chunk = await reader.read(min(remaining, 65536))
+        if not chunk:
+            return False
+        writer.write(chunk)
+        remaining -= len(chunk)
+    await writer.drain()
+    return True
+
+
+async def _pipe_http_requests(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    peer_ip: str,
+    scheme: str,
+    first_headers: dict[str, str],
+) -> None:
+    """Forward HTTP keep-alive requests, rewriting forwarding headers on each.
+
+    The first request head has already been written. Subsequent requests on
+    the same TCP connection would otherwise reach the loopback backend
+    without X-TZ-Client-IP, collapsing per-IP accounting to 127.0.0.1 or
+    letting a visitor-supplied copy of that header pick the bucket.
+    """
+    headers = first_headers
+    try:
+        while True:
+            length = _request_body_length(headers)
+            if length is None:
+                await _pipe(reader, writer)
+                return
+            if length and not await _forward_exactly(reader, writer, length):
+                return
+            try:
+                head = await reader.readuntil(b"\r\n\r\n")
+            except (asyncio.IncompleteReadError, asyncio.LimitOverrunError):
+                return
+            if len(head) > _HEAD_LIMIT:
+                return
+            _path, headers = _parse_head(head)
+            writer.write(_with_forwarded(head, peer_ip, scheme))
             await writer.drain()
     except (ConnectionResetError, BrokenPipeError, asyncio.IncompleteReadError):
         pass
@@ -189,7 +265,8 @@ class Gateway:
                 return
 
             path, headers = _parse_head(head)
-            target = self.ws_target if _is_websocket(path, headers) else self.http_target
+            is_ws = _is_websocket(path, headers)
+            target = self.ws_target if is_ws else self.http_target
 
             peer = writer.get_extra_info("peername")
             peer_ip = peer[0] if isinstance(peer, tuple) and peer else ""
@@ -208,8 +285,15 @@ class Gateway:
             upstream_writer.write(head)
             await upstream_writer.drain()
 
+            client_to_up = (
+                _pipe(reader, upstream_writer)
+                if is_ws
+                else _pipe_http_requests(
+                    reader, upstream_writer, peer_ip, self.forwarded_proto, headers
+                )
+            )
             await asyncio.gather(
-                _pipe(reader, upstream_writer),
+                client_to_up,
                 _pipe(upstream_reader, writer),
                 return_exceptions=True,
             )

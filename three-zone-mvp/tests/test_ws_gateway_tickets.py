@@ -217,18 +217,132 @@ class ForwardedClientIpTests(unittest.TestCase):
         )
         self.assertNotIn("9.9.9.9", head.decode())
 
+    def test_default_trust_follows_render_without_crashing(self):
+        from backend import gateway
+
+        old_trust = os.environ.pop("TZ_TRUST_UPSTREAM_PROXY", None)
+        old_render = os.environ.get("RENDER")
+        os.environ["RENDER"] = "true"
+        try:
+            self.assertTrue(gateway._trust_upstream_proxy())
+            head = gateway._with_forwarded(
+                self._head("X-Forwarded-For: 198.51.100.4\r\n"),
+                "10.0.0.9", "https",
+            )
+        finally:
+            if old_trust is None:
+                os.environ.pop("TZ_TRUST_UPSTREAM_PROXY", None)
+            else:
+                os.environ["TZ_TRUST_UPSTREAM_PROXY"] = old_trust
+            if old_render is None:
+                os.environ.pop("RENDER", None)
+            else:
+                os.environ["RENDER"] = old_render
+        self.assertIn("X-TZ-Client-IP: 198.51.100.4", self._headers(head))
+
     def test_trusted_upstream_proxy_supplies_the_real_visitor(self):
         from backend import gateway
 
         os.environ["TZ_TRUST_UPSTREAM_PROXY"] = "1"
         try:
             head = gateway._with_forwarded(
-                self._head("X-Forwarded-For: 198.51.100.4, 10.0.0.9\r\n"),
+                self._head("X-Forwarded-For: 9.9.9.9, 198.51.100.4\r\n"),
                 "10.0.0.9", "https",
             )
         finally:
             os.environ.pop("TZ_TRUST_UPSTREAM_PROXY", None)
         self.assertIn("X-TZ-Client-IP: 198.51.100.4", self._headers(head))
+        self.assertNotIn("X-TZ-Client-IP: 9.9.9.9", self._headers(head))
+
+    def test_cloudflare_connecting_ip_wins_over_spoofed_forwarded_for(self):
+        from backend import gateway
+
+        os.environ["TZ_TRUST_UPSTREAM_PROXY"] = "1"
+        try:
+            head = gateway._with_forwarded(
+                self._head(
+                    "CF-Connecting-IP: 198.51.100.4\r\n"
+                    "X-Forwarded-For: 9.9.9.9, 10.0.0.9\r\n"
+                ),
+                "10.0.0.9", "https",
+            )
+        finally:
+            os.environ.pop("TZ_TRUST_UPSTREAM_PROXY", None)
+        self.assertIn("X-TZ-Client-IP: 198.51.100.4", self._headers(head))
+
+    def test_keepalive_follow_up_is_rewritten(self):
+        """A second HTTP request on the same TCP connection still gets X-TZ-Client-IP."""
+        import asyncio
+
+        from backend import gateway
+
+        received: list[bytes] = []
+
+        async def scenario() -> None:
+            got_two = asyncio.Event()
+
+            async def backend(reader, writer):
+                try:
+                    while True:
+                        head = await reader.readuntil(b"\r\n\r\n")
+                        received.append(head)
+                        length = 0
+                        for line in head.split(b"\r\n"):
+                            if line.lower().startswith(b"content-length:"):
+                                length = int(line.split(b":", 1)[1].strip() or 0)
+                        if length:
+                            await reader.readexactly(length)
+                        writer.write(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n"
+                            b"Connection: keep-alive\r\n\r\n"
+                        )
+                        await writer.drain()
+                        if len(received) >= 2:
+                            got_two.set()
+                except Exception:
+                    pass
+                finally:
+                    writer.close()
+
+            server = await asyncio.start_server(backend, "127.0.0.1", 0)
+            backend_port = server.sockets[0].getsockname()[1]
+            gw = gateway.Gateway(
+                "127.0.0.1", 0,
+                ("127.0.0.1", backend_port),
+                ("127.0.0.1", backend_port),
+                "https",
+            )
+            gw_server = await asyncio.start_server(
+                gw._handle, "127.0.0.1", 0, limit=gateway._HEAD_LIMIT
+            )
+            gw_port = gw_server.sockets[0].getsockname()[1]
+            try:
+                os.environ["TZ_TRUST_UPSTREAM_PROXY"] = "0"
+                _reader, writer = await asyncio.open_connection("127.0.0.1", gw_port)
+                writer.write(
+                    b"POST /login HTTP/1.1\r\nHost: example\r\n"
+                    b"Content-Length: 5\r\n\r\nhello"
+                    b"GET /b HTTP/1.1\r\nHost: example\r\n"
+                    b"X-TZ-Client-IP: 9.9.9.9\r\n\r\n"
+                )
+                await writer.drain()
+                await asyncio.wait_for(got_two.wait(), timeout=2)
+                writer.close()
+                await writer.wait_closed()
+            finally:
+                os.environ.pop("TZ_TRUST_UPSTREAM_PROXY", None)
+                gw_server.close()
+                server.close()
+                await gw_server.wait_closed()
+                await server.wait_closed()
+
+        asyncio.run(scenario())
+        self.assertGreaterEqual(len(received), 2)
+        first = received[0].decode()
+        second = received[1].decode()
+        self.assertIn("X-TZ-Client-IP: 127.0.0.1", first)
+        self.assertIn("X-TZ-Client-IP: 127.0.0.1", second)
+        self.assertNotIn("9.9.9.9", second)
 
 
 class GatewayOriginSchemeTests(unittest.TestCase):

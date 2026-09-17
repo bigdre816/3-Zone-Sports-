@@ -56,7 +56,7 @@ class RenderHealthProcessTests(unittest.TestCase):
             "TZ_DATABASE_PATH": str(Path(data_dir) / "three_zone.sqlite3"),
             "TZ_DATA_DIR": data_dir,
             "TZ_ALLOWED_ORIGINS": "https://3zonesports.com",
-            "RENDER_EXTERNAL_URL": f"http://127.0.0.1:{http_port}",
+            "RENDER_EXTERNAL_URL": f"https://127.0.0.1:{http_port}",
             "PYTHONUNBUFFERED": "1",
         })
         proc = subprocess.Popen(
