@@ -116,6 +116,9 @@ class NetworkService(HuddleExtensions):
     def _outbox(self, subject_id: str, type_: str, payload: dict) -> None:
         self.cp._outbox(subject_id or "network", type_, payload)
 
+    def _staff(self, user) -> bool:
+        return bool(user and user.get("role") in ("operator", "owner", "admin"))
+
     def points_for(self, user) -> dict:
         profile = self.ensure_profile(user)
         return self.points.total_for_profile(profile["profile_id"])
@@ -137,7 +140,7 @@ class NetworkService(HuddleExtensions):
 
     def _award_game_completed(self, game_id: str) -> None:
         game = self.db.query_one("SELECT * FROM games WHERE game_id=?", (game_id,))
-        if not game or not game.get("uploader_profile_id"):
+        if not game or not game["uploader_profile_id"]:
             return
         uploader = self.db.query_one(
             "SELECT * FROM profiles WHERE profile_id=?", (game["uploader_profile_id"],)
@@ -889,7 +892,7 @@ class NetworkService(HuddleExtensions):
                 )
                 actor_user = self.cp.get_user(owner["user_id"]) if owner else None
                 if actor_user:
-                    self._award_post_published(actor_user, post["post_id"], post.get("clip_id"))
+                    self._award_post_published(actor_user, post["post_id"], post["clip_id"])
 
     # -- posts / feed ------------------------------------------------------
     def create_post(self, user, data: dict) -> dict:
