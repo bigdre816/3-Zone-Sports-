@@ -240,6 +240,7 @@ class CloudflareWebhookTests(unittest.TestCase):
     def test_http_webhook_route_uses_raw_body(self):
         httpd = make_http_server(
             self.cfg, self.cp, "/tmp", provider=self.provider, photo_storage=self.photos,
+            bind_host="127.0.0.1", bind_port=0,
         )
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
@@ -303,6 +304,7 @@ class CloudflareWebhookTests(unittest.TestCase):
         login = self.cp.password_login("demo-viewer", "change-me-viewer-local")
         httpd = make_http_server(
             self.cfg, self.cp, "/tmp", provider=self.provider, photo_storage=self.photos,
+            bind_host="127.0.0.1", bind_port=0,
         )
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()

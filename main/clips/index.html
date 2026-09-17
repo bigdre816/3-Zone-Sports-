@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Three-Zone Sports — replays and clips from verified games." />
+  <title>Clips · Three-Zone Sports</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <a href="/" class="brand">Three-Zone<small>Sports</small></a>
+    <button class="mobile-menu-toggle" id="menu-toggle" type="button" aria-label="Menu">Menu</button>
+    <nav id="main-nav" aria-label="Primary">
+      <a href="/live/">Live</a>
+      <a href="/schedules/">Schedule</a>
+      <a href="/teams/">Teams</a>
+      <a href="/schools/">Schools</a>
+      <a href="/clips/" class="active">Clips</a>
+      <a href="/archives/">Archive</a>
+      <a href="/app/" data-signin>My Zone</a>
+      <a href="/app/" data-signin>Account</a>
+    </nav>
+    <div class="header-actions">
+      <a class="btn" href="/app/" data-signin>Sign In</a>
+    </div>
+  </header>
+
+  <main>
+    <p class="eyebrow">Clips</p>
+    <h1>Replays &amp; moments</h1>
+    <p class="subtitle">Public clips in this pass come from the verified game archive.</p>
+    <div id="clips-container" class="cards">
+      <div class="unavailable">Loading clips…</div>
+    </div>
+  </main>
+
+  <footer>
+    <p>Three-Zone Sports · <a href="/">3zonesports.com</a></p>
+  </footer>
+
+  <script src="/config.js"></script>
+  <script src="/site.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const container = document.getElementById('clips-container');
+      ThreeZoneSite.loadArchives(container).then(function (rows) {
+        if (!rows.length && container.querySelector('.unavailable')) return;
+      });
+    });
+  </script>
+</body>
+</html>

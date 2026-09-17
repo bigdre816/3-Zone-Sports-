@@ -135,6 +135,41 @@ CREATE INDEX IF NOT EXISTS idx_outbox_undelivered ON socket_outbox(delivered, id
 CREATE INDEX IF NOT EXISTS idx_audit_verify_pending ON audit_verification_outbox(delivered_at, id);
 CREATE INDEX IF NOT EXISTS idx_moten_outbox_status ON moten_outbox(status, created_at);
 
+CREATE TABLE IF NOT EXISTS ws_tickets (
+    ticket_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    expires_at REAL NOT NULL,
+    consumed_at REAL,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ws_tickets_expiry ON ws_tickets(expires_at, consumed_at);
+
+CREATE TABLE IF NOT EXISTS point_rules (
+    rule_version TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (rule_version, event_type)
+);
+
+CREATE TABLE IF NOT EXISTS point_ledger (
+    ledger_id TEXT PRIMARY KEY,
+    profile_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    rule_version TEXT NOT NULL,
+    actor_profile_id TEXT,
+    subject_type TEXT,
+    subject_id TEXT,
+    status TEXT NOT NULL,
+    recorded_at REAL NOT NULL,
+    reverses_ledger_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_point_ledger_profile ON point_ledger(profile_id, status);
+CREATE INDEX IF NOT EXISTS idx_point_ledger_subject ON point_ledger(event_type, subject_type, subject_id);
+
 -- Members-portal V1 domains. These tables supplement the original control
 -- plane tables; original events and rights remain the PDP source of truth.
 CREATE TABLE IF NOT EXISTS member_sessions (
@@ -888,6 +923,7 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_private_rewind_session_created "
             "ON private_rewind_chunks(live_session_id, created_at)"
         )
+        self._seed_point_rules()
         self._conn.commit()
 
     def _init_postgres_schema(self) -> None:
@@ -947,7 +983,24 @@ class Database:
             )
         except Exception:
             pass
+        self._seed_point_rules()
         self._conn.commit()
+
+    def _seed_point_rules(self) -> None:
+        rows = (
+            ("TZ-POINTS-2026.1", "post.published", 10),
+            ("TZ-POINTS-2026.1", "clip.published", 15),
+            ("TZ-POINTS-2026.1", "game.completed", 25),
+            ("TZ-POINTS-2026.1", "reaction.received", 2),
+        )
+        for version, event_type, amount in rows:
+            self._conn.execute(
+                self._prepare_sql(
+                    "INSERT OR IGNORE INTO point_rules(rule_version, event_type, amount, active) "
+                    "VALUES (?,?,?,1)"
+                ),
+                (version, event_type, amount),
+            )
 
     def _dedupe_open_view_sessions(self) -> None:
         """Close duplicate open sessions so the unique partial index can be created."""

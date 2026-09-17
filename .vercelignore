@@ -1,0 +1,17 @@
+.git
+apps
+three-zone-mvp
+Dockerfile
+render.yaml
+render-moten.yaml
+render-three-zone.yaml
+moten_audit
+docs/Moten_IP_Invention_Control_Plane_Master_Specification_v1_0.pdf
+docs/multi-ai
+docs/phase-1-plan.md
+docs/SPEC_MANIFEST.md
+docs/security
+__pycache__
+*.sqlite3
+data
+.pytest_cache

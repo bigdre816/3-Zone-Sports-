@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Three-Zone Sports — game archives and replays." />
+  <title>Archive · Three-Zone Sports</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <a href="/" class="brand">Three-Zone<small>Sports</small></a>
+    <button class="mobile-menu-toggle" id="menu-toggle" type="button" aria-label="Menu">Menu</button>
+    <nav id="main-nav" aria-label="Primary">
+      <a href="/live/">Live</a>
+      <a href="/schedules/">Schedule</a>
+      <a href="/teams/">Teams</a>
+      <a href="/schools/">Schools</a>
+      <a href="/clips/">Clips</a>
+      <a href="/archives/" class="active">Archive</a>
+      <a href="/app/" data-signin>My Zone</a>
+      <a href="/app/" data-signin>Account</a>
+    </nav>
+    <div class="header-actions">
+      <a class="btn" href="/app/" data-signin>Sign In</a>
+    </div>
+  </header>
+
+  <main>
+    <p class="eyebrow">Archive</p>
+    <h1>Replays &amp; clips</h1>
+    <p class="subtitle">Find past games with provenance. Archives stay tied to verified events.</p>
+    <div id="archives-container" class="cards">
+      <div class="unavailable">Loading archives…</div>
+    </div>
+  </main>
+
+  <footer>
+    <p>Three-Zone Sports · <a href="/">3zonesports.com</a></p>
+  </footer>
+
+  <script src="/config.js"></script>
+  <script src="/site.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      ThreeZoneSite.loadArchives(document.getElementById('archives-container'));
+    });
+  </script>
+</body>
+</html>

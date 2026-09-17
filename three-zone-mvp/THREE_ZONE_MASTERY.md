@@ -185,11 +185,13 @@ A signed-in worker or owner on `/` sees a **Control plane** link. `/ops` has a *
 2. Open SQLite at `TZ_DATABASE_PATH` (default `data/three_zone.sqlite3`), or Postgres when `TZ_DATABASE_URL` is set.
 3. Create every table if missing. Migrate additive columns on old databases.
 4. Seed demo users always (upsert). Seed demo events only if the events table is empty.
-5. Start a **separate WebSocket process** (`multiprocessing`, daemon) sharing the same SQLite file in WAL mode — **except on Render**, where a second listen is disabled so `/healthz` on `$PORT` can succeed.
-6. Serve HTTP in the parent process (`ThreadingHTTPServer`).
-7. On Ctrl-C, shut down HTTP, terminate the WS process, close the database.
+5. Bind the existing HTTP server on **loopback**. An asyncio **gateway** owns the public port (`$PORT` on Render): `/ws/*` is completed in-process against the Hub; every other request is TCP-spliced to loopback HTTP so uploads keep streaming.
+6. Hub outbox, feed, and metrics loops run in the gateway process so subscribers and broadcasts share memory. A second listen on `:8765` is never opened.
+7. On Ctrl-C, stop the gateway, shut down HTTP, close the database.
 
-Default bind: HTTP `http://127.0.0.1:8000`, WebSocket `ws://127.0.0.1:8765/ws/events/<event_id>`.
+Default bind: HTTP and WebSocket share `http://127.0.0.1:8000`. Sockets are `ws://127.0.0.1:8000/ws/events/<event_id>` (or `wss://` on Render). See `MEMBER_LIVE_CONTRACT.md` for the ticket handshake.
+
+**Known limit:** WebSocket fan-out is single-instance scoped. Two Render instances will not see each other's outbox until a shared pub/sub exists.
 
 Python packages: `websockets` plus optional AI/provider extras as needed. FFmpeg is optional (demo MP4 and studio clip cut).
 
@@ -425,7 +427,9 @@ Separate process (when not on Render). Path: `ws://{host}:{ws_port}/ws/events/{e
 
 **Client messages:** `ping` → `pong`; `renew` → re-run `evaluate_access` and send `lease.status`.
 
-**Fan-out:** HTTP writes `socket_outbox`. WS process polls every 0.3s, broadcasts, marks `delivered=1`.
+**Fan-out:** HTTP writes `socket_outbox`. The gateway Hub polls every 0.3s, broadcasts, marks `delivered=1`. Fan-out is **single-instance scoped** (no Redis in this pass).
+
+**Auth:** `POST /api/member/ws-ticket` mints a 45s single-use token. Clients connect with `["tz-session", "ticket.<token>"]`. Long-lived session tokens are rejected on the handshake. Same-origin cookie fallback remains. Contract: `MEMBER_LIVE_CONTRACT.md`.
 
 **Metrics:** every 3s write `socket_metrics` (single row id=1): total connections, per-event counts, updated_at. Analytics treats metrics as fresh if updated within 10 seconds.
 
@@ -1118,7 +1122,7 @@ Primary reference: `config.example.env` and `backend/config.py`.
 | --- | --- | --- |
 | TZ_ENV | development | demo/local/development allow Treasure simulation; production is strict |
 | TZ_HTTP_HOST / TZ_HTTP_PORT | 127.0.0.1 / 8000 | HTTP bind (`PORT` on Render) |
-| TZ_WS_HOST / TZ_WS_PORT | 127.0.0.1 / 8765 | Socket bind (disabled as separate listen on Render) |
+| TZ_WS_HOST / TZ_WS_PORT | 127.0.0.1 / 8765 | Legacy socket bind; unused. Gateway owns `$PORT`. |
 | TZ_ALLOWED_ORIGINS | derived from HTTP | Exact CORS and WS Origin |
 | TZ_DATABASE_PATH | data/three_zone.sqlite3 | SQLite file |
 | TZ_DATABASE_URL | empty | Postgres when set |
@@ -1185,7 +1189,7 @@ Primary reference: `config.example.env` and `backend/config.py`.
 | THREEZONE_LIVE_PUBLICATION_ENABLED | false | Not implemented in L1B |
 | THREEZONE_LIVE_CONTINUOUS_VERIFY_ENABLED | false | Not implemented in L1B |
 
-`run.py --http-port --ws-port --host` override binds.
+`run.py --http-port --host` override binds. `--ws-port` is ignored; sockets share the HTTP port.
 
 Public config JSON: env, ws_url_base, session_ttl, lease_ttl, heartbeat_timeout, zones, simulation boolean, register_enabled — never signing secrets or API keys.
 

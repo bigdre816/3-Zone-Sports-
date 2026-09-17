@@ -103,14 +103,14 @@ Run a second copy without touching the default database:
 ```bash
 TZ_ALLOWED_ORIGINS=http://127.0.0.1:18000 \
 TZ_DATABASE_PATH=data/smoke.sqlite3 \
-python run.py --http-port 18000 --ws-port 18765
+python run.py --http-port 18000
 ```
 
 Container run (the image refuses the demo secret, so provide real ones):
 
 ```bash
 docker build -t three-zone-mvp .
-docker run --rm -p 8000:8000 -p 8765:8765 \
+docker run --rm -p 8000:8000 \
   -e TZ_TOKEN_SECRET="replace-with-a-random-32-plus-character-secret" \
   -e TZ_MEDIA_SERVICE_KEY="replace-with-a-separate-32-plus-character-key" \
   -e TZ_ALLOWED_ORIGINS="http://localhost:8000" \
@@ -194,9 +194,10 @@ docker run --rm -p 8000:8000 -p 8765:8765 \
 | `GET` | `/demo/media/{event_id}.mp4` | Lease-gated local demo media |
 | `GET` | `/vendor/hls.min.js` | Pinned hls.js 1.5.x |
 
-The event socket is `ws://127.0.0.1:8765/ws/events/{event_id}` in the default
-run. The browser sends the session token in the WebSocket subprotocol list, and
-the server checks `Origin` against `TZ_ALLOWED_ORIGINS` before admitting it.
+The event socket is same-origin `ws://127.0.0.1:8000/ws/events/{event_id}` (or
+`wss://` on Render). Clients mint `POST /api/member/ws-ticket` and connect with
+`["tz-session", "ticket.<token>"]`. The server checks `Origin` against
+`TZ_ALLOWED_ORIGINS` before admitting the socket. See `MEMBER_LIVE_CONTRACT.md`.
 
 ## Security boundary
 

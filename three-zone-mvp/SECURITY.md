@@ -30,7 +30,7 @@ tokens are additionally scoped to a single `event_id` and `source`.
 | Threat | Mitigation |
 | --- | --- |
 | Cross-site socket hijack | `Origin` checked against `TZ_ALLOWED_ORIGINS`; connection closed `1008` if not allowed |
-| Token in URL / logs | Session token carried in `Sec-WebSocket-Protocol`, never the path/query; access logs record method+path+status only |
+| Token in URL / logs | Short-lived `ticket.<token>` in `Sec-WebSocket-Protocol`, never the path/query; long-lived session tokens are rejected on the handshake; access logs record method+path+status only |
 | Unauthenticated subscribe | Token verified and zone-checked before the socket is registered |
 | Memory/CPU exhaustion | `max_size` message cap, per-connection message rate limit, per-IP connection limit |
 | Dead/half-open connections | library ping/pong with timeout; clean shutdown on SIGINT/SIGTERM |

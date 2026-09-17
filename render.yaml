@@ -37,6 +37,8 @@ services:
         value: /data
       - key: TZ_ALLOWED_ORIGINS
         value: https://3zonesports.com,https://www.3zonesports.com,https://three-zone-sports.onrender.com,https://three-zone-sports-1.onrender.com
+        # Add the exact Lovable preview/publish origin(s) here. Credentialed CORS
+        # and the Hub Origin allowlist fail closed without them.
       - key: TZ_PUBLIC_BASE_URL
         value: https://3zonesports.com
       - key: TZ_LIVE_MEDIA_PROVIDER
