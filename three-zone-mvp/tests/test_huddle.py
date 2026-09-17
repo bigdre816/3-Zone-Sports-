@@ -255,6 +255,11 @@ class HuddleShellTests(unittest.TestCase):
         self.assertIn("youtube_url", js)
         self.assertIn('kind === "youtube"', js)
         self.assertIn("paste a YouTube watch, shorts, or youtu.be URL", js)
+        self.assertIn("viewer_can_delete", js)
+        self.assertIn("if (input == null) return", js)
+        self.assertIn("escapeText(board.home ?? \"—\")", js)
+        self.assertIn('events.find(e => e.status === "live")', js)
+        self.assertIn("bootingPortal", js)
         self.assertIn('referrerpolicy="strict-origin-when-cross-origin"', js)
         self.assertIn("My Teams", html)
         self.assertIn("YouTube", html)
@@ -262,7 +267,7 @@ class HuddleShellTests(unittest.TestCase):
         self.assertIn("Add clip", js)
         self.assertIn("clip-chip", js)
         self.assertIn("data-jump-post", js)
-        self.assertLess(html.find('id="friends-row"'), html.find('id="huddle-live"'))
+        self.assertLess(html.index('id="friends-row"'), html.index('id="huddle-live"'))
         self.assertNotIn("Stories", js)
 
 

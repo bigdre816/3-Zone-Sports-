@@ -92,6 +92,16 @@ class YoutubePostTests(unittest.TestCase):
         self.assertEqual(restricted["publication_status"], "restricted")
         restored = self.net.decide_post(self.worker, post["post_id"], "restore", "cleared")
         self.assertEqual(restored["publication_status"], "published")
+        with self.assertRaises(ValidationError) as ctx:
+            self.net.decide_post(self.worker, post["post_id"], "restore", "already live")
+        self.assertEqual(ctx.exception.code, "bad_status")
+        self.cp.db.execute(
+            "UPDATE posts SET publication_status='processing' WHERE post_id=?",
+            (post["post_id"],),
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            self.net.decide_post(self.worker, post["post_id"], "restrict", "too soon")
+        self.assertEqual(ctx.exception.code, "bad_status")
 
     def test_seeded_kc_youtube_clips_and_teams(self):
         from backend.http_server import _routes

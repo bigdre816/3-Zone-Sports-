@@ -19,7 +19,7 @@ const state = {
   profile: null, signedIn: false, mode: "for_you", sport: "", kind: "photo", tab: "posts",
   maxClipSeconds: 60, minClipSeconds: 5, studioDuration: 90, previewing: false, gameId: null,
   lastClipId: null, lastPostId: null, heroEventId: null, notifyTimer: null,
-  feedItems: [], friendItems: [],
+  feedItems: [], friendItems: [], bootingPortal: false,
 };
 
 function pendingPlayback() {
@@ -168,7 +168,9 @@ function applyRoute() {
     $("#portal").classList.remove("hidden");
     const name = MEMBER_VIEWS.has(view) ? view : "huddle";
     setView(name);
-    if (name === "huddle" || name === "feed") { loadFeed(); loadFriends(); loadTeams(); loadHuddleLive(); }
+    if ((name === "huddle" || name === "feed") && !state.bootingPortal) {
+      loadFeed(); loadFriends(); loadTeams(); loadHuddleLive();
+    }
     if (name === "live" || name === "watch") loadCatalog();
     if ((location.hash || "").replace(/^#/, "") === "archives") {
       const archives = $("#archives");
@@ -299,7 +301,7 @@ async function loadComments(root) {
       const data = await api("GET", `/api/network/comments?subject_type=${type}&subject_id=${id}`);
       el.innerHTML = (data.comments || []).slice(-8).map(c =>
         `<p><strong>${escapeText(c.author.display_name)}</strong> ${escapeText(c.body)}
-         <button type="button" class="quiet" data-del-comment="${c.comment_id}">Remove</button></p>`
+         ${c.viewer_can_delete ? `<button type="button" class="quiet" data-del-comment="${escapeText(c.comment_id)}">Remove</button>` : ""}</p>`
       ).join("") || "";
       el.querySelectorAll("[data-del-comment]").forEach(btn => btn.onclick = async () => {
         try {
@@ -435,7 +437,9 @@ function bindCards(root) {
   });
   root.querySelectorAll("[data-moderate]").forEach(btn => btn.onclick = async () => {
     const action = btn.dataset.action;
-    const reason = prompt("Reason for " + action, "operator review") || "operator review";
+    const input = prompt("Reason for " + action, "operator review");
+    if (input == null) return;
+    const reason = input.trim() || "operator review";
     try {
       await api("POST", `/api/network/review/posts/${btn.dataset.moderate}`, { action, reason });
       toast("Post " + action);
@@ -468,7 +472,7 @@ function liveCard(event) {
   }
   const board = event.scoreboard || {};
   const score = board.home != null
-    ? `<p class="sub">${escapeText(board.period || "")} ${escapeText(board.clock || "")} · ${board.home}–${board.away}</p>`
+    ? `<p class="sub">${escapeText(board.period || "")} ${escapeText(board.clock || "")} · ${escapeText(board.home)}–${escapeText(board.away)}</p>`
     : "";
   return `<article><span class="pill">${pill}</span><h3>${escapeText(event.title)}</h3>${score}${action}</article>`;
 }
@@ -498,7 +502,7 @@ async function loadCatalog() {
         <span class="pill">${escapeText((hero.status || "").toUpperCase())}</span>
         <p class="sub">${escapeText(hero.category || "high school")} · in your zone</p>
         <h3>${escapeText(hero.title)}</h3>
-        <div class="scoreboard"><span>${board.home ?? "—"}</span><small>${escapeText(board.period || "")} ${escapeText(board.clock || "")}</small><span>${board.away ?? "—"}</span></div>
+        <div class="scoreboard"><span>${escapeText(board.home ?? "—")}</span><small>${escapeText(board.period || "")} ${escapeText(board.clock || "")}</small><span>${escapeText(board.away ?? "—")}</span></div>
         ${hero.status === "live" ? `<button type="button" data-event="${hero.event_id}">Watch live</button>` : "<p class='sub'>Watch live unlocks when the game starts.</p>"}
         <p class="post-whisper">Community theater — the gym, the field, the stands.</p>
       </div>`;
@@ -637,7 +641,7 @@ function huddleLiveCard(event) {
       <span class="pill">${live ? "LIVE" : escapeText((event.status || "").toUpperCase())}</span>
       <p class="sub">${escapeText(event.category || "high school")} · Kansas City</p>
       <h3>${escapeText(event.title)}</h3>
-      <div class="scoreboard"><span>${board.home ?? "—"}</span><small>${escapeText(board.period || "")} ${escapeText(board.clock || "")}</small><span>${board.away ?? "—"}</span></div>
+      <div class="scoreboard"><span>${escapeText(board.home ?? "—")}</span><small>${escapeText(board.period || "")} ${escapeText(board.clock || "")}</small><span>${escapeText(board.away ?? "—")}</span></div>
       ${live ? `<button type="button" data-event="${escapeText(event.event_id)}">Watch live</button>` : "<p class='sub'>Watch live unlocks when the game starts.</p>"}
     </div>
   </div>`;
@@ -649,8 +653,8 @@ async function loadHuddleLive() {
   try {
     const live = await api("GET", "/api/member/live");
     const events = live.events || [];
-    const hero = events.find(e => (e.title || "").toLowerCase().includes("ridgeview"))
-      || events.find(e => e.status === "live")
+    const hero = events.find(e => e.status === "live")
+      || events.find(e => (e.title || "").toLowerCase().includes("ridgeview"))
       || events[0];
     if (!hero) { root.innerHTML = ""; return; }
     root.innerHTML = huddleLiveCard(hero);
@@ -879,8 +883,6 @@ async function loadFeed() {
     }
     root.innerHTML = data.items.map(postCard).join("");
     bindCards(root);
-    loadHuddleLive();
-    loadTeams();
   } catch (error) {
     root.innerHTML = "<div class='empty-frame'><span class='empty-kicker'>Huddle</span><p class='empty'>Could not load the huddle.</p></div>";
     toast(error.message);
@@ -905,22 +907,27 @@ async function loadPortal() {
     $("#notify-badge").textContent = me.unread_notifications;
     $("#notify-badge").classList.remove("hidden");
   }
-  await Promise.all([loadFeed(), loadCatalog(), loadNotifications(), loadFriends(), loadTeams(), loadHuddleLive()]);
-  if (!state.notifyTimer) {
-    state.notifyTimer = setInterval(() => { if (state.signedIn) loadNotifications(); }, 30000);
-  }
-  const pending = pendingPlayback();
-  if (pending) {
-    clearPendingPlayback();
-    if (pending.kind === "archive") {
-      location.hash = "watch";
-      await playMedia(`/api/member/archive/${pending.id}/playback`, "Archive playback", "Authorized archive playback");
-    } else {
-      location.hash = "live";
-      await playMedia(`/api/member/events/${pending.id}/playback`, "Live playback", "Authorized playback lease issued");
+  state.bootingPortal = true;
+  try {
+    await Promise.all([loadFeed(), loadCatalog(), loadNotifications(), loadFriends(), loadTeams(), loadHuddleLive()]);
+    if (!state.notifyTimer) {
+      state.notifyTimer = setInterval(() => { if (state.signedIn) loadNotifications(); }, 30000);
     }
+    const pending = pendingPlayback();
+    if (pending) {
+      clearPendingPlayback();
+      if (pending.kind === "archive") {
+        location.hash = "watch";
+        await playMedia(`/api/member/archive/${pending.id}/playback`, "Archive playback", "Authorized archive playback");
+      } else {
+        location.hash = "live";
+        await playMedia(`/api/member/events/${pending.id}/playback`, "Live playback", "Authorized playback lease issued");
+      }
+    }
+    applyRoute();
+  } finally {
+    state.bootingPortal = false;
   }
-  applyRoute();
 }
 
 function authError(error) {

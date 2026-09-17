@@ -977,6 +977,16 @@ class NetworkService(HuddleExtensions):
         mapping = {"restrict": "restricted", "remove": "removed", "restore": "published"}
         if action not in mapping:
             raise ValidationError("action must be restrict, remove, or restore", "bad_action")
+        current = post["publication_status"]
+        if action == "restore":
+            if current not in ("restricted", "removed"):
+                raise ValidationError(
+                    "restore requires a restricted or removed post", "bad_status",
+                )
+        elif current not in ("published", "restricted"):
+            raise ValidationError(
+                "only published or restricted posts can be moderated", "bad_status",
+            )
         status = mapping[action]
         self.db.execute(
             "UPDATE posts SET publication_status=?, updated_at=? WHERE post_id=?",
@@ -1681,7 +1691,7 @@ class NetworkService(HuddleExtensions):
         })
         self._notify(self._subject_owner(subject_type, subject_id), "comment",
                      actor["profile_id"], subject_type, subject_id)
-        return self.comment_view(comment_id)
+        return self.comment_view(comment_id, user)
 
     def list_comments(self, viewer, subject_type: str, subject_id: str) -> dict:
         self._require_subject(viewer, subject_type, subject_id)
@@ -1690,7 +1700,7 @@ class NetworkService(HuddleExtensions):
             "ORDER BY created_at ASC",
             (subject_type, subject_id),
         )
-        return {"comments": [self.comment_view(r["comment_id"]) for r in rows]}
+        return {"comments": [self.comment_view(r["comment_id"], viewer) for r in rows]}
 
     def delete_comment(self, user, comment_id: str) -> dict:
         row = dict(self._row("comments", "comment_id", comment_id, "comment not found", "comment_not_found"))
@@ -1701,15 +1711,25 @@ class NetworkService(HuddleExtensions):
         self.db.execute("UPDATE comments SET deleted_at=? WHERE comment_id=?", (_now(), comment_id))
         return {"ok": True}
 
-    def comment_view(self, comment_id: str) -> dict:
+    def comment_view(self, comment_id: str, viewer=None) -> dict:
         row = dict(self._row("comments", "comment_id", comment_id, "comment not found", "comment_not_found"))
         author = dict(self._row("profiles", "profile_id", row["author_profile_id"]))
+        can_delete = False
+        if viewer:
+            actor = self.ensure_profile(viewer)
+            owner = self._subject_owner(row["subject_type"], row["subject_id"])
+            can_delete = (
+                row["author_profile_id"] == actor["profile_id"]
+                or owner == actor["profile_id"]
+                or self._staff(viewer)
+            )
         return {
             "comment_id": row["comment_id"],
             "author": self.public_profile(author),
             "body": row["body"],
             "created_at": row["created_at"],
             "parent_comment_id": row["parent_comment_id"] if "parent_comment_id" in row.keys() else None,
+            "viewer_can_delete": can_delete,
         }
 
     def save_item(self, user, subject_type: str, subject_id: str) -> dict:

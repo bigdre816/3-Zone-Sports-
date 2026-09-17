@@ -397,6 +397,12 @@ class SocialAndModerationTests(unittest.TestCase):
         post = self._post()
         comment = self.net.add_comment(self.other, "post", post["post_id"], "Nice play")
         stranger = self.cp.register_viewer("stranger1", "password123", "Stranger")["user"]
+        listed_stranger = self.net.list_comments(stranger, "post", post["post_id"])
+        self.assertFalse(listed_stranger["comments"][0]["viewer_can_delete"])
+        listed_author = self.net.list_comments(self.other, "post", post["post_id"])
+        self.assertTrue(listed_author["comments"][0]["viewer_can_delete"])
+        listed_owner = self.net.list_comments(self.member, "post", post["post_id"])
+        self.assertTrue(listed_owner["comments"][0]["viewer_can_delete"])
         with self.assertRaises(ForbiddenError):
             self.net.delete_comment(stranger, comment["comment_id"])
         self.net.delete_comment(self.other, comment["comment_id"])
