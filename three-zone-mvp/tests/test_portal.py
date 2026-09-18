@@ -194,6 +194,7 @@ class PortalTests(unittest.TestCase):
         self.assertIn("TZ_DATABASE_PATH", blueprint)
         self.assertIn("/data/three_zone.sqlite3", blueprint)
         self.assertIn("TZ_PUBLIC_APP_URL", blueprint)
+        self.assertIn("https://app.3zonesports.com", blueprint)
         self.assertIn("https://threezonesport.lovable.app", blueprint)
         self.assertIn("https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app", blueprint)
         self.assertIn("https://3zonesports.com", blueprint)
@@ -528,6 +529,16 @@ class AuthHttpTests(unittest.TestCase):
         })
         self.assertEqual(status, 400)
         self.assertEqual(reserved["code"], "bad_username")
+
+    def test_member_app_login_accepts_identifier_field(self):
+        status, body, headers = self._json("POST", "/api/auth/login", {
+            "identifier": "demo-viewer",
+            "password": self.DEMO_SEED_PASSWORDS["demo-viewer"],
+        })
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body.get("session_token"))
+        self.assertEqual(body["user"]["user_id"], "demo-viewer")
+        self.assertTrue(self._cookie(headers))
 
     def test_healthz_aliases_match_api_health(self):
         for path in ("/healthz", "/health", "/api/health"):

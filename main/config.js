@@ -1,10 +1,11 @@
 /**
- * Public site configuration. Fetch the Render API; send members to Lovable.
- * Do not surface infrastructure origins in page copy, forms, or status badges.
+ * Public site configuration. Fetch the Render API; send members to
+ * app.3zonesports.com (the member-facing product). Do not surface
+ * infrastructure origins in page copy, forms, or status badges.
  */
 
 const PRODUCTION_API_ORIGIN = 'https://three-zone-sports-1.onrender.com';
-const MEMBER_APP_ORIGIN = 'https://threezonesport.lovable.app';
+const MEMBER_APP_ORIGIN = 'https://app.3zonesports.com';
 
 const ThreeZoneConfig = {
   PRODUCTION_API_ORIGIN,

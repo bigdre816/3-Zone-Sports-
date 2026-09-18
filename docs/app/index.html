@@ -15,8 +15,13 @@
   <script src="/config.js"></script>
   <script>
     (function () {
-      const query = window.location.search || '';
-      ThreeZoneConfig.memberAppUrl('/' + query).then(function (url) {
+      const params = new URLSearchParams(window.location.search || '');
+      const eventId = params.get('event');
+      const archiveId = params.get('archive');
+      let path = '/';
+      if (eventId) path = '/game/' + encodeURIComponent(eventId);
+      else if (archiveId) path = '/archive';
+      ThreeZoneConfig.memberAppUrl(path).then(function (url) {
         window.location.replace(url);
       }).catch(function () {
         document.querySelector('.subtitle').textContent = 'Member sign-in is temporarily unavailable. Try again shortly.';

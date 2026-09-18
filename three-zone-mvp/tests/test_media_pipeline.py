@@ -620,16 +620,38 @@ class ConfigTests(unittest.TestCase):
 
     def test_27e_public_app_url_is_allowed_origin(self):
         os.environ["TZ_ALLOWED_ORIGINS"] = "https://3zonesports.com"
-        os.environ["TZ_PUBLIC_APP_URL"] = "https://threezonesport.lovable.app"
+        os.environ["TZ_PUBLIC_APP_URL"] = "https://app.3zonesports.com"
         try:
             cfg = Config.from_env()
-            self.assertEqual(cfg.public_app_url, "https://threezonesport.lovable.app")
-            self.assertEqual(cfg.external_member_app_url(), "https://threezonesport.lovable.app")
+            self.assertEqual(cfg.public_app_url, "https://app.3zonesports.com")
+            self.assertEqual(cfg.external_member_app_url(), "https://app.3zonesports.com")
             self.assertIn("https://3zonesports.com", cfg.allowed_origins)
+            self.assertIn("https://app.3zonesports.com", cfg.allowed_origins)
             self.assertIn("https://threezonesport.lovable.app", cfg.allowed_origins)
         finally:
             os.environ.pop("TZ_ALLOWED_ORIGINS", None)
             os.environ.pop("TZ_PUBLIC_APP_URL", None)
+
+    def test_27e_first_party_member_origin_is_always_allowed(self):
+        os.environ["TZ_ALLOWED_ORIGINS"] = "https://3zonesports.com"
+        try:
+            cfg = Config.from_env()
+            self.assertIn("https://app.3zonesports.com", cfg.allowed_origins)
+            self.assertIn("https://threezonesport.lovable.app", cfg.allowed_origins)
+        finally:
+            os.environ.pop("TZ_ALLOWED_ORIGINS", None)
+
+    def test_27e_render_defaults_public_app_url_to_member_host(self):
+        os.environ["RENDER"] = "true"
+        os.environ["TZ_ALLOWED_ORIGINS"] = "https://3zonesports.com"
+        os.environ.pop("TZ_PUBLIC_APP_URL", None)
+        try:
+            cfg = Config.from_env()
+            self.assertEqual(cfg.external_member_app_url(), "https://app.3zonesports.com")
+            self.assertIn("https://app.3zonesports.com", cfg.allowed_origins)
+        finally:
+            os.environ.pop("RENDER", None)
+            os.environ.pop("TZ_ALLOWED_ORIGINS", None)
 
     def test_27d_render_does_not_bind_separate_ws(self):
         from backend.config import bind_separate_websocket

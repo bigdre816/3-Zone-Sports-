@@ -783,7 +783,8 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
     def h_auth_login(self, p, b, u):
         self.network.check_login_rate(self._client_ip())
         body = b or {}
-        result = self.cp.password_login(body.get("username", ""), body.get("password", ""))
+        username = body.get("username") or body.get("identifier") or ""
+        result = self.cp.password_login(username, body.get("password", ""))
         self._auth_cookie_response(result)
 
     def h_auth_register(self, p, b, u):
