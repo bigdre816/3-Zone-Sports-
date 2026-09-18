@@ -47,7 +47,7 @@ const ThreeZoneConfig = {
         return this._origin();
       }
       // Already on this Render service — stay same-origin. Never bounce to
-      // Lovable or app.3zonesports.com.
+      // a Lovable preview host.
       if (host.endsWith('.onrender.com') && !this._isLovableHost(host)) {
         if (loc.origin) {
           return String(loc.origin).replace(/\/+$/, '');
