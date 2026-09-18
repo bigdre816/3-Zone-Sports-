@@ -241,6 +241,10 @@ class FeedServiceTests(unittest.TestCase):
         self.assertEqual(snap["gaps"]["college"]["status"], "not_configured")
         self.assertEqual(snap["gaps"]["high_school"]["status"], "not_configured")
         self.assertIn("not a streaming entitlement", snap["rights_note"].lower())
+        self.assertEqual(
+            [row["team_id"] for row in (snap.get("member") or {}).get("my_teams") or []],
+            ["team_nfl_kc_chiefs", "team_mlb_kc_royals"],
+        )
         health = svc.health()
         self.assertFalse(health["configured"])
         self.assertEqual(health["freshness"], "not_configured")
@@ -305,6 +309,12 @@ class FeedServiceTests(unittest.TestCase):
         mlb = [c for c in fake.calls if c[0] == "games" and c[1] == "MLB"]
         self.assertIn("14", nfl[0][3])
         self.assertIn("12", mlb[0][3])
+        self.assertEqual(snap["member"]["followed_team_ids"], ["team_nba_bos"])
+        defaults = svc.snapshot()
+        self.assertEqual(
+            [row["team_id"] for row in defaults["member"]["my_teams"]],
+            ["team_nfl_kc_chiefs", "team_mlb_kc_royals"],
+        )
 
     def test_failure_does_not_invent_demo_scores(self):
         svc, fake, cfg, db = _svc(key="test-key")
@@ -395,22 +405,33 @@ class HttpRouteTests(unittest.TestCase):
         self.httpd.shutdown()
         self.httpd.server_close()
 
-    def _get(self, path, cookie=None):
+    def _status(self, path, cookie=None):
         req = urllib.request.Request(self.base + path)
         if cookie:
             req.add_header("Cookie", cookie)
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            return json.loads(resp.read())
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return resp.status, json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode()
+            try:
+                payload = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                payload = {"raw": body}
+            return exc.code, payload
 
-    def test_public_scores_not_configured(self):
-        payload = self._get("/api/public/scores")
-        self.assertEqual(payload["freshness"], "not_configured")
-        self.assertEqual(payload["games"], [])
-        self.assertEqual(payload["gaps"]["college"], GAPS["college"])
-        upcoming = self._get("/api/public/scores/upcoming")
-        self.assertEqual(upcoming["bucket"], "upcoming")
-        team = self._get("/api/public/scores/teams/team_nfl_kc_chiefs")
-        self.assertEqual(team["team"]["team_id"], "team_nfl_kc_chiefs")
+    def _get(self, path, cookie=None):
+        status, payload = self._status(path, cookie=cookie)
+        if status != 200:
+            raise AssertionError(f"{path} -> {status} {payload}")
+        return payload
+
+    def test_public_scores_are_gone(self):
+        status, payload = self._status("/api/public/scores")
+        self.assertEqual(status, 404)
+        self.assertEqual(payload.get("code"), "not_found")
+        status, _ = self._status("/api/member/sports")
+        self.assertEqual(status, 401)
 
     def test_health_includes_feeds_without_secrets(self):
         payload = self._get("/api/health")
@@ -433,17 +454,26 @@ class HttpRouteTests(unittest.TestCase):
         )
         with urllib.request.urlopen(login, timeout=5) as resp:
             cookie = resp.headers.get("Set-Cookie")
-        payload = self._get("/api/member/scores", cookie=cookie.split(";")[0])
-        self.assertIn("my_zone", payload)
-        self.assertIn("local", payload["my_zone"])
+        payload = self._get("/api/member/sports", cookie=cookie.split(";")[0])
+        self.assertIn("member", payload)
+        self.assertIn("my_teams", payload["member"])
+        ids = [row["team_id"] for row in payload["member"]["my_teams"]]
+        self.assertIn("team_nfl_kc_chiefs", ids)
+        self.assertIn("team_mlb_kc_royals", ids)
         portal = (STATIC / "portal.js").read_text(encoding="utf-8")
         api_js = (STATIC / "api.js").read_text(encoding="utf-8")
         self.assertNotIn("balldontlie.io", portal)
         self.assertNotIn("balldontlie.io", api_js)
-        self.assertIn("/api/member/scores", portal)
+        self.assertIn("/api/member/sports", portal)
+        self.assertNotIn("/api/public/scores", portal)
         html = (STATIC / "index.html").read_text(encoding="utf-8")
-        self.assertIn("id=\"view-scores\"", html)
+        self.assertIn("id=\"sports-my-teams\"", html)
+        self.assertIn("<details", html)
+        self.assertNotIn("id=\"view-scores\"", html)
         self.assertIn("id=\"view-team\"", html)
+        self.assertIn("id=\"view-live\"", html)
+        self.assertIn("id=\"view-huddle\"", html)
+        self.assertIn("id=\"view-studio\"", html)
 
     def test_mocked_http_scores_when_configured(self):
         cfg = Config(env="demo", http_host="127.0.0.1", http_port=0,
@@ -458,15 +488,31 @@ class HttpRouteTests(unittest.TestCase):
         thread.start()
         try:
             host, port = httpd.server_address
-            with urllib.request.urlopen(f"http://{host}:{port}/api/public/scores", timeout=5) as resp:
+            login = urllib.request.Request(
+                f"http://{host}:{port}/api/auth/login",
+                data=json.dumps({"username": "demo-viewer", "password": "change-me-viewer-local"}).encode(),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(login, timeout=5) as resp:
+                cookie = (resp.headers.get("Set-Cookie") or "").split(";")[0]
+            req = urllib.request.Request(f"http://{host}:{port}/api/member/sports")
+            req.add_header("Cookie", cookie)
+            with urllib.request.urlopen(req, timeout=5) as resp:
                 payload = json.loads(resp.read())
             self.assertEqual(payload["configured"], True)
             self.assertGreaterEqual(len(payload["games"]), 1)
             self.assertTrue(any(g["league"] == "NFL" for g in payload["games"]))
             self.assertIsNotNone(payload["last_successful_fetch"])
             self.assertIsNotNone(payload["last_attempt_at"])
-            finals = json.loads(urllib.request.urlopen(f"http://{host}:{port}/api/public/scores/finals", timeout=5).read())
-            self.assertEqual(finals["bucket"], "finals")
+            self.assertTrue(payload["member"]["my_teams"])
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(f"http://{host}:{port}/api/public/scores", timeout=5)
+            self.assertEqual(raised.exception.code, 404)
+            live_req = urllib.request.Request(f"http://{host}:{port}/api/member/sports/live")
+            live_req.add_header("Cookie", cookie)
+            live = json.loads(urllib.request.urlopen(live_req, timeout=5).read())
+            self.assertEqual(live["bucket"], "live_now")
             health = json.loads(urllib.request.urlopen(f"http://{host}:{port}/api/health", timeout=5).read())
             feeds = health["sports_feeds"]
             self.assertTrue(feeds["configured"])
@@ -484,7 +530,8 @@ class HttpRouteTests(unittest.TestCase):
 class CatalogAndDocsTests(unittest.TestCase):
     def test_routes_and_example_env(self):
         paths = {r["path"] for r in SITE_ROUTES}
-        self.assertIn("/api/public/scores", paths)
+        self.assertNotIn("/api/public/scores", paths)
+        self.assertIn("/api/member/sports", paths)
         self.assertIn("/api/member/scores", paths)
         env = (MVP / "config.example.env").read_text(encoding="utf-8")
         self.assertIn("BALLDONTLIE_API_KEY=", env)

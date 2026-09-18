@@ -68,10 +68,6 @@ def _routes():
         ("GET", re.compile(r"^/api/public/live$"), "h_public_live", "none"),
         ("GET", re.compile(r"^/api/public/schedules$"), "h_public_schedules", "none"),
         ("GET", re.compile(r"^/api/public/archives$"), "h_public_archives", "none"),
-        ("GET", re.compile(r"^/api/public/scores$"), "h_public_scores", "none"),
-        ("GET", re.compile(r"^/api/public/scores/upcoming$"), "h_public_scores_upcoming", "none"),
-        ("GET", re.compile(r"^/api/public/scores/finals$"), "h_public_scores_finals", "none"),
-        ("GET", re.compile(r"^/api/public/scores/teams/(?P<team_id>[A-Za-z0-9_-]+)$"), "h_public_scores_team", "none"),
         ("POST", re.compile(r"^/api/auth/demo-login$"), "h_login", "none"),
         ("POST", re.compile(r"^/api/auth/login$"), "h_auth_login", "none"),
         ("POST", re.compile(r"^/api/auth/register$"), "h_auth_register", "none"),
@@ -83,10 +79,16 @@ def _routes():
         ("GET", re.compile(r"^/api/member/live$"), "h_member_live", "member"),
         ("GET", re.compile(r"^/api/member/schedules$"), "h_member_schedules", "member"),
         ("GET", re.compile(r"^/api/member/archives$"), "h_member_archives", "member"),
-        ("GET", re.compile(r"^/api/member/scores$"), "h_member_scores", "member"),
-        ("GET", re.compile(r"^/api/member/scores/upcoming$"), "h_member_scores_upcoming", "member"),
-        ("GET", re.compile(r"^/api/member/scores/finals$"), "h_member_scores_finals", "member"),
-        ("GET", re.compile(r"^/api/member/scores/teams/(?P<team_id>[A-Za-z0-9_-]+)$"), "h_member_scores_team", "member"),
+        ("GET", re.compile(r"^/api/member/scores$"), "h_member_sports", "member"),
+        ("GET", re.compile(r"^/api/member/scores/upcoming$"), "h_member_sports_upcoming", "member"),
+        ("GET", re.compile(r"^/api/member/scores/finals$"), "h_member_sports_finals", "member"),
+        ("GET", re.compile(r"^/api/member/scores/teams/(?P<team_id>[A-Za-z0-9_-]+)$"), "h_member_sports_team", "member"),
+        ("GET", re.compile(r"^/api/member/sports$"), "h_member_sports", "member"),
+        ("GET", re.compile(r"^/api/member/sports/live$"), "h_member_sports_live", "member"),
+        ("GET", re.compile(r"^/api/member/sports/upcoming$"), "h_member_sports_upcoming", "member"),
+        ("GET", re.compile(r"^/api/member/sports/finals$"), "h_member_sports_finals", "member"),
+        ("GET", re.compile(r"^/api/member/sports/browse$"), "h_member_sports_browse", "member"),
+        ("GET", re.compile(r"^/api/member/sports/teams/(?P<team_id>[A-Za-z0-9_-]+)$"), "h_member_sports_team", "member"),
         ("GET", re.compile(r"^/api/member/search$"), "h_member_search", "member"),
         ("GET", re.compile(r"^/api/member/feed$"), "h_member_feed", "optional"),
         ("GET", re.compile(r"^/api/member/notifications$"), "h_member_notifications", "member"),
@@ -707,39 +709,41 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             followed, sports = [], []
         return followed, sports
 
-    def h_public_scores(self, p, b, u):
-        bucket = self._qs().get("bucket")
-        self._send_json(200, self.sports_feeds.snapshot(bucket=bucket))
-
-    def h_public_scores_upcoming(self, p, b, u):
-        self._send_json(200, self.sports_feeds.snapshot(bucket="upcoming"))
-
-    def h_public_scores_finals(self, p, b, u):
-        self._send_json(200, self.sports_feeds.snapshot(bucket="finals"))
-
-    def h_public_scores_team(self, p, b, u):
-        self._send_json(200, self.sports_feeds.snapshot(team_id=p["team_id"]))
-
-    def h_member_scores(self, p, b, u):
+    def h_member_sports(self, p, b, u):
         followed, sports = self._scores_prefs(u)
-        bucket = self._qs().get("bucket")
+        qs = self._qs()
         self._send_json(200, self.sports_feeds.snapshot(
-            followed_team_ids=followed, sports=sports, bucket=bucket,
+            followed_team_ids=followed, sports=sports, bucket=qs.get("bucket"),
+            league=qs.get("league"), team_id=qs.get("team_id"),
         ))
 
-    def h_member_scores_upcoming(self, p, b, u):
+    def h_member_sports_live(self, p, b, u):
+        followed, sports = self._scores_prefs(u)
+        self._send_json(200, self.sports_feeds.snapshot(
+            followed_team_ids=followed, sports=sports, bucket="live_now",
+        ))
+
+    def h_member_sports_upcoming(self, p, b, u):
         followed, sports = self._scores_prefs(u)
         self._send_json(200, self.sports_feeds.snapshot(
             followed_team_ids=followed, sports=sports, bucket="upcoming",
         ))
 
-    def h_member_scores_finals(self, p, b, u):
+    def h_member_sports_finals(self, p, b, u):
         followed, sports = self._scores_prefs(u)
         self._send_json(200, self.sports_feeds.snapshot(
             followed_team_ids=followed, sports=sports, bucket="finals",
         ))
 
-    def h_member_scores_team(self, p, b, u):
+    def h_member_sports_browse(self, p, b, u):
+        followed, sports = self._scores_prefs(u)
+        qs = self._qs()
+        self._send_json(200, self.sports_feeds.snapshot(
+            followed_team_ids=followed, sports=sports, bucket="browse",
+            league=qs.get("league"), team_id=qs.get("team_id"),
+        ))
+
+    def h_member_sports_team(self, p, b, u):
         followed, sports = self._scores_prefs(u)
         self._send_json(200, self.sports_feeds.snapshot(
             followed_team_ids=followed, sports=sports, team_id=p["team_id"],

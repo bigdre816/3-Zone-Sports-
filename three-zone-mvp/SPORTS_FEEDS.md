@@ -1,10 +1,11 @@
 # Sports data feeds (Phase 1)
 
 Server-side **BALLDONTLIE** adapters publish NFL, MLB, and NBA score/schedule
-facts through Three-Zone `/api/public/scores` and `/api/member/scores`.
+facts through Three-Zone member-only `/api/member/sports` (and `/api/member/scores` aliases).
 
 This is **not** streaming, media rights, or `LIVE_PUBLIC`. A score row is never
-a watch lease.
+a watch lease. Guests see signup/login only — live scores are never served under
+`/api/public/*`.
 
 ## Configuration
 
@@ -51,7 +52,8 @@ and `last_attempt_at` (ISO-8601 UTC or null). They never include the API key.
 
 The member portal is `three-zone-mvp/backend/static` on the same host. There is
 **no** separate Lovable sports repo in this activation. The browser only calls
-`/api/member/scores*`. It never calls `api.balldontlie.io`.
+`/api/member/sports*`. It never calls `api.balldontlie.io`. Guests cannot peek
+scores; Live → My Teams is the member view (Chiefs/Royals defaults).
 
 ## Later phases (not in this change)
 

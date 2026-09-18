@@ -9,6 +9,7 @@ from typing import Callable
 
 from ..db import dumps, loads
 from .catalog import (
+    DEFAULT_FOLLOW_TEAM_IDS,
     LOCAL_PRIORITY_TEAM_IDS,
     PRO_TEAMS,
     catalog_public,
@@ -170,12 +171,13 @@ class SportsFeedService:
         sports: list[str] | None = None,
         bucket: str | None = None,
         team_id: str | None = None,
+        league: str | None = None,
         refresh: bool = False,
     ) -> dict:
         if refresh or self._should_refresh():
             self.refresh()
         games = self._all_games()
-        if team_id:
+        if team_id and bucket != "browse":
             spec = team_by_id(team_id)
             games = [g for g in games if self._involves_team(g, team_id)]
             team = None
@@ -192,14 +194,25 @@ class SportsFeedService:
                 payload["team"] = {"team_id": team_id, "name": None, "league": None, "market": None}
             return payload
 
-        followed = set(followed_team_ids or [])
+        follows = [tid for tid in (followed_team_ids or []) if tid] or list(DEFAULT_FOLLOW_TEAM_IDS)
+        follow_set = set(follows)
         sports = [s.lower() for s in (sports or []) if s]
         local = [g for g in games if self._is_local(g)]
         in_progress = [g for g in games if g.get("status") == "in_progress"]
         upcoming = [g for g in games if g.get("status") in ("scheduled", "delayed", "postponed")]
         finals = [g for g in games if g.get("status") == "final"]
         nba = [g for g in games if g.get("league") == "NBA"]
-        preferred_nba = [g for g in nba if self._involves_any(g, followed)]
+        preferred_nba = [g for g in nba if self._involves_any(g, follow_set)]
+        cares_nba = "basketball" in sports or any(
+            (team_by_id(tid) and team_by_id(tid).league == "NBA") for tid in follows
+        )
+        live_now = self._sort_games([
+            g for g in in_progress
+            if self._involves_any(g, follow_set) or (g.get("league") == "NBA" and cares_nba)
+        ])
+        upcoming_followed = self._sort_games([g for g in upcoming if self._involves_any(g, follow_set)])[:8]
+        finals_followed = self._sort_games([g for g in finals if self._involves_any(g, follow_set)])[:8]
+        my_teams = [self._team_card(tid, games) for tid in follows]
         sections = {
             "local": self._sort_games(local),
             "in_progress": self._sort_games(in_progress),
@@ -208,17 +221,44 @@ class SportsFeedService:
             "nba_national": self._sort_games(nba),
             "nba_preferred": self._sort_games(preferred_nba),
         }
-        if bucket in ("upcoming", "finals", "in_progress", "local", "nba_national"):
+        member = {
+            "my_teams": my_teams,
+            "live_now": live_now,
+            "upcoming": upcoming_followed,
+            "finals": finals_followed,
+            "followed_team_ids": follows,
+        }
+        if bucket in ("upcoming", "finals"):
+            payload = self._envelope(member[bucket], bucket=bucket)
+            payload["member"] = member
+            return payload
+        if bucket in ("live_now", "in_progress"):
+            payload = self._envelope(live_now, bucket="live_now")
+            payload["member"] = member
+            return payload
+        if bucket in ("local", "nba_national"):
             return self._envelope(sections[bucket], bucket=bucket)
+        if bucket == "browse":
+            browsed = list(games)
+            if league:
+                browsed = [g for g in browsed if (g.get("league") or "").upper() == league.upper()]
+            if team_id:
+                browsed = [g for g in browsed if self._involves_team(g, team_id)]
+            payload = self._envelope(self._sort_games(browsed)[:20], bucket="browse")
+            payload["browse"] = {"league": (league or "").upper() or None, "team_id": team_id}
+            payload["teams"] = catalog_public()
+            payload["member"] = member
+            return payload
         payload = self._envelope(self._sort_games(games), bucket=bucket or "all")
         payload["sections"] = sections
-        show_national = "basketball" in sports or not preferred_nba
+        show_national = cares_nba or not preferred_nba
         payload["my_zone"] = {
             "local": sections["local"],
             "in_progress": sections["in_progress"],
             "preferred_nba": sections["nba_preferred"],
             "nba_national": sections["nba_national"] if show_national else [],
         }
+        payload["member"] = member
         payload["teams"] = catalog_public()
         return payload
 
@@ -382,6 +422,27 @@ class SportsFeedService:
                 "timezone": "America/Chicago",
                 "priority_teams": sorted(LOCAL_PRIORITY_TEAM_IDS),
             },
+        }
+
+    def _team_card(self, team_id: str, games: list[dict]) -> dict:
+        spec = team_by_id(team_id)
+        involving = [g for g in games if self._involves_team(g, team_id)]
+        headline = None
+        for status in ("in_progress", "scheduled", "delayed", "postponed", "final"):
+            for game in self._sort_games(involving):
+                if game.get("status") == status:
+                    headline = game
+                    break
+            if headline:
+                break
+        if headline is None and involving:
+            headline = involving[0]
+        return {
+            "team_id": team_id,
+            "name": spec.name if spec else team_id,
+            "league": spec.league if spec else None,
+            "abbreviation": spec.abbreviations[0] if spec and spec.abbreviations else None,
+            "game": headline,
         }
 
     def _is_local(self, game: dict) -> bool:

@@ -33,12 +33,10 @@
     <div id="live-container" class="cards">
       <div class="unavailable">Loading live games…</div>
     </div>
-    <p class="eyebrow">Pro scores</p>
-    <h2>NFL · MLB · NBA</h2>
-    <p class="subtitle">Scoreboard facts from the sports data feed. Not a live stream.</p>
-    <div id="scores-container" class="cards">
-      <div class="unavailable">Loading scores…</div>
-    </div>
+    <p class="eyebrow">Members</p>
+    <h2>Pro scores are member-only</h2>
+    <p class="subtitle">Sign in for My Teams (Chiefs, Royals, and your NBA). Scores from licensed data · not a streaming pass.</p>
+    <p><a class="btn" href="/app/" data-signin>Sign in</a></p>
   </main>
 
   <footer>
@@ -50,7 +48,6 @@
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       ThreeZoneSite.loadLive(document.getElementById('live-container'));
-      ThreeZoneSite.loadScores(document.getElementById('scores-container'));
     });
   </script>
 </body>

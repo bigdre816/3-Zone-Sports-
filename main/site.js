@@ -171,25 +171,15 @@ const ThreeZoneSite = {
     ]);
   },
 
-  async loadScores(container, limit) {
-    try {
-      const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.scores);
-      if (data.freshness === 'not_configured') {
-        this.showEmpty(container, 'Pro scores are not configured. High-school and college stay on the Three-Zone catalog.');
-        return [];
-      }
-      const rows = data.games || [];
-      if (!rows.length) {
-        this.showEmpty(container, 'No professional games in the current window.');
-        return rows;
-      }
-      const cards = rows.slice(0, limit || rows.length).map((row) => this.scoreCard(row));
-      container.replaceChildren(...cards);
-      return rows;
-    } catch (_) {
-      this.showUnavailable(container, 'scores');
-      return [];
-    }
+  async loadScores(container) {
+    if (!container) return [];
+    container.replaceChildren(
+      this.el('div', { class: 'unavailable' }, [
+        this.el('p', { text: 'Pro scores are member-only. Sign in for My Teams.' }),
+        this.el('a', { class: 'btn', href: '/app/', 'data-signin': true, text: 'Sign in' }),
+      ])
+    );
+    return [];
   },
 
   uniqueBy(rows, key) {

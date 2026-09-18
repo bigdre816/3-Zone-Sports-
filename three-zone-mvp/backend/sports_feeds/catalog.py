@@ -93,6 +93,9 @@ PRO_TEAMS: tuple[ProTeam, ...] = (
 LOCAL_PRIORITY_TEAM_IDS = frozenset(
     spec.team_id for spec in PRO_TEAMS if spec.market == "kansas_city"
 )
+DEFAULT_FOLLOW_TEAM_IDS = tuple(
+    spec.team_id for spec in PRO_TEAMS if spec.market == "kansas_city"
+)
 
 _BY_ID = {spec.team_id: spec for spec in PRO_TEAMS}
 

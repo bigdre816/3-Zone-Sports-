@@ -14,7 +14,6 @@ const ThreeZoneConfig = {
       live: '/api/public/live',
       schedules: '/api/public/schedules',
       archives: '/api/public/archives',
-      scores: '/api/public/scores',
     },
   },
 

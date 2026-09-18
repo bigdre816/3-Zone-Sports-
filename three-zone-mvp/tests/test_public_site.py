@@ -73,7 +73,7 @@ class PublicSiteTests(unittest.TestCase):
         self.assertIn("/api/public/live", config)
         self.assertIn("/api/public/schedules", config)
         self.assertIn("/api/public/archives", config)
-        self.assertIn("/api/public/scores", config)
+        self.assertNotIn("/api/public/scores", config)
 
     def test_pages_fetch_public_catalog_automatically(self):
         home = (DOCS / "index.html").read_text(encoding="utf-8")
@@ -85,6 +85,8 @@ class PublicSiteTests(unittest.TestCase):
         self.assertNotIn("Three Zones of Access", home)
         live = (DOCS / "live" / "index.html").read_text(encoding="utf-8")
         self.assertIn("ThreeZoneSite.loadLive", live)
+        self.assertNotIn("ThreeZoneSite.loadScores", live)
+        self.assertIn("Pro scores are member-only", live)
         schedules = (DOCS / "schedules" / "index.html").read_text(encoding="utf-8")
         self.assertIn("ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.schedules)", schedules)
         archives = (DOCS / "archives" / "index.html").read_text(encoding="utf-8")
@@ -130,7 +132,7 @@ class PublicSiteTests(unittest.TestCase):
         try:
             host, port = httpd.server_address
             base = f"http://{host}:{port}"
-            for path in ("/api/health", "/api/public/live", "/api/public/schedules", "/api/public/archives", "/api/public/scores"):
+            for path in ("/api/health", "/api/public/live", "/api/public/schedules", "/api/public/archives"):
                 request = urllib.request.Request(
                     base + path,
                     headers={"Origin": "https://3zonesports.com"},
@@ -148,9 +150,6 @@ class PublicSiteTests(unittest.TestCase):
                     self.assertGreaterEqual(len(payload["events"]), 1)
                 elif path.endswith("schedules"):
                     self.assertGreaterEqual(len(payload["schedules"]), 1)
-                elif path.endswith("scores"):
-                    self.assertIn("games", payload)
-                    self.assertEqual(payload["freshness"], "not_configured")
                 else:
                     self.assertGreaterEqual(len(payload["archives"]), 1)
         finally:
