@@ -74,6 +74,7 @@
         <div id="friends-row" class="friends-row" aria-label="People and clips"></div>
         <div class="section-title huddle-teams-head"><h2>My Teams</h2><span>Follow schools and clubs in Kansas City and your zone.</span></div>
         <div id="my-teams" class="teams-row"></div>
+        <p class="sub huddle-sports-link">Pro scores live under <a href="#live">Live → My Teams</a>. Scores from licensed data · not a streaming pass.</p>
         <div id="huddle-live"></div>
         <div class="chip-row" role="tablist" aria-label="Feed mode">
           <button type="button" class="chip active" data-mode="for_you">For you</button>
@@ -93,7 +94,44 @@
       </section>
 
       <section id="view-live" class="view hidden">
-        <div class="section-title"><h2>Live</h2><span>Theater for the game in front of you.</span></div>
+        <div class="section-title"><h2>Live</h2><span>Scores from licensed data · not a streaming pass</span></div>
+        <p id="live-sports-freshness" class="freshness-chip" aria-live="polite"></p>
+        <details class="sports-fold" id="sports-my-teams" open>
+          <summary>My Teams</summary>
+          <div id="sports-my-teams-list" class="score-list"></div>
+        </details>
+        <details class="sports-fold" id="sports-live-now">
+          <summary>Live now</summary>
+          <div id="sports-live-now-list" class="score-list"></div>
+        </details>
+        <details class="sports-fold" id="sports-upcoming">
+          <summary>Upcoming</summary>
+          <div id="sports-upcoming-list" class="score-list"></div>
+        </details>
+        <details class="sports-fold" id="sports-finals">
+          <summary>Finals</summary>
+          <div id="sports-finals-list" class="score-list"></div>
+        </details>
+        <details class="sports-fold" id="sports-browse">
+          <summary>Browse</summary>
+          <div class="sports-browse-controls">
+            <label>League
+              <select id="sports-browse-league" aria-label="Browse league">
+                <option value="">Select league</option>
+                <option value="NFL">NFL</option>
+                <option value="MLB">MLB</option>
+                <option value="NBA">NBA</option>
+              </select>
+            </label>
+            <label>Team
+              <select id="sports-browse-team" aria-label="Browse team">
+                <option value="">National</option>
+              </select>
+            </label>
+          </div>
+          <div id="sports-browse-list" class="score-list"></div>
+        </details>
+        <div class="section-title"><h2>Watch</h2><span>Theater for the game in front of you.</span></div>
         <div id="live-hero"></div>
         <div class="section-title"><h2>Moments</h2><span>Scoreboard and clock. Not a profile of any athlete.</span></div>
         <div id="live-moments" class="moments-list"></div>
@@ -109,6 +147,11 @@
             <div id="archive-list" class="cards archive"></div>
           </section>
         </div>
+      </section>
+
+      <section id="view-team" class="view hidden">
+        <div class="section-title"><h2 id="team-page-title">Team</h2><span id="team-page-sub">Normalized games for this catalog team.</span></div>
+        <div id="team-page-list" class="score-list"></div>
       </section>
 
       <section id="view-saved" class="view hidden">

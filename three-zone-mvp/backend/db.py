@@ -720,6 +720,31 @@ CREATE TABLE IF NOT EXISTS private_rewind_chunks (
 );
 CREATE INDEX IF NOT EXISTS idx_private_rewind_session_created
     ON private_rewind_chunks(live_session_id, created_at);
+-- BALLDONTLIE normalized snapshots. Survive deploys when the same SQLite file
+-- or TZ_DATABASE_URL Postgres is mounted. Never store provider credentials.
+CREATE TABLE IF NOT EXISTS sports_feed_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    league TEXT NOT NULL UNIQUE,
+    payload TEXT NOT NULL,
+    freshness TEXT NOT NULL,
+    last_successful_fetch REAL,
+    last_attempt_at REAL,
+    last_error_class TEXT,
+    updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sports_feed_teams (
+    team_id TEXT PRIMARY KEY,
+    league TEXT NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'balldontlie',
+    provider_team_id TEXT,
+    name TEXT NOT NULL,
+    abbreviation TEXT,
+    aliases TEXT NOT NULL DEFAULT '[]',
+    market TEXT,
+    priority INTEGER NOT NULL DEFAULT 100,
+    updated_at REAL NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_profiles_handle ON profiles(handle);
 CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_profile_id, published_at);
 CREATE INDEX IF NOT EXISTS idx_posts_feed ON posts(publication_status, published_at);

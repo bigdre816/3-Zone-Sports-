@@ -76,6 +76,7 @@ class PublicSiteTests(unittest.TestCase):
         self.assertIn("/api/public/live", config)
         self.assertIn("/api/public/schedules", config)
         self.assertIn("/api/public/archives", config)
+        self.assertNotIn("/api/public/scores", config)
 
     def test_main_config_matches_docs_config(self):
         docs = (DOCS / "config.js").read_text(encoding="utf-8")
@@ -92,6 +93,10 @@ class PublicSiteTests(unittest.TestCase):
         self.assertNotIn("Three Zones of Access", home)
         live = (DOCS / "live" / "index.html").read_text(encoding="utf-8")
         self.assertIn("ThreeZoneSite.loadLive", live)
+        self.assertNotIn("ThreeZoneSite.loadScores", live)
+        self.assertNotIn("Chiefs", live)
+        self.assertNotIn("Royals", live)
+        self.assertNotIn("scores-container", live)
         schedules = (DOCS / "schedules" / "index.html").read_text(encoding="utf-8")
         self.assertIn("ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.schedules)", schedules)
         archives = (DOCS / "archives" / "index.html").read_text(encoding="utf-8")
@@ -147,6 +152,10 @@ class PublicSiteTests(unittest.TestCase):
                     self.assertEqual(resp.headers.get("Access-Control-Allow-Origin"), "https://3zonesports.com")
                 if path == "/api/health":
                     self.assertEqual(payload["status"], "ok")
+                    self.assertIn("sports_feeds", payload)
+                    self.assertIn(payload["sports_feeds"]["freshness"], ("fresh", "stale", "unavailable", "not_configured"))
+                    self.assertIn("last_successful_fetch", payload["sports_feeds"])
+                    self.assertIn("last_attempt_at", payload["sports_feeds"])
                 elif path.endswith("live"):
                     self.assertGreaterEqual(len(payload["events"]), 1)
                 elif path.endswith("schedules"):

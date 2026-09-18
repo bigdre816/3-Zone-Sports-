@@ -826,6 +826,13 @@ Inventory from `backend/http_server._routes()` plus `ai_gateway_routes.extra_rou
 | GET | `/api/member/live` | Entitled live/upcoming |
 | GET | `/api/member/schedules` | Schedules |
 | GET | `/api/member/archives` | Archives |
+| GET | `/api/member/sports` | Member-only My Teams sports snapshot |
+| GET | `/api/member/sports/live` | In-progress games for followed teams |
+| GET | `/api/member/sports/upcoming` | Upcoming for followed teams |
+| GET | `/api/member/sports/finals` | Recent finals for followed teams |
+| GET | `/api/member/sports/browse` | League/team browse |
+| GET | `/api/member/sports/teams/{id}` | Team scoreboard page |
+| GET | `/api/member/scores*` | Aliases of `/api/member/sports*` |
 | GET | `/api/member/search` | Discovery `?q=` |
 | POST | `/api/member/events/{evt}/playback` | Lease + media cookie |
 | POST | `/api/member/archive/{id}/playback` | Archive lease |

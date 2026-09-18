@@ -13,13 +13,13 @@ const escapeText = value => {
 const parseList = value => (value || "").split(",").map(part => part.trim()).filter(Boolean);
 const STAFF = new Set(["operator", "owner", "admin"]);
 const PAGE_VIEWS = new Set(["about", "support", "privacy", "terms", "notifications"]);
-const MEMBER_VIEWS = new Set(["huddle", "feed", "live", "watch", "saved", "studio", "inbox", "profile", "game"]);
-const HASH_ALIAS = { schedules: "live", archives: "live", feed: "huddle", watch: "live" };
+const MEMBER_VIEWS = new Set(["huddle", "feed", "live", "watch", "saved", "studio", "inbox", "profile", "game", "scores", "team"]);
+const HASH_ALIAS = { schedules: "live", archives: "live", feed: "huddle", watch: "live", scores: "live" };
 const state = {
   profile: null, signedIn: false, mode: "for_you", sport: "", kind: "photo", tab: "posts",
   maxClipSeconds: 60, minClipSeconds: 5, studioDuration: 90, previewing: false, gameId: null,
   lastClipId: null, lastPostId: null, heroEventId: null, notifyTimer: null,
-  feedItems: [], friendItems: [], bootingPortal: false,
+  feedItems: [], friendItems: [], bootingPortal: false, sportsTeams: [],
 };
 
 function pendingPlayback() {
@@ -250,8 +250,9 @@ function applyRoute() {
       }
       startFeedPoll();
     } else stopFeedPoll();
-    if (name === "live" || name === "watch") { loadCatalog(); startLivePoll(); }
+    if (name === "live" || name === "watch") { loadCatalog(); loadLiveSports(); startLivePoll(); }
     else stopLivePoll();
+    if (name === "team") loadTeamPage();
     if ((location.hash || "").replace(/^#/, "") === "archives") {
       const archives = $("#archives");
       if (archives) archives.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -719,6 +720,177 @@ async function loadTeams() {
   } catch (_) {
     root.innerHTML = "<p class='empty'>Teams unavailable.</p>";
   }
+}
+
+function scoreSide(side) {
+  const s = side || {};
+  const name = s.abbreviation || s.name || "—";
+  const pts = s.score == null ? "—" : s.score;
+  return { name, pts };
+}
+
+function scoreCard(game) {
+  const home = scoreSide(game.home);
+  const away = scoreSide(game.away);
+  const status = (game.status || "unknown").replace(/_/g, " ");
+  const clock = [game.period_detail, game.clock, game.inning != null ? ("Inn " + game.inning) : "", game.period != null && game.league !== "MLB" ? ("P" + game.period) : ""]
+    .filter(Boolean).join(" · ");
+  const when = game.display_local || "";
+  const teamId = (game.home && game.home.team_id) || (game.away && game.away.team_id) || "";
+  const href = teamId ? `#team/${encodeURIComponent(teamId)}` : "#live";
+  return `<a class="score-row" href="${href}">
+    <span class="pill">${escapeText((game.league || "").toUpperCase())}</span>
+    <div>
+      <strong>${escapeText(away.name)} ${escapeText(away.pts)} @ ${escapeText(home.name)} ${escapeText(home.pts)}</strong>
+      <small>${escapeText(status)}${clock ? " · " + escapeText(clock) : ""}${when ? " · " + escapeText(when) : ""}</small>
+    </div>
+  </a>`;
+}
+
+function renderScoreList(node, games, emptyText) {
+  if (!node) return;
+  const rows = (games || []).map(scoreCard).join("");
+  node.innerHTML = rows || `<p class='empty'>${escapeText(emptyText)}</p>`;
+}
+
+function scoresUnavailableCopy(data) {
+  const freshness = data && data.freshness;
+  if (freshness === "not_configured") {
+    return "Pro scores are not configured on this host. College and high-school stay on the Three-Zone catalog.";
+  }
+  if (freshness === "unavailable") {
+    return "Pro scores are unavailable. Last known results are not invented.";
+  }
+  if (freshness === "stale") {
+    return "Showing last successful fetch. Feed is stale.";
+  }
+  return "";
+}
+
+function freshnessChipLabel(data) {
+  const freshness = (data && data.freshness) || "unavailable";
+  if (freshness === "fresh") return "live";
+  return freshness.replace(/_/g, " ");
+}
+
+function teamHeadlineCard(row) {
+  const game = row && row.game;
+  if (!game) {
+    return `<article class="score-row team-card">
+      <span class="pill">${escapeText((row.league || "").toUpperCase())}</span>
+      <div>
+        <strong>${escapeText(row.name || "Team")}</strong>
+        <small>No game in this window.</small>
+      </div>
+    </article>`;
+  }
+  const home = scoreSide(game.home);
+  const away = scoreSide(game.away);
+  const status = (game.status || "unknown").replace(/_/g, " ");
+  const clock = [game.period_detail, game.clock, game.inning != null ? ("Inn " + game.inning) : ""]
+    .filter(Boolean).join(" · ");
+  const when = game.display_local || "";
+  const venue = game.venue || "";
+  const href = `#team/${encodeURIComponent(row.team_id || "")}`;
+  return `<a class="score-row team-card" href="${href}">
+    <span class="pill">${escapeText((row.league || game.league || "").toUpperCase())}</span>
+    <div>
+      <strong>${escapeText(row.name || "")}</strong>
+      <small>${escapeText(away.name)} ${escapeText(away.pts)} @ ${escapeText(home.name)} ${escapeText(home.pts)}</small>
+      <small>${escapeText(status)}${clock ? " · " + escapeText(clock) : ""}${when ? " · " + escapeText(when) : ""}${venue ? " · " + escapeText(venue) : ""}</small>
+    </div>
+  </a>`;
+}
+
+async function loadLiveSports() {
+  const chip = $("#live-sports-freshness");
+  try {
+    const data = await api("GET", "/api/member/sports");
+    const note = scoresUnavailableCopy(data);
+    if (chip) {
+      chip.textContent = freshnessChipLabel(data) + " · Scores from licensed data · not a streaming pass"
+        + (note ? " · " + note : "")
+        + (data.last_successful_fetch ? " · " + data.last_successful_fetch : "");
+      chip.dataset.freshness = data.freshness || "unavailable";
+    }
+    const member = data.member || {};
+    state.sportsTeams = data.teams || [];
+    const myTeams = member.my_teams || [];
+    const teamsRoot = $("#sports-my-teams-list");
+    if (teamsRoot) {
+      teamsRoot.innerHTML = myTeams.length
+        ? myTeams.map(teamHeadlineCard).join("")
+        : "<p class='empty'>Follow Chiefs and Royals to pin them here.</p>";
+    }
+    renderScoreList($("#sports-live-now-list"), member.live_now, "No live games right now.");
+    renderScoreList($("#sports-upcoming-list"), member.upcoming, "No upcoming games for your teams.");
+    renderScoreList($("#sports-finals-list"), member.finals, "No recent finals for your teams.");
+    fillBrowseTeams(state.sportsTeams || []);
+    bindSportsBrowse();
+  } catch (_) {
+    if (chip) {
+      chip.textContent = "unavailable · Scores from licensed data · not a streaming pass";
+      chip.dataset.freshness = "unavailable";
+    }
+    renderScoreList($("#sports-my-teams-list"), [], "Scores unavailable.");
+    renderScoreList($("#sports-live-now-list"), [], "No live games right now.");
+  }
+}
+
+function fillBrowseTeams(teams) {
+  const leagueEl = $("#sports-browse-league");
+  const teamEl = $("#sports-browse-team");
+  if (!teamEl) return;
+  const league = (leagueEl && leagueEl.value) || "";
+  const current = teamEl.value;
+  const filtered = (teams || []).filter(t => !league || t.league === league);
+  teamEl.innerHTML = `<option value="">National</option>` + filtered.map(t =>
+    `<option value="${escapeText(t.team_id)}">${escapeText(t.name)}</option>`
+  ).join("");
+  if (current && [...teamEl.options].some(o => o.value === current)) teamEl.value = current;
+}
+
+function bindSportsBrowse() {
+  const leagueEl = $("#sports-browse-league");
+  const teamEl = $("#sports-browse-team");
+  if (!leagueEl || leagueEl.dataset.bound) return;
+  leagueEl.dataset.bound = "1";
+  const run = async () => {
+    fillBrowseTeams(state.sportsTeams || []);
+    const league = leagueEl.value;
+    const teamId = teamEl.value;
+    if (!league) {
+      renderScoreList($("#sports-browse-list"), [], "Pick a league to browse.");
+      return;
+    }
+    try {
+      const qs = new URLSearchParams({ league });
+      if (teamId) qs.set("team_id", teamId);
+      const data = await api("GET", "/api/member/sports/browse?" + qs.toString());
+      renderScoreList($("#sports-browse-list"), data.games, "No games in this browse window.");
+    } catch (error) { toast(error.message); }
+  };
+  leagueEl.onchange = run;
+  if (teamEl) teamEl.onchange = run;
+}
+
+async function loadTeamPage() {
+  const raw = (location.hash || "").replace(/^#/, "");
+  const teamId = raw.split("/").slice(1).join("/") || "";
+  const title = $("#team-page-title");
+  const list = $("#team-page-list");
+  if (!teamId) {
+    if (title) title.textContent = "Team";
+    if (list) list.innerHTML = "<p class='empty'>Choose a team from Live → My Teams.</p>";
+    return;
+  }
+  try {
+    const data = await api("GET", `/api/member/sports/teams/${encodeURIComponent(teamId)}`);
+    if (title) title.textContent = (data.team && data.team.name) || teamId;
+    const sub = $("#team-page-sub");
+    if (sub) sub.textContent = data.rights_note || "Scores from licensed data · not a streaming pass";
+    renderScoreList(list, data.games, "No games for this team in the current window.");
+  } catch (error) { toast(error.message); }
 }
 
 function huddleLiveCard(event) {

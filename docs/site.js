@@ -8,6 +8,7 @@ const ThreeZoneSite = {
     teams: 'Teams are temporarily unavailable. Try again shortly.',
     schools: 'Schools are temporarily unavailable. Try again shortly.',
     clips: 'Clips are temporarily unavailable. Try again shortly.',
+    scores: 'Pro scores are temporarily unavailable. Try again shortly.',
   },
 
   el(tag, attrs, children) {
@@ -155,6 +156,30 @@ const ThreeZoneSite = {
       this.showUnavailable(container, 'archives');
       return [];
     }
+  },
+
+  scoreCard(game) {
+    const home = (game.home && (game.home.abbreviation || game.home.name)) || 'Home';
+    const away = (game.away && (game.away.abbreviation || game.away.name)) || 'Away';
+    const hs = game.home && game.home.score != null ? game.home.score : '—';
+    const as = game.away && game.away.score != null ? game.away.score : '—';
+    const status = (game.status || 'unknown').replace(/_/g, ' ');
+    return this.el('article', { class: 'card' }, [
+      this.el('p', { text: (game.league || '') + ' · ' + status }),
+      this.el('h3', { text: away + ' ' + as + ' @ ' + home + ' ' + hs }),
+      this.el('p', { text: game.display_local || game.venue || 'Time TBA' }),
+    ]);
+  },
+
+  async loadScores(container) {
+    if (!container) return [];
+    container.replaceChildren(
+      this.el('div', { class: 'unavailable' }, [
+        this.el('p', { text: 'Pro scores are member-only. Sign in for My Teams.' }),
+        this.el('a', { class: 'btn', href: '/app/', 'data-signin': true, text: 'Sign in' }),
+      ])
+    );
+    return [];
   },
 
   uniqueBy(rows, key) {

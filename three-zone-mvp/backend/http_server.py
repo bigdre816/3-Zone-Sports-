@@ -80,6 +80,16 @@ def _routes():
         ("GET", re.compile(r"^/api/member/live$"), "h_member_live", "member"),
         ("GET", re.compile(r"^/api/member/schedules$"), "h_member_schedules", "member"),
         ("GET", re.compile(r"^/api/member/archives$"), "h_member_archives", "member"),
+        ("GET", re.compile(r"^/api/member/scores$"), "h_member_sports", "member"),
+        ("GET", re.compile(r"^/api/member/scores/upcoming$"), "h_member_sports_upcoming", "member"),
+        ("GET", re.compile(r"^/api/member/scores/finals$"), "h_member_sports_finals", "member"),
+        ("GET", re.compile(r"^/api/member/scores/teams/(?P<team_id>[A-Za-z0-9_-]+)$"), "h_member_sports_team", "member"),
+        ("GET", re.compile(r"^/api/member/sports$"), "h_member_sports", "member"),
+        ("GET", re.compile(r"^/api/member/sports/live$"), "h_member_sports_live", "member"),
+        ("GET", re.compile(r"^/api/member/sports/upcoming$"), "h_member_sports_upcoming", "member"),
+        ("GET", re.compile(r"^/api/member/sports/finals$"), "h_member_sports_finals", "member"),
+        ("GET", re.compile(r"^/api/member/sports/browse$"), "h_member_sports_browse", "member"),
+        ("GET", re.compile(r"^/api/member/sports/teams/(?P<team_id>[A-Za-z0-9_-]+)$"), "h_member_sports_team", "member"),
         ("GET", re.compile(r"^/api/member/search$"), "h_member_search", "member"),
         ("GET", re.compile(r"^/api/member/feed$"), "h_member_feed", "optional"),
         ("GET", re.compile(r"^/api/member/notifications$"), "h_member_notifications", "member"),
@@ -585,11 +595,15 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
 
     # -- API handlers ------------------------------------------------------
     def h_health(self, p, b, u):
-        self._send_json(200, {
+        feeds = getattr(self, "sports_feeds", None)
+        payload = {
             "status": "ok",
             "service": "three-zone-api",
             "moten": {"configured": self.cp.config.moten_enabled},
-        })
+        }
+        if feeds is not None:
+            payload["sports_feeds"] = feeds.health()
+        self._send_json(200, payload)
 
     def h_live_readiness(self, p, b, u):
         # Operator/owner only. Never returns secret values — only presence/validity flags.
@@ -600,6 +614,7 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         # Operator/owner health dashboard — consolidated, secret-free.
         self._send_json(200, self.cp.ops_dashboard(
             u, live_sessions=self.live_sessions, moten=self.moten,
+            sports_feeds=getattr(self, "sports_feeds", None),
         ))
 
     def h_ops_moten_bridge(self, p, b, u):
@@ -709,6 +724,60 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
 
     def h_public_archives(self, p, b, u):
         self._send_json(200, {"archives": self.portal.public_archives()})
+
+    def _scores_prefs(self, user):
+        followed = []
+        sports = []
+        if not user:
+            return followed, sports
+        try:
+            profile = self.network.ensure_profile(user)
+            followed = list(self.network._followed_team_ids(profile["profile_id"]))
+            from .db import loads
+            sports = list(loads(profile.get("sports"), []) or [])
+        except Exception:
+            followed, sports = [], []
+        return followed, sports
+
+    def h_member_sports(self, p, b, u):
+        followed, sports = self._scores_prefs(u)
+        qs = self._qs()
+        self._send_json(200, self.sports_feeds.snapshot(
+            followed_team_ids=followed, sports=sports, bucket=qs.get("bucket"),
+            league=qs.get("league"), team_id=qs.get("team_id"),
+        ))
+
+    def h_member_sports_live(self, p, b, u):
+        followed, sports = self._scores_prefs(u)
+        self._send_json(200, self.sports_feeds.snapshot(
+            followed_team_ids=followed, sports=sports, bucket="live_now",
+        ))
+
+    def h_member_sports_upcoming(self, p, b, u):
+        followed, sports = self._scores_prefs(u)
+        self._send_json(200, self.sports_feeds.snapshot(
+            followed_team_ids=followed, sports=sports, bucket="upcoming",
+        ))
+
+    def h_member_sports_finals(self, p, b, u):
+        followed, sports = self._scores_prefs(u)
+        self._send_json(200, self.sports_feeds.snapshot(
+            followed_team_ids=followed, sports=sports, bucket="finals",
+        ))
+
+    def h_member_sports_browse(self, p, b, u):
+        followed, sports = self._scores_prefs(u)
+        qs = self._qs()
+        self._send_json(200, self.sports_feeds.snapshot(
+            followed_team_ids=followed, sports=sports, bucket="browse",
+            league=qs.get("league"), team_id=qs.get("team_id"),
+        ))
+
+    def h_member_sports_team(self, p, b, u):
+        followed, sports = self._scores_prefs(u)
+        self._send_json(200, self.sports_feeds.snapshot(
+            followed_team_ids=followed, sports=sports, team_id=p["team_id"],
+        ))
 
     def h_login(self, p, b, u):
         result = self.cp.demo_login((b or {}).get("account", ""))
@@ -1524,7 +1593,8 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
 
 def make_http_server(config, cp: ControlPlane, media_dir: str,
                      provider=None, photo_storage=None,
-                     bind_host: str | None = None, bind_port: int | None = None) -> ThreadingHTTPServer:
+                     bind_host: str | None = None, bind_port: int | None = None,
+                     sports_feeds=None, start_feed_poller: bool = True) -> ThreadingHTTPServer:
     portal = PortalService(cp)
     provider = provider or build_provider(config)
     photo_storage = photo_storage or build_photo_storage(config)
@@ -1532,9 +1602,15 @@ def make_http_server(config, cp: ControlPlane, media_dir: str,
     moten = MotenIntakeService(cp)
     network.moten = moten
     live_sessions = LiveSessionService(cp, media_dir=media_dir)
+    if sports_feeds is None:
+        from .sports_feeds import SportsFeedService
+        sports_feeds = SportsFeedService(config, cp.db)
+    if start_feed_poller:
+        sports_feeds.start_poller()
     handler = type("BoundHandler", (_Handler,), {
         "cp": cp, "portal": portal, "network": network, "moten": moten,
         "live_sessions": live_sessions, "media_dir": media_dir,
+        "sports_feeds": sports_feeds,
     })
     host = config.http_host if bind_host is None else bind_host
     port = config.http_port if bind_port is None else bind_port

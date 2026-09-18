@@ -245,6 +245,7 @@ class Config:
     moten_timeout_seconds: int = 5
     ws_ticket_ttl: int = 45
     ws_gateway_enabled: bool = True
+    balldontlie_api_key: str = ""
 
     def __post_init__(self) -> None:
         """Keep live/UGC provider names and Cloudflare credential aliases in sync."""
@@ -388,6 +389,7 @@ class Config:
             moten_onchain_url=os.environ.get("TZ_MOTEN_ONCHAIN_URL", "").rstrip("/"),
             moten_shared_secret=os.environ.get("TZ_MOTEN_SHARED_SECRET", ""),
             moten_timeout_seconds=int(os.environ.get("TZ_MOTEN_TIMEOUT_SECONDS", "5")),
+            balldontlie_api_key=os.environ.get("BALLDONTLIE_API_KEY", "").strip(),
         )
         cfg.validate()
         return cfg
@@ -573,4 +575,6 @@ class Config:
             "min_game_clip_seconds": self.min_game_clip_seconds,
             "sports": ["basketball", "football", "soccer", "baseball", "volleyball", "other"],
             "feed_ranking": "sports-relevance (follow, friend, zone, live, recency; not machine learning)",
+            "sports_feeds_configured": bool((self.balldontlie_api_key or "").strip()),
+            "sports_feeds_timezone": "America/Chicago",
         }
