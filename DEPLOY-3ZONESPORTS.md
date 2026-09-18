@@ -49,8 +49,10 @@ The public site at https://3zonesports.com/ loads Live, Schedule, and Archive by
 | --- | --- |
 | Public site | https://3zonesports.com/ |
 | Member portal | https://app.3zonesports.com (API at https://three-zone-sports-1.onrender.com) |
-| Member sign-in | https://3zonesports.com/app/ (redirects to the member portal) |
+| Member sign-in | https://3zonesports.com/app/?to=auth (redirects to https://app.3zonesports.com/auth) |
 | Operator console | https://three-zone-sports-1.onrender.com/ops — unlisted, not linked from the public site |
+
+`app.3zonesports.com` DNS is an **IONOS A record** to Lovable’s edge (`185.158.133.1`), plus TXT `_lovable.app`. It is not a Cloudflare DNS zone and not GitHub Pages. Check it with `python3 scripts/check_app_hostname.py`. Click-by-click IONOS steps are in `three-zone-mvp/CONNECT-3ZONESPORTS.md` §6.
 
 Sign-in usernames and passwords for the demo rail live in `three-zone-mvp/README.md`. Do not print them on 3zonesports.com.
 

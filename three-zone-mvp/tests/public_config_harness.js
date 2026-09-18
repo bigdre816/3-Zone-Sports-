@@ -52,6 +52,10 @@ async function main() {
   results.memberAppPath.archivePrefixed = cfg.memberAppPath('/?archive=arc-central-wrestling');
   results.memberAppPath.archiveEncoded = cfg.memberAppPath('?archive=' + encodeURIComponent('arc 1"<>'));
   results.memberAppPath.bothPrefersEvent = cfg.memberAppPath('?archive=arc-central-wrestling&event=evt_x');
+  results.memberAppPath.toAuth = cfg.memberAppPath('?to=auth');
+  results.memberAppPath.toMe = cfg.memberAppPath('?to=me');
+  results.memberAppPath.toUnknown = cfg.memberAppPath('?to=ops');
+  results.memberAppPath.eventBeatsTo = cfg.memberAppPath('?to=auth&event=evt_x');
 
   const okFetch = load(configSrc, { location: { hostname: '3zonesports.com' } }, {
     fetch: async () => ({

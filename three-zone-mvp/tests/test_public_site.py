@@ -81,6 +81,10 @@ class PublicSiteTests(unittest.TestCase):
         docs = (DOCS / "config.js").read_text(encoding="utf-8")
         main = (REPO / "main" / "config.js").read_text(encoding="utf-8")
         self.assertEqual(docs, main)
+        self.assertEqual(
+            (DOCS / "site.js").read_text(encoding="utf-8"),
+            (REPO / "main" / "site.js").read_text(encoding="utf-8"),
+        )
 
     def test_pages_fetch_public_catalog_automatically(self):
         home = (DOCS / "index.html").read_text(encoding="utf-8")
@@ -114,13 +118,16 @@ class PublicSiteTests(unittest.TestCase):
 
     def test_sign_in_stays_on_public_path(self):
         home = (DOCS / "index.html").read_text(encoding="utf-8")
-        self.assertIn('href="/app/"', home)
+        self.assertIn('href="/app/?to=auth"', home)
+        self.assertIn('href="/app/?to=me"', home)
+        self.assertNotIn('href="/app/" data-signin>Sign In', home)
         self.assertIn("Sign In", home)
         app = (DOCS / "app" / "index.html").read_text(encoding="utf-8")
         self.assertIn("memberAppPath", app)
         self.assertIn("memberAppUrl", app)
         self.assertIn("app.3zonesports.com", (DOCS / "config.js").read_text(encoding="utf-8"))
         self.assertIn("memberAppPath", (DOCS / "config.js").read_text(encoding="utf-8"))
+        self.assertIn("auth: '/auth'", (DOCS / "config.js").read_text(encoding="utf-8"))
         self.assertIn("'/archive/' + encodeURIComponent(archiveId)", (DOCS / "config.js").read_text(encoding="utf-8"))
 
     def test_pages_origin_can_read_public_catalog(self):

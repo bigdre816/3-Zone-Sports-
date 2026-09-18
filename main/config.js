@@ -49,6 +49,7 @@ const ThreeZoneConfig = {
     const query = queryIndex === -1 ? '' : raw.slice(queryIndex + 1);
     let eventId = '';
     let archiveId = '';
+    let destination = '';
     query.split('&').forEach(function (part) {
       if (!part) return;
       const idx = part.indexOf('=');
@@ -66,9 +67,18 @@ const ThreeZoneConfig = {
       }
       if (key === 'event' && eventId === '') eventId = value;
       if (key === 'archive' && archiveId === '') archiveId = value;
+      if (key === 'to' && destination === '') destination = value;
     });
     if (eventId) return '/game/' + encodeURIComponent(eventId);
     if (archiveId) return '/archive/' + encodeURIComponent(archiveId);
+    const destinations = {
+      auth: '/auth',
+      me: '/me',
+      live: '/live',
+      clips: '/clips',
+      archive: '/archive',
+    };
+    if (destinations[destination]) return destinations[destination];
     return '/';
   },
 
