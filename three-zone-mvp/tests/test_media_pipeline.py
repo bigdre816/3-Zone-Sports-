@@ -618,6 +618,19 @@ class ConfigTests(unittest.TestCase):
             os.environ.pop("RENDER_EXTERNAL_HOSTNAME", None)
             os.environ.pop("TZ_ALLOWED_ORIGINS", None)
 
+    def test_27e_public_app_url_is_allowed_origin(self):
+        os.environ["TZ_ALLOWED_ORIGINS"] = "https://3zonesports.com"
+        os.environ["TZ_PUBLIC_APP_URL"] = "https://threezonesport.lovable.app"
+        try:
+            cfg = Config.from_env()
+            self.assertEqual(cfg.public_app_url, "https://threezonesport.lovable.app")
+            self.assertEqual(cfg.external_member_app_url(), "https://threezonesport.lovable.app")
+            self.assertIn("https://3zonesports.com", cfg.allowed_origins)
+            self.assertIn("https://threezonesport.lovable.app", cfg.allowed_origins)
+        finally:
+            os.environ.pop("TZ_ALLOWED_ORIGINS", None)
+            os.environ.pop("TZ_PUBLIC_APP_URL", None)
+
     def test_27d_render_does_not_bind_separate_ws(self):
         from backend.config import bind_separate_websocket
         saved = {k: os.environ.get(k) for k in ("RENDER", "TZ_WS_PORT")}

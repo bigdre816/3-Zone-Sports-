@@ -48,8 +48,9 @@ The public site at https://3zonesports.com/ loads Live, Schedule, and Archive by
 | Piece | Where |
 | --- | --- |
 | Public site | https://3zonesports.com/ |
-| Member sign-in | https://3zonesports.com/app/ (redirects to the Render app) |
-| Operator console | Render app `/ops` — unlisted, not linked from the public site |
+| Member portal | https://threezonesport.lovable.app (API at https://three-zone-sports-1.onrender.com) |
+| Member sign-in | https://3zonesports.com/app/ (redirects to the Lovable member portal) |
+| Operator console | https://three-zone-sports-1.onrender.com/ops — unlisted, not linked from the public site |
 
 Sign-in usernames and passwords for the demo rail live in `three-zone-mvp/README.md`. Do not print them on 3zonesports.com.
 
@@ -59,6 +60,7 @@ Camera: operator console → Event controls → **Start camera** → **Go live w
 
 - Service settings must be **Docker**, Root Directory `three-zone-mvp`, Dockerfile path `./Dockerfile`, Docker context `.`, health check `/healthz` ( `/api/health` is an alias).
 - `TZ_ENV` must be `demo`.
-- `TZ_ALLOWED_ORIGINS` must include `https://3zonesports.com` and `https://www.3zonesports.com`.
+- `TZ_ALLOWED_ORIGINS` must include `https://3zonesports.com`, `https://www.3zonesports.com`, `https://threezonesport.lovable.app`, and `https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app`.
+- `TZ_PUBLIC_APP_URL` must be `https://threezonesport.lovable.app`.
 - GitHub Pages must stay on `/docs` of **3-Zone-Sports-**. The repo-root `index.html` is not the public sports site.
 - If health is HTML that says **Service Suspended**, the owner paused Render. Tap **Resume**, then **Manual Deploy**.

@@ -1,12 +1,14 @@
 /**
- * Public site configuration. The production app origin is resolved automatically.
- * Do not surface this origin in page copy, forms, or status badges.
+ * Public site configuration. Fetch the Render API; send members to Lovable.
+ * Do not surface infrastructure origins in page copy, forms, or status badges.
  */
 
 const PRODUCTION_API_ORIGIN = 'https://three-zone-sports-1.onrender.com';
+const MEMBER_APP_ORIGIN = 'https://threezonesport.lovable.app';
 
 const ThreeZoneConfig = {
   PRODUCTION_API_ORIGIN,
+  MEMBER_APP_ORIGIN,
 
   endpoints: {
     health: '/api/health',
@@ -31,12 +33,18 @@ const ThreeZoneConfig = {
   },
 
   memberOrigin() {
-    return this._origin();
+    if (typeof window !== 'undefined') {
+      const host = String(window.location.hostname || '');
+      if (host === 'localhost' || host === '127.0.0.1') {
+        return this._origin();
+      }
+    }
+    return MEMBER_APP_ORIGIN;
   },
 
   async memberAppUrl(path) {
     const suffix = path == null || path === '' ? '/' : path;
-    return this._origin() + suffix;
+    return this.memberOrigin() + suffix;
   },
 
   async fetch(endpoint, options) {

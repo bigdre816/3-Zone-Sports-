@@ -193,6 +193,10 @@ class PortalTests(unittest.TestCase):
         self.assertIn("mountPath: /data", blueprint)
         self.assertIn("TZ_DATABASE_PATH", blueprint)
         self.assertIn("/data/three_zone.sqlite3", blueprint)
+        self.assertIn("TZ_PUBLIC_APP_URL", blueprint)
+        self.assertIn("https://threezonesport.lovable.app", blueprint)
+        self.assertIn("https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app", blueprint)
+        self.assertIn("https://3zonesports.com", blueprint)
 
     def test_member_site_keeps_network_shell_and_wired_watch(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

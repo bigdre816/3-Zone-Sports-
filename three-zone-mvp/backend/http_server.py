@@ -461,6 +461,16 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             return
 
         if method == "GET" and path in ("/", "/index.html"):
+            dest = self._external_member_app_url()
+            if dest:
+                query = urlparse(self.path).query
+                location = f"{dest}?{query}" if query else dest
+                self.send_response(HTTPStatus.FOUND)
+                self._base_headers(no_store=True)
+                self.send_header("Location", self._safe_header_value(location))
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             return self._serve_static("index.html")
         if method == "GET" and path.startswith("/moment/"):
             return self.h_moment_page({"clip_id": path.split("/moment/", 1)[-1]}, {}, self._optional_user())
@@ -530,6 +540,17 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             return
 
         self._send_json(404, {"error": "not found", "code": "not_found"})
+
+    def _external_member_app_url(self) -> str:
+        """Off-host member portal, or empty when this process should serve ``/``."""
+        dest = self.cp.config.external_member_app_url()
+        if not dest:
+            return ""
+        request_host = _request_host_name(self.headers.get("Host") or "")
+        target_host = (urlparse(dest).hostname or "").lower()
+        if not target_host or (request_host and target_host == request_host):
+            return ""
+        return dest
 
     # -- static ------------------------------------------------------------
     def _serve_static(self, name: str):
