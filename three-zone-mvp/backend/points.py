@@ -56,6 +56,21 @@ class PointsLedger:
         total = int(row["total"] if row else 0)
         return {"total": total, "rule_version": self.current_version()}
 
+    def entries_for_profile(self, profile_id: str, limit: int = 100) -> list[dict]:
+        """Read-only ledger lines for the owning member.
+
+        Reads the same append-only rows the awards write. No second authority,
+        no recomputation: what the member sees is what the ledger recorded.
+        """
+        limit = max(1, min(int(limit or 100), 200))
+        rows = self.db.query(
+            "SELECT ledger_id, event_type, amount, rule_version, subject_type, subject_id, "
+            "status, recorded_at FROM point_ledger WHERE profile_id=? "
+            "ORDER BY recorded_at DESC LIMIT ?",
+            (profile_id, limit),
+        )
+        return [dict(row) for row in rows]
+
     def actor_is_suspicious(self, user: dict, actor_profile_id: str) -> bool:
         if not user or user.get("account_state") != "active":
             return True

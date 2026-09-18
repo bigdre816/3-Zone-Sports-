@@ -469,6 +469,18 @@ class AuthHttpTests(unittest.TestCase):
         self.assertEqual(status, 200, tab)
         self.assertTrue(any(item.get("post_id") == published["post"]["post_id"] for item in tab["items"]))
 
+        status, points, _ = self._json("GET", "/api/member/points", cookie=cookie)
+        self.assertEqual(status, 200, points)
+        self.assertTrue(points["rule_version"].startswith("TZ-POINTS-"))
+        self.assertGreater(points["total"], 0)
+        self.assertTrue(any(e["event_type"] == "post.published" for e in points["entries"]))
+        self.assertEqual(points["total"], sum(
+            e["amount"] for e in points["entries"] if e["status"] == "counted"
+        ))
+
+        status, denied, _ = self._json("GET", "/api/member/points")
+        self.assertIn(denied and status, (401, 403))
+
     def test_owner_cookie_restores_ops_and_viewer_cannot_read_inventory(self):
         status, body, headers = self._json("POST", "/api/auth/login", {
             "username": "demo-owner",
