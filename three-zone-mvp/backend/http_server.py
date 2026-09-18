@@ -75,6 +75,7 @@ def _routes():
         ("POST", re.compile(r"^/api/auth/verify$"), "h_auth_verify", "none"),
         ("POST", re.compile(r"^/api/auth/logout$"), "h_auth_logout", "none"),
         ("GET", re.compile(r"^/api/member/me$"), "h_member_me", "member"),
+        ("GET", re.compile(r"^/api/member/points$"), "h_member_points", "member"),
         ("POST", re.compile(r"^/api/member/ws-ticket$"), "h_member_ws_ticket", "member"),
         ("GET", re.compile(r"^/api/member/live$"), "h_member_live", "member"),
         ("GET", re.compile(r"^/api/member/schedules$"), "h_member_schedules", "member"),
@@ -715,6 +716,13 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         sid = self._cookie("tz_member_session")
         if sid: self.portal.logout(sid)
         self._send_json(200, {"ok": True}, set_cookie=("tz_member_session", "", "/", 0))
+
+    def h_member_points(self, p, b, u):
+        try:
+            limit = int(self._qs().get("limit") or 100)
+        except (TypeError, ValueError):
+            limit = 100
+        self._send_json(200, self.network.points_ledger_for(u, limit))
 
     def h_member_me(self, p, b, u):
         profile = self.network.get_own_profile(u)

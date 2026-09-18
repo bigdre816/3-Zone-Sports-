@@ -124,6 +124,15 @@ class NetworkService(HuddleExtensions):
         profile = self.ensure_profile(user)
         return self.points.total_for_profile(profile["profile_id"])
 
+    def points_ledger_for(self, user, limit: int = 100) -> dict:
+        profile = self.ensure_profile(user)
+        summary = self.points.total_for_profile(profile["profile_id"])
+        return {
+            "total": summary["total"],
+            "rule_version": summary["rule_version"],
+            "entries": self.points.entries_for_profile(profile["profile_id"], limit),
+        }
+
     def _award_post_published(self, user, post_id: str, clip_id: str | None) -> None:
         profile = self.ensure_profile(user)
         if clip_id:
