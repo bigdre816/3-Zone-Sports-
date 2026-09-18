@@ -18,7 +18,7 @@ import sys
 import urllib.error
 import urllib.request
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 
 MEMBER_HOST = "app.3zonesports.com"
@@ -91,6 +91,14 @@ def _origin(url: str | None) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
+def _redirect_origin(location: str | None, request_url: str) -> str:
+    """Origin a browser would use for Location, including relative hops."""
+    raw = (location or "").strip()
+    if not raw:
+        return ""
+    return _origin(urljoin(request_url, raw))
+
+
 def _request(url: str, *, method: str = "GET", headers: dict[str, str] | None = None):
     req = urllib.request.Request(
         url,
@@ -146,7 +154,7 @@ def evaluate(
         warnings.append("no AAAA for app.3zonesports.com; IPv4-only is expected")
     member_loc = (member_location or "").strip() or None
     if https_status in REDIRECT_CODES:
-        loc_origin = _origin(member_loc)
+        loc_origin = _redirect_origin(member_loc, MEMBER_ORIGIN + "/")
         if loc_origin != MEMBER_ORIGIN:
             failures.append(
                 f"GET {MEMBER_ORIGIN}/ returned HTTP {https_status} to {member_loc!r}; "
@@ -160,7 +168,7 @@ def evaluate(
         )
     if alias_status is not None:
         alias_loc = (alias_location or "").strip() or None
-        alias_origin = _origin(alias_loc)
+        alias_origin = _redirect_origin(alias_loc, LOVABLE_ALIAS + "/")
         if alias_status not in REDIRECT_CODES or alias_origin != MEMBER_ORIGIN:
             failures.append(
                 f"Lovable alias returned HTTP {alias_status} Location {alias_loc!r}; "

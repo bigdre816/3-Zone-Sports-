@@ -141,6 +141,11 @@ class PublicInputTests(unittest.TestCase):
         self.assertEqual(paths["toMe"], "/me")
         self.assertEqual(paths["toUnknown"], "/")
         self.assertEqual(paths["eventBeatsTo"], "/game/evt_x")
+        self.assertEqual(paths["localAuth"], "/#auth")
+        self.assertEqual(paths["localMe"], "/#profile")
+        self.assertEqual(paths["localLive"], "/#live")
+        self.assertEqual(paths["localEvent"], "/?event=evt_x")
+        self.assertEqual(paths["localArchive"], "/?archive=arc-central-wrestling")
 
     def test_fetch_handles_ok_html_json_and_network_failure(self):
         fetch = self.harness["fetch"]

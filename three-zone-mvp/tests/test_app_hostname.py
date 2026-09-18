@@ -43,6 +43,8 @@ class AppHostnameTests(unittest.TestCase):
         config = (DOCS / "config.js").read_text(encoding="utf-8")
         self.assertIn("auth: '/auth'", config)
         self.assertIn("me: '/me'", config)
+        self.assertIn("auth: '/#auth'", config)
+        self.assertIn("me: '/#profile'", config)
         home = (DOCS / "index.html").read_text(encoding="utf-8")
         self.assertIn('href="/app/?to=auth"', home)
         self.assertIn('href="/app/?to=me"', home)
@@ -123,6 +125,55 @@ class AppHostnameTests(unittest.TestCase):
             alias_location=check.LOVABLE_ALIAS + "/",
         )
         self.assertTrue(any("Lovable alias" in item for item in failures))
+
+    def test_evaluate_accepts_relative_same_host_member_redirect(self):
+        failures, _ = check.evaluate(
+            _ok_lookups(),
+            https_status=302,
+            acao=check.MEMBER_ORIGIN,
+            member_location="/auth",
+            alias_status=302,
+            alias_location=check.MEMBER_ORIGIN + "/",
+        )
+        self.assertEqual(failures, [])
+
+    def test_evaluate_accepts_protocol_relative_alias_to_member(self):
+        failures, _ = check.evaluate(
+            _ok_lookups(),
+            https_status=200,
+            acao=check.MEMBER_ORIGIN,
+            alias_status=302,
+            alias_location="//app.3zonesports.com/",
+        )
+        self.assertEqual(failures, [])
+
+    def test_evaluate_fails_relative_alias_that_stays_on_lovable(self):
+        failures, _ = check.evaluate(
+            _ok_lookups(),
+            https_status=200,
+            acao=check.MEMBER_ORIGIN,
+            alias_status=302,
+            alias_location="/",
+        )
+        self.assertTrue(any("Lovable alias" in item for item in failures))
+
+    def test_redirect_origin_resolves_relative_and_protocol_relative(self):
+        self.assertEqual(
+            check._redirect_origin("/auth", check.MEMBER_ORIGIN + "/"),
+            check.MEMBER_ORIGIN,
+        )
+        self.assertEqual(
+            check._redirect_origin("//app.3zonesports.com/live", check.LOVABLE_ALIAS + "/"),
+            check.MEMBER_ORIGIN,
+        )
+        self.assertEqual(
+            check._redirect_origin("/", check.LOVABLE_ALIAS + "/"),
+            check.LOVABLE_ALIAS,
+        )
+        self.assertEqual(
+            check._redirect_origin("//evil.example/x", check.MEMBER_ORIGIN + "/"),
+            "https://evil.example",
+        )
 
     def test_request_does_not_follow_redirects(self):
         class Handler(http.server.BaseHTTPRequestHandler):

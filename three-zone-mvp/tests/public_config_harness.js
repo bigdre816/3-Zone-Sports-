@@ -56,6 +56,12 @@ async function main() {
   results.memberAppPath.toMe = cfg.memberAppPath('?to=me');
   results.memberAppPath.toUnknown = cfg.memberAppPath('?to=ops');
   results.memberAppPath.eventBeatsTo = cfg.memberAppPath('?to=auth&event=evt_x');
+  const localCfg = load(configSrc, { location: { hostname: 'localhost' } });
+  results.memberAppPath.localAuth = localCfg.memberAppPath('?to=auth');
+  results.memberAppPath.localMe = localCfg.memberAppPath('?to=me');
+  results.memberAppPath.localLive = localCfg.memberAppPath('?to=live');
+  results.memberAppPath.localEvent = localCfg.memberAppPath('?event=evt_x');
+  results.memberAppPath.localArchive = localCfg.memberAppPath('?archive=arc-central-wrestling');
 
   const okFetch = load(configSrc, { location: { hostname: '3zonesports.com' } }, {
     fetch: async () => ({
