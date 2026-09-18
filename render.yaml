@@ -55,3 +55,5 @@ services:
         generateValue: true
       - key: TZ_MEDIA_SERVICE_KEY
         generateValue: true
+      - key: BALLDONTLIE_API_KEY
+        sync: false

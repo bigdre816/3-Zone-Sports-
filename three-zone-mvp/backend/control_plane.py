@@ -156,6 +156,26 @@ SITE_ROUTES = [
      "purpose": "Authorized team schedules"},
     {"method": "GET", "path": "/api/member/archives", "tier": "member",
      "purpose": "Authorized archive hierarchy"},
+    {"method": "GET", "path": "/api/member/sports", "tier": "member",
+     "purpose": "Member-only My Teams / live / upcoming / finals sports snapshot"},
+    {"method": "GET", "path": "/api/member/sports/live", "tier": "member",
+     "purpose": "In-progress games for followed teams (not a watch lease)"},
+    {"method": "GET", "path": "/api/member/sports/upcoming", "tier": "member",
+     "purpose": "Upcoming games for followed teams"},
+    {"method": "GET", "path": "/api/member/sports/finals", "tier": "member",
+     "purpose": "Recent finals for followed teams"},
+    {"method": "GET", "path": "/api/member/sports/browse", "tier": "member",
+     "purpose": "Nested league/team browse of professional scores"},
+    {"method": "GET", "path": "/api/member/sports/teams/{id}", "tier": "member",
+     "purpose": "Member team scoreboard page"},
+    {"method": "GET", "path": "/api/member/scores", "tier": "member",
+     "purpose": "Alias of /api/member/sports"},
+    {"method": "GET", "path": "/api/member/scores/upcoming", "tier": "member",
+     "purpose": "Alias of /api/member/sports/upcoming"},
+    {"method": "GET", "path": "/api/member/scores/finals", "tier": "member",
+     "purpose": "Alias of /api/member/sports/finals"},
+    {"method": "GET", "path": "/api/member/scores/teams/{id}", "tier": "member",
+     "purpose": "Alias of /api/member/sports/teams/{id}"},
     {"method": "GET", "path": "/api/member/search", "tier": "member",
      "purpose": "Authorization-aware discovery search"},
     {"method": "POST", "path": "/api/member/events/{id}/playback", "tier": "member",
@@ -1238,7 +1258,7 @@ class ControlPlane(PipelineMixin):
             },
         }
 
-    def ops_dashboard(self, operator: dict, *, live_sessions=None, moten=None) -> dict:
+    def ops_dashboard(self, operator: dict, *, live_sessions=None, moten=None, sports_feeds=None) -> dict:
         """Consolidated operator Health / Back portal payload — secret-free.
 
         Never includes stream keys, passwords, tokens, API tokens, or signing secrets.
@@ -1544,6 +1564,23 @@ class ControlPlane(PipelineMixin):
             "activity": concept_home["activity"],
             "deferred": concept_home["deferred"],
             "concept": "A",
+            "sports_feeds": sports_feeds.health() if sports_feeds is not None else {
+                "provider": "balldontlie",
+                "configured": bool((getattr(self.config, "balldontlie_api_key", "") or "").strip()),
+                "freshness": (
+                    "not_configured"
+                    if not (getattr(self.config, "balldontlie_api_key", "") or "").strip()
+                    else "unavailable"
+                ),
+                "last_successful_fetch": None,
+                "last_attempt_at": None,
+                "leagues": {},
+                "rights_note": "Scoreboard facts are not streaming rights.",
+                "gaps": {
+                    "college": {"status": "not_configured"},
+                    "high_school": {"status": "not_configured"},
+                },
+            },
         }
 
     def owner_inventory(self, owner: dict) -> dict:
