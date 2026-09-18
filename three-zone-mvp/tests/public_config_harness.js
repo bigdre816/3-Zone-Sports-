@@ -35,6 +35,9 @@ async function main() {
     location: { hostname: '3zonesports.com' },
     __THREE_ZONE_BACKEND_URL__: 'https://example.test///',
   })._origin();
+  results.origin.memberPages = load(configSrc, { location: { hostname: '3zonesports.com' } }).memberOrigin();
+  results.origin.memberWww = load(configSrc, { location: { hostname: 'www.3zonesports.com' } }).memberOrigin();
+  results.origin.memberLocal = load(configSrc, { location: { hostname: 'localhost' } }).memberOrigin();
 
   const cfg = load(configSrc, { location: { hostname: '3zonesports.com' } });
   results.memberAppUrl.empty = await cfg.memberAppUrl();

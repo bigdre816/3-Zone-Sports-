@@ -36,11 +36,13 @@ services:
       - key: TZ_DATA_DIR
         value: /data
       - key: TZ_ALLOWED_ORIGINS
-        value: https://3zonesports.com,https://www.3zonesports.com,https://three-zone-sports.onrender.com,https://three-zone-sports-1.onrender.com
-        # Add the exact Lovable preview/publish origin(s) here. Credentialed CORS
-        # and the Hub Origin allowlist fail closed without them.
+        value: https://3zonesports.com,https://www.3zonesports.com,https://three-zone-sports.onrender.com,https://three-zone-sports-1.onrender.com,https://threezonesport.lovable.app,https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app
+        # Exact origins only. Credentialed CORS and the Hub Origin allowlist
+        # fail closed without them. Never use *.
       - key: TZ_PUBLIC_BASE_URL
         value: https://3zonesports.com
+      - key: TZ_PUBLIC_APP_URL
+        value: https://threezonesport.lovable.app
       - key: TZ_LIVE_MEDIA_PROVIDER
         value: demo
       - key: TZ_UGC_MEDIA_PROVIDER

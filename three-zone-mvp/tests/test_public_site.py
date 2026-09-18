@@ -66,6 +66,8 @@ class PublicSiteTests(unittest.TestCase):
         origins = re.findall(r"https://[a-z0-9.-]+\.onrender\.com", config)
         self.assertEqual(origins, ["https://three-zone-sports-1.onrender.com"])
         self.assertIn("const PRODUCTION_API_ORIGIN", config)
+        self.assertIn("const MEMBER_APP_ORIGIN", config)
+        self.assertIn("https://threezonesport.lovable.app", config)
         self.assertNotIn("setMemberOrigin", config)
         self.assertNotIn("threezone_backend_url", config)
         self.assertNotIn("three-zone-api.onrender.com", config)
@@ -74,6 +76,11 @@ class PublicSiteTests(unittest.TestCase):
         self.assertIn("/api/public/schedules", config)
         self.assertIn("/api/public/archives", config)
         self.assertNotIn("/api/public/scores", config)
+
+    def test_main_config_matches_docs_config(self):
+        docs = (DOCS / "config.js").read_text(encoding="utf-8")
+        main = (REPO / "main" / "config.js").read_text(encoding="utf-8")
+        self.assertEqual(docs, main)
 
     def test_pages_fetch_public_catalog_automatically(self):
         home = (DOCS / "index.html").read_text(encoding="utf-8")

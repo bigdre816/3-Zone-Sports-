@@ -1130,7 +1130,7 @@ Primary reference: `config.example.env` and `backend/config.py`.
 | TZ_ENV | development | demo/local/development allow Treasure simulation; production is strict |
 | TZ_HTTP_HOST / TZ_HTTP_PORT | 127.0.0.1 / 8000 | HTTP bind (`PORT` on Render) |
 | TZ_WS_HOST / TZ_WS_PORT | 127.0.0.1 / 8765 | Legacy socket bind; unused. Gateway owns `$PORT`. |
-| TZ_ALLOWED_ORIGINS | derived from HTTP | Exact CORS and WS Origin |
+| TZ_ALLOWED_ORIGINS | derived from HTTP | Exact CORS and WS Origin. Production includes marketing, Render, and Lovable member origins. |
 | TZ_DATABASE_PATH | data/three_zone.sqlite3 | SQLite file |
 | TZ_DATABASE_URL | empty | Postgres when set |
 | TZ_DATA_DIR | data | Data root |
@@ -1149,7 +1149,8 @@ Primary reference: `config.example.env` and `backend/config.py`.
 | TZ_LIVE_MEDIA_PROVIDER | demo | demo \| cloudflare |
 | TZ_MEDIA_PROVIDER | demo | Legacy alias |
 | TZ_UGC_MEDIA_PROVIDER | fake | fake \| cloudflare |
-| TZ_PUBLIC_BASE_URL | derived | Public base |
+| TZ_PUBLIC_BASE_URL | derived | Marketing site (GitHub Pages), not the API host |
+| TZ_PUBLIC_APP_URL | empty | Member portal origin (`https://threezonesport.lovable.app` in production) |
 | TZ_CLOUDFLARE_* | empty | Live Stream credentials |
 | TZ_PHOTO_STORAGE | fake | fake \| s3 |
 | TZ_PHOTO_S3_* | empty | Object storage for photos |
