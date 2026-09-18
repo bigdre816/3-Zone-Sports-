@@ -67,7 +67,7 @@ class PublicSiteTests(unittest.TestCase):
         self.assertEqual(origins, ["https://three-zone-sports-1.onrender.com"])
         self.assertIn("const PRODUCTION_API_ORIGIN", config)
         self.assertIn("const MEMBER_APP_ORIGIN", config)
-        self.assertIn("https://threezonesport.lovable.app", config)
+        self.assertIn("https://app.3zonesports.com", config)
         self.assertNotIn("setMemberOrigin", config)
         self.assertNotIn("threezone_backend_url", config)
         self.assertNotIn("three-zone-api.onrender.com", config)
@@ -117,7 +117,11 @@ class PublicSiteTests(unittest.TestCase):
         self.assertIn('href="/app/"', home)
         self.assertIn("Sign In", home)
         app = (DOCS / "app" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("memberAppPath", app)
         self.assertIn("memberAppUrl", app)
+        self.assertIn("app.3zonesports.com", (DOCS / "config.js").read_text(encoding="utf-8"))
+        self.assertIn("memberAppPath", (DOCS / "config.js").read_text(encoding="utf-8"))
+        self.assertIn("'/archive/' + encodeURIComponent(archiveId)", (DOCS / "config.js").read_text(encoding="utf-8"))
 
     def test_pages_origin_can_read_public_catalog(self):
         from backend.config import Config

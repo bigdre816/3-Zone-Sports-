@@ -65,8 +65,8 @@ The full user-friendly deployment guide is in **DEPLOY-3ZONESPORTS.md** at the r
 - `TZ_DATABASE_PATH=/var/data/three_zone.sqlite3` (persistent disk)
 
 ### Origins (CORS)
-- `TZ_ALLOWED_ORIGINS=https://3zonesports.com,https://www.3zonesports.com,https://three-zone-sports.onrender.com,https://three-zone-sports-1.onrender.com,https://threezonesport.lovable.app,https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app`
-- `TZ_PUBLIC_APP_URL=https://threezonesport.lovable.app` (member portal; distinct from `TZ_PUBLIC_BASE_URL`)
+- `TZ_ALLOWED_ORIGINS=https://3zonesports.com,https://www.3zonesports.com,https://app.3zonesports.com,https://three-zone-sports.onrender.com,https://three-zone-sports-1.onrender.com,https://threezonesport.lovable.app,https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app`
+- `TZ_PUBLIC_APP_URL=https://app.3zonesports.com` (member portal; distinct from `TZ_PUBLIC_BASE_URL`)
 
 ### Media Providers
 - `TZ_LIVE_MEDIA_PROVIDER=demo` (or `cloudflare`)

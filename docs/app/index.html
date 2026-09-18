@@ -15,8 +15,8 @@
   <script src="/config.js"></script>
   <script>
     (function () {
-      const query = window.location.search || '';
-      ThreeZoneConfig.memberAppUrl('/' + query).then(function (url) {
+      const path = ThreeZoneConfig.memberAppPath(window.location.search || '');
+      ThreeZoneConfig.memberAppUrl(path).then(function (url) {
         window.location.replace(url);
       }).catch(function () {
         document.querySelector('.subtitle').textContent = 'Member sign-in is temporarily unavailable. Try again shortly.';

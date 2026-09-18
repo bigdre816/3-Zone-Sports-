@@ -39,7 +39,7 @@ class WorkspaceLayoutTests(unittest.TestCase):
         self.assertIn("healthCheckPath: /healthz", text)
         self.assertNotIn("healthCheckPath: /api/health", text)
         self.assertIn("TZ_PUBLIC_APP_URL", text)
-        self.assertIn("https://threezonesport.lovable.app", text)
+        self.assertIn("https://app.3zonesports.com", text)
 
     def test_member_app_is_not_nested_under_itself(self):
         self.assertFalse(

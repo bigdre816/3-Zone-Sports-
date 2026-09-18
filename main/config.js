@@ -1,10 +1,11 @@
 /**
- * Public site configuration. Fetch the Render API; send members to Lovable.
- * Do not surface infrastructure origins in page copy, forms, or status badges.
+ * Public site configuration. Fetch the Render API; send members to
+ * app.3zonesports.com (the member-facing product). Do not surface
+ * infrastructure origins in page copy, forms, or status badges.
  */
 
 const PRODUCTION_API_ORIGIN = 'https://three-zone-sports-1.onrender.com';
-const MEMBER_APP_ORIGIN = 'https://threezonesport.lovable.app';
+const MEMBER_APP_ORIGIN = 'https://app.3zonesports.com';
 
 const ThreeZoneConfig = {
   PRODUCTION_API_ORIGIN,
@@ -40,6 +41,35 @@ const ThreeZoneConfig = {
       }
     }
     return MEMBER_APP_ORIGIN;
+  },
+
+  memberAppPath(search) {
+    const raw = String(search || '');
+    const queryIndex = raw.indexOf('?');
+    const query = queryIndex === -1 ? '' : raw.slice(queryIndex + 1);
+    let eventId = '';
+    let archiveId = '';
+    query.split('&').forEach(function (part) {
+      if (!part) return;
+      const idx = part.indexOf('=');
+      let key = idx === -1 ? part : part.slice(0, idx);
+      let value = idx === -1 ? '' : part.slice(idx + 1);
+      try {
+        key = decodeURIComponent(key.replace(/\+/g, ' '));
+      } catch (_) {
+        key = key.replace(/\+/g, ' ');
+      }
+      try {
+        value = decodeURIComponent(value.replace(/\+/g, ' '));
+      } catch (_) {
+        value = value.replace(/\+/g, ' ');
+      }
+      if (key === 'event' && eventId === '') eventId = value;
+      if (key === 'archive' && archiveId === '') archiveId = value;
+    });
+    if (eventId) return '/game/' + encodeURIComponent(eventId);
+    if (archiveId) return '/archive/' + encodeURIComponent(archiveId);
+    return '/';
   },
 
   async memberAppUrl(path) {

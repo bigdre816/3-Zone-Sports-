@@ -24,6 +24,18 @@ DEMO_SEED_PASSWORDS = {
 
 MIN_SECRET_LEN = 32
 
+# Canonical member UI. GitHub Pages (3zonesports.com) is the public catalog;
+# this origin is the signed-in product. Always admitted for CORS / WS Origin
+# so a stale Render dashboard allowlist cannot lock members out.
+MEMBER_APP_ORIGIN = "https://app.3zonesports.com"
+FIRST_PARTY_WEB_ORIGINS = (
+    "https://3zonesports.com",
+    "https://www.3zonesports.com",
+    MEMBER_APP_ORIGIN,
+    "https://threezonesport.lovable.app",
+    "https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app",
+)
+
 
 def _split_origins(raw: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
@@ -276,7 +288,12 @@ class Config:
         for extra in _render_service_origins():
             if extra not in allowed:
                 allowed.append(extra)
+        for extra in FIRST_PARTY_WEB_ORIGINS:
+            if extra not in allowed:
+                allowed.append(extra)
         public_app_url = os.environ.get("TZ_PUBLIC_APP_URL", "").strip().rstrip("/")
+        if not public_app_url and running_on_render():
+            public_app_url = MEMBER_APP_ORIGIN
         if public_app_url:
             parsed_app = urlparse(public_app_url)
             if parsed_app.scheme in ("http", "https") and parsed_app.netloc:

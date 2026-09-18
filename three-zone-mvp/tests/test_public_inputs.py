@@ -109,18 +109,33 @@ class PublicInputTests(unittest.TestCase):
         self.assertEqual(origin["pages"], "https://three-zone-sports-1.onrender.com")
         self.assertEqual(origin["www"], "https://three-zone-sports-1.onrender.com")
         self.assertEqual(origin["override"], "https://example.test")
-        self.assertEqual(origin["memberPages"], "https://threezonesport.lovable.app")
-        self.assertEqual(origin["memberWww"], "https://threezonesport.lovable.app")
+        self.assertEqual(origin["memberPages"], "https://app.3zonesports.com")
+        self.assertEqual(origin["memberWww"], "https://app.3zonesports.com")
         self.assertEqual(origin["memberLocal"], "http://localhost:8000")
 
     def test_member_app_url_for_every_path_input(self):
         urls = self.harness["memberAppUrl"]
-        self.assertEqual(urls["empty"], "https://threezonesport.lovable.app/")
-        self.assertEqual(urls["root"], "https://threezonesport.lovable.app/")
-        self.assertEqual(urls["query"], "https://threezonesport.lovable.app/?event=evt_x")
+        self.assertEqual(urls["empty"], "https://app.3zonesports.com/")
+        self.assertEqual(urls["root"], "https://app.3zonesports.com/")
+        self.assertEqual(urls["query"], "https://app.3zonesports.com/?event=evt_x")
         self.assertIn("event=", urls["encoded"])
         self.assertNotIn("<", urls["encoded"])
         self.assertNotIn('"', urls["encoded"].split("event=", 1)[-1])
+
+    def test_member_app_path_keeps_event_and_archive_ids(self):
+        paths = self.harness["memberAppPath"]
+        self.assertEqual(paths["empty"], "/")
+        self.assertEqual(paths["searchEmpty"], "/")
+        self.assertEqual(paths["event"], "/game/evt_x")
+        self.assertEqual(paths["eventPrefixed"], "/game/evt_mw_basketball")
+        self.assertEqual(paths["archive"], "/archive/arc-central-wrestling")
+        self.assertEqual(paths["archivePrefixed"], "/archive/arc-central-wrestling")
+        self.assertNotEqual(paths["archive"], "/archive")
+        self.assertTrue(paths["archive"].endswith("arc-central-wrestling"))
+        self.assertIn("arc", paths["archiveEncoded"])
+        self.assertNotIn("<", paths["archiveEncoded"])
+        self.assertNotIn('"', paths["archiveEncoded"])
+        self.assertEqual(paths["bothPrefersEvent"], "/game/evt_x")
 
     def test_fetch_handles_ok_html_json_and_network_failure(self):
         fetch = self.harness["fetch"]
@@ -299,13 +314,14 @@ class PublicInputTests(unittest.TestCase):
         return _Resp(conn, raw)
 
     def test_lovable_origin_is_accepted_when_listed(self):
+        member = "https://app.3zonesports.com"
         lovable = "https://threezonesport.lovable.app"
         preview = "https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app"
-        httpd = self._server([lovable, preview])
+        httpd = self._server([member, lovable, preview])
         try:
             host, port = httpd.server_address
             base = f"http://{host}:{port}"
-            for origin in (lovable, preview):
+            for origin in (member, lovable, preview):
                 with self._open(base + "/api/health", origin, method="OPTIONS") as resp:
                     self.assertEqual(resp.status, 204)
                     self.assertEqual(resp.headers.get("Access-Control-Allow-Origin"), origin)
@@ -327,20 +343,20 @@ class PublicInputTests(unittest.TestCase):
             httpd.server_close()
 
     def test_member_shell_redirects_to_public_app_url(self):
-        lovable = "https://threezonesport.lovable.app"
+        member = "https://app.3zonesports.com"
         httpd = self._server(
-            ["https://3zonesports.com", lovable],
-            public_app_url=lovable,
+            ["https://3zonesports.com", member],
+            public_app_url=member,
         )
         try:
             host, port = httpd.server_address
             base = f"http://{host}:{port}"
             with self._open_no_follow(base + "/") as resp:
                 self.assertEqual(resp.status, 302)
-                self.assertEqual(resp.headers.get("Location"), lovable)
+                self.assertEqual(resp.headers.get("Location"), member)
             with self._open_no_follow(base + "/index.html?event=evt_x") as resp:
                 self.assertEqual(resp.status, 302)
-                self.assertEqual(resp.headers.get("Location"), lovable + "?event=evt_x")
+                self.assertEqual(resp.headers.get("Location"), member + "?event=evt_x")
             with self._open_no_follow(base + "/ops") as resp:
                 self.assertEqual(resp.status, 200)
                 body = resp.read().decode("utf-8", errors="replace")
