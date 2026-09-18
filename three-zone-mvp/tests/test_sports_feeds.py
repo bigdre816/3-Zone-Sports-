@@ -430,8 +430,25 @@ class HttpRouteTests(unittest.TestCase):
         status, payload = self._status("/api/public/scores")
         self.assertEqual(status, 404)
         self.assertEqual(payload.get("code"), "not_found")
-        status, _ = self._status("/api/member/sports")
+        status, payload = self._status("/api/member/sports")
         self.assertEqual(status, 401)
+        self.assertEqual(payload.get("code"), "missing_session")
+
+    def test_member_sports_accepts_bearer(self):
+        login = urllib.request.Request(
+            self.base + "/api/auth/login",
+            data=json.dumps({"username": "demo-viewer", "password": "change-me-viewer-local"}).encode(),
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(login, timeout=5) as resp:
+            token = json.loads(resp.read())["session_token"]
+        req = urllib.request.Request(self.base + "/api/member/sports")
+        req.add_header("Authorization", "Bearer " + token)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            payload = json.loads(resp.read())
+        ids = [row["team_id"] for row in payload["member"]["my_teams"]]
+        self.assertEqual(ids, ["team_nfl_kc_chiefs", "team_mlb_kc_royals"])
 
     def test_health_includes_feeds_without_secrets(self):
         payload = self._get("/api/health")
