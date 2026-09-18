@@ -34,13 +34,16 @@ const ThreeZoneConfig = {
   },
 
   memberOrigin() {
-    if (typeof window !== 'undefined') {
-      const host = String(window.location.hostname || '');
-      if (host === 'localhost' || host === '127.0.0.1') {
-        return this._origin();
-      }
+    if (this._localMember()) {
+      return this._origin();
     }
     return MEMBER_APP_ORIGIN;
+  },
+
+  _localMember() {
+    if (typeof window === 'undefined') return false;
+    const host = String(window.location.hostname || '');
+    return host === 'localhost' || host === '127.0.0.1';
   },
 
   memberAppPath(search) {
@@ -49,6 +52,7 @@ const ThreeZoneConfig = {
     const query = queryIndex === -1 ? '' : raw.slice(queryIndex + 1);
     let eventId = '';
     let archiveId = '';
+    let destination = '';
     query.split('&').forEach(function (part) {
       if (!part) return;
       const idx = part.indexOf('=');
@@ -66,9 +70,33 @@ const ThreeZoneConfig = {
       }
       if (key === 'event' && eventId === '') eventId = value;
       if (key === 'archive' && archiveId === '') archiveId = value;
+      if (key === 'to' && destination === '') destination = value;
     });
-    if (eventId) return '/game/' + encodeURIComponent(eventId);
-    if (archiveId) return '/archive/' + encodeURIComponent(archiveId);
+    const local = this._localMember();
+    if (eventId) {
+      return local ? '/?event=' + encodeURIComponent(eventId) : '/game/' + encodeURIComponent(eventId);
+    }
+    if (archiveId) {
+      return local
+        ? '/?archive=' + encodeURIComponent(archiveId)
+        : '/archive/' + encodeURIComponent(archiveId);
+    }
+    const destinations = local
+      ? {
+          auth: '/#auth',
+          me: '/#profile',
+          live: '/#live',
+          clips: '/#archives',
+          archive: '/#archives',
+        }
+      : {
+          auth: '/auth',
+          me: '/me',
+          live: '/live',
+          clips: '/clips',
+          archive: '/archive',
+        };
+    if (destinations[destination]) return destinations[destination];
     return '/';
   },
 

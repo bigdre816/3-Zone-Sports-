@@ -176,7 +176,7 @@ const ThreeZoneSite = {
     container.replaceChildren(
       this.el('div', { class: 'unavailable' }, [
         this.el('p', { text: 'Pro scores are member-only. Sign in for My Teams.' }),
-        this.el('a', { class: 'btn', href: '/app/', 'data-signin': true, text: 'Sign in' }),
+        this.el('a', { class: 'btn', href: '/app/?to=auth', 'data-signin': true, text: 'Sign in' }),
       ])
     );
     return [];

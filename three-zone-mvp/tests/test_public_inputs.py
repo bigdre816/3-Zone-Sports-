@@ -30,7 +30,8 @@ NAV_HREFS = (
     "/schools/",
     "/clips/",
     "/archives/",
-    "/app/",
+    "/app/?to=auth",
+    "/app/?to=me",
 )
 
 CHROME_PAGES = (
@@ -136,6 +137,15 @@ class PublicInputTests(unittest.TestCase):
         self.assertNotIn("<", paths["archiveEncoded"])
         self.assertNotIn('"', paths["archiveEncoded"])
         self.assertEqual(paths["bothPrefersEvent"], "/game/evt_x")
+        self.assertEqual(paths["toAuth"], "/auth")
+        self.assertEqual(paths["toMe"], "/me")
+        self.assertEqual(paths["toUnknown"], "/")
+        self.assertEqual(paths["eventBeatsTo"], "/game/evt_x")
+        self.assertEqual(paths["localAuth"], "/#auth")
+        self.assertEqual(paths["localMe"], "/#profile")
+        self.assertEqual(paths["localLive"], "/#live")
+        self.assertEqual(paths["localEvent"], "/?event=evt_x")
+        self.assertEqual(paths["localArchive"], "/?archive=arc-central-wrestling")
 
     def test_fetch_handles_ok_html_json_and_network_failure(self):
         fetch = self.harness["fetch"]
@@ -172,7 +182,10 @@ class PublicInputTests(unittest.TestCase):
     def test_home_ctas_cover_every_product_entry(self):
         parsed = parse_page(DOCS / "index.html")
         hrefs = parsed.hrefs
-        self.assertGreaterEqual(hrefs.count("/app/"), 4)
+        member = [href for href in hrefs if href.startswith("/app/")]
+        self.assertGreaterEqual(len(member), 4)
+        self.assertIn("/app/?to=auth", hrefs)
+        self.assertIn("/app/?to=me", hrefs)
         self.assertIn("/live/", hrefs)
         self.assertIn("/schedules/", hrefs)
         self.assertIn("/teams/", hrefs)

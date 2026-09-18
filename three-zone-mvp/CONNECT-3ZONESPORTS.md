@@ -119,6 +119,62 @@ Then open:
 
 You should see the Three-Zone public page, not an IONOS nginx 404.
 
+## 6. Point `app.3zonesports.com` at the member product (Lovable)
+
+The signed-in product is **not** GitHub Pages and is **not** a Cloudflare DNS zone you manage. `3zonesports.com` nameservers stay at **IONOS** (`ns1026.ui-dns.com` and the other `ui-dns` hosts). The `server: cloudflare` header on the member app is Lovable’s edge, not a DNS record you edit in a Cloudflare dashboard.
+
+Do this in **IONOS → 3zonesports.com → DNS** (same screen as step 2). Leave nameservers and MX alone.
+
+Lovable’s current custom-domain setup: https://docs.lovable.dev/features/custom-domain
+
+### A. `app` — A record
+
+| Field | Type this |
+| --- | --- |
+| Type | `A` |
+| Host name | `app` |
+| Points to | `185.158.133.1` |
+
+That address is Lovable’s documented edge IP. Do **not** CNAME `app` at GitHub Pages, Render, or `threezonesport.lovable.app` unless Lovable’s domain screen explicitly gives you a CNAME (only when you opt into “Domain uses Cloudflare or a similar proxy”).
+
+### B. `_lovable.app` — TXT verification
+
+| Field | Type this |
+| --- | --- |
+| Type | `TXT` |
+| Host name | `_lovable.app` |
+| Value | the `lovable_verify=…` string from Lovable → Project → Settings → Domains (copy it in full) |
+
+IONOS host name is `_lovable.app`, not `_lovable.app.3zonesports.com`.
+
+### C. Confirm it is live
+
+In Lovable, `app.3zonesports.com` must show **Live / Active / Verified**, not pending.
+
+From this repo:
+
+```bash
+python3 scripts/check_app_hostname.py
+```
+
+Public lookups that do not depend on your phone’s DNS cache:
+
+- https://dns.google/query?name=app.3zonesports.com&type=A
+- https://dns.google/query?name=_lovable.app.3zonesports.com&type=TXT
+- https://www.nslookup.io/domains/app.3zonesports.com/dns-records/
+
+You want `app.3zonesports.com` **A** `185.158.133.1`, HTTPS 200, certificate for `app.3zonesports.com`, and `threezonesport.lovable.app` redirecting to `https://app.3zonesports.com/`.
+
+A web search that finds “nothing indexed” is **not** a DNS failure. Google Search can lag days after a hostname is live.
+
+If a fetch tool reports NXDOMAIN while Google DNS already has the A record, retry with a browser on cellular, then Wi‑Fi. Phone resolvers and office Wi‑Fi can cache a miss for up to the 3600s TTL.
+
+There is **no AAAA** for `app`. That is expected. IPv4 works; do not add a guessed IPv6 address.
+
+### D. Do not mix Render into the apex
+
+`3zonesports.com` must keep only GitHub Pages A records (`185.199.108–111.153`). An extra apex **A** to `216.24.57.1` is Render’s ingress and sends some visitors to the wrong host. Delete that row if it is still in IONOS.
+
 ## What this does not do
 
-GitHub Pages can serve the public HTML in `docs/`. It cannot run the Python member app (`three-zone-mvp/`, sign-in, live playback). That app still needs a host (for example [Render](https://dashboard.render.com/) + [custom domain](https://render.com/docs/custom-domains)) in a later step.
+GitHub Pages (`docs/`) is the public catalog at https://3zonesports.com/. Sign-in, Live, My Zone, clips, and member scores run on https://app.3zonesports.com/ (Lovable). The Python API stays on Render (`three-zone-sports-1.onrender.com`) and is not linked as a public hostname.
