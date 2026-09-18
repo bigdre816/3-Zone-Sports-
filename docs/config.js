@@ -43,6 +43,35 @@ const ThreeZoneConfig = {
     return MEMBER_APP_ORIGIN;
   },
 
+  memberAppPath(search) {
+    const raw = String(search || '');
+    const queryIndex = raw.indexOf('?');
+    const query = queryIndex === -1 ? '' : raw.slice(queryIndex + 1);
+    let eventId = '';
+    let archiveId = '';
+    query.split('&').forEach(function (part) {
+      if (!part) return;
+      const idx = part.indexOf('=');
+      let key = idx === -1 ? part : part.slice(0, idx);
+      let value = idx === -1 ? '' : part.slice(idx + 1);
+      try {
+        key = decodeURIComponent(key.replace(/\+/g, ' '));
+      } catch (_) {
+        key = key.replace(/\+/g, ' ');
+      }
+      try {
+        value = decodeURIComponent(value.replace(/\+/g, ' '));
+      } catch (_) {
+        value = value.replace(/\+/g, ' ');
+      }
+      if (key === 'event' && eventId === '') eventId = value;
+      if (key === 'archive' && archiveId === '') archiveId = value;
+    });
+    if (eventId) return '/game/' + encodeURIComponent(eventId);
+    if (archiveId) return '/archive/' + encodeURIComponent(archiveId);
+    return '/';
+  },
+
   async memberAppUrl(path) {
     const suffix = path == null || path === '' ? '/' : path;
     return this.memberOrigin() + suffix;

@@ -122,6 +122,21 @@ class PublicInputTests(unittest.TestCase):
         self.assertNotIn("<", urls["encoded"])
         self.assertNotIn('"', urls["encoded"].split("event=", 1)[-1])
 
+    def test_member_app_path_keeps_event_and_archive_ids(self):
+        paths = self.harness["memberAppPath"]
+        self.assertEqual(paths["empty"], "/")
+        self.assertEqual(paths["searchEmpty"], "/")
+        self.assertEqual(paths["event"], "/game/evt_x")
+        self.assertEqual(paths["eventPrefixed"], "/game/evt_mw_basketball")
+        self.assertEqual(paths["archive"], "/archive/arc-central-wrestling")
+        self.assertEqual(paths["archivePrefixed"], "/archive/arc-central-wrestling")
+        self.assertNotEqual(paths["archive"], "/archive")
+        self.assertTrue(paths["archive"].endswith("arc-central-wrestling"))
+        self.assertIn("arc", paths["archiveEncoded"])
+        self.assertNotIn("<", paths["archiveEncoded"])
+        self.assertNotIn('"', paths["archiveEncoded"])
+        self.assertEqual(paths["bothPrefersEvent"], "/game/evt_x")
+
     def test_fetch_handles_ok_html_json_and_network_failure(self):
         fetch = self.harness["fetch"]
         self.assertEqual(fetch["ok"], {"events": [{"title": "ok"}]})

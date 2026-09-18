@@ -117,9 +117,11 @@ class PublicSiteTests(unittest.TestCase):
         self.assertIn('href="/app/"', home)
         self.assertIn("Sign In", home)
         app = (DOCS / "app" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("memberAppPath", app)
         self.assertIn("memberAppUrl", app)
-        self.assertIn("/game/", app)
         self.assertIn("app.3zonesports.com", (DOCS / "config.js").read_text(encoding="utf-8"))
+        self.assertIn("memberAppPath", (DOCS / "config.js").read_text(encoding="utf-8"))
+        self.assertIn("'/archive/' + encodeURIComponent(archiveId)", (DOCS / "config.js").read_text(encoding="utf-8"))
 
     def test_pages_origin_can_read_public_catalog(self):
         from backend.config import Config

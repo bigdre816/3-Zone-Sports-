@@ -24,7 +24,7 @@ function load(src, windowObj, extras) {
 
 async function main() {
   const production = 'https://three-zone-sports-1.onrender.com';
-  const results = { origin: {}, memberAppUrl: {}, fetch: {}, site: {} };
+  const results = { origin: {}, memberAppUrl: {}, memberAppPath: {}, fetch: {}, site: {} };
 
   results.origin.noWindow = load(configSrc, undefined)._origin();
   results.origin.localhost = load(configSrc, { location: { hostname: 'localhost' } })._origin();
@@ -44,6 +44,14 @@ async function main() {
   results.memberAppUrl.root = await cfg.memberAppUrl('/');
   results.memberAppUrl.query = await cfg.memberAppUrl('/?event=evt_x');
   results.memberAppUrl.encoded = await cfg.memberAppUrl('/?event=' + encodeURIComponent('evt_"<>'));
+  results.memberAppPath.empty = cfg.memberAppPath();
+  results.memberAppPath.searchEmpty = cfg.memberAppPath('');
+  results.memberAppPath.event = cfg.memberAppPath('?event=evt_x');
+  results.memberAppPath.eventPrefixed = cfg.memberAppPath('/?event=evt_mw_basketball');
+  results.memberAppPath.archive = cfg.memberAppPath('?archive=arc-central-wrestling');
+  results.memberAppPath.archivePrefixed = cfg.memberAppPath('/?archive=arc-central-wrestling');
+  results.memberAppPath.archiveEncoded = cfg.memberAppPath('?archive=' + encodeURIComponent('arc 1"<>'));
+  results.memberAppPath.bothPrefersEvent = cfg.memberAppPath('?archive=arc-central-wrestling&event=evt_x');
 
   const okFetch = load(configSrc, { location: { hostname: '3zonesports.com' } }, {
     fetch: async () => ({
