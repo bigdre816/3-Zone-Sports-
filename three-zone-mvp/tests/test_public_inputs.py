@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import http.client
 import json
 import os
 import re
@@ -14,6 +15,7 @@ import urllib.error
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -267,21 +269,34 @@ class PublicInputTests(unittest.TestCase):
         self.assertIn("encodeURIComponent(archiveId)", text)
 
     def _open_no_follow(self, url, origin=None, method="GET"):
-        class _NoRedirect(urllib.request.HTTPRedirectHandler):
-            def http_error_302(self, req, fp, code, msg, headers):
-                result = urllib.response.addinfourl(fp, headers, req.get_full_url(), code)
-                result.status = code
-                result.code = code
-                return result
-
-            http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
-
+        parsed = urlparse(url)
+        conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=5)
+        path = parsed.path or "/"
+        if parsed.query:
+            path += "?" + parsed.query
         headers = {}
         if origin is not None:
             headers["Origin"] = origin
-        request = urllib.request.Request(url, headers=headers, method=method)
-        opener = urllib.request.build_opener(_NoRedirect)
-        return opener.open(request, timeout=5)
+        conn.request(method, path, headers=headers)
+        raw = conn.getresponse()
+
+        class _Resp:
+            def __init__(self, connection, response):
+                self._connection = connection
+                self.status = response.status
+                self.headers = response.headers
+                self._body = response.read()
+
+            def read(self):
+                return self._body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self._connection.close()
+
+        return _Resp(conn, raw)
 
     def test_lovable_origin_is_accepted_when_listed(self):
         lovable = "https://threezonesport.lovable.app"
