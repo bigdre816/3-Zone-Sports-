@@ -194,7 +194,15 @@ class SportsFeedService:
                 payload["team"] = {"team_id": team_id, "name": None, "league": None, "market": None}
             return payload
 
-        follows = [tid for tid in (followed_team_ids or []) if team_by_id(tid)] or list(DEFAULT_FOLLOW_TEAM_IDS)
+        requested = [tid for tid in (followed_team_ids or []) if team_by_id(tid)]
+        if requested:
+            rank = {tid: index for index, tid in enumerate(DEFAULT_FOLLOW_TEAM_IDS)}
+            follows = sorted(
+                dict.fromkeys(requested),
+                key=lambda tid: (rank.get(tid, 100), (team_by_id(tid).name if team_by_id(tid) else tid)),
+            )
+        else:
+            follows = list(DEFAULT_FOLLOW_TEAM_IDS)
         follow_set = set(follows)
         sports = [s.lower() for s in (sports or []) if s]
         local = [g for g in games if self._is_local(g)]
