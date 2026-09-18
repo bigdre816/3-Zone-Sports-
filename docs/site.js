@@ -8,6 +8,7 @@ const ThreeZoneSite = {
     teams: 'Teams are temporarily unavailable. Try again shortly.',
     schools: 'Schools are temporarily unavailable. Try again shortly.',
     clips: 'Clips are temporarily unavailable. Try again shortly.',
+    scores: 'Pro scores are temporarily unavailable. Try again shortly.',
   },
 
   el(tag, attrs, children) {
@@ -153,6 +154,40 @@ const ThreeZoneSite = {
       return rows;
     } catch (_) {
       this.showUnavailable(container, 'archives');
+      return [];
+    }
+  },
+
+  scoreCard(game) {
+    const home = (game.home && (game.home.abbreviation || game.home.name)) || 'Home';
+    const away = (game.away && (game.away.abbreviation || game.away.name)) || 'Away';
+    const hs = game.home && game.home.score != null ? game.home.score : '—';
+    const as = game.away && game.away.score != null ? game.away.score : '—';
+    const status = (game.status || 'unknown').replace(/_/g, ' ');
+    return this.el('article', { class: 'card' }, [
+      this.el('p', { text: (game.league || '') + ' · ' + status }),
+      this.el('h3', { text: away + ' ' + as + ' @ ' + home + ' ' + hs }),
+      this.el('p', { text: game.display_local || game.venue || 'Time TBA' }),
+    ]);
+  },
+
+  async loadScores(container, limit) {
+    try {
+      const data = await ThreeZoneConfig.fetch(ThreeZoneConfig.endpoints.public.scores);
+      if (data.freshness === 'not_configured') {
+        this.showEmpty(container, 'Pro scores are not configured. High-school and college stay on the Three-Zone catalog.');
+        return [];
+      }
+      const rows = data.games || [];
+      if (!rows.length) {
+        this.showEmpty(container, 'No professional games in the current window.');
+        return rows;
+      }
+      const cards = rows.slice(0, limit || rows.length).map((row) => this.scoreCard(row));
+      container.replaceChildren(...cards);
+      return rows;
+    } catch (_) {
+      this.showUnavailable(container, 'scores');
       return [];
     }
   },

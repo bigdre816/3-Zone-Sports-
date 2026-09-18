@@ -47,6 +47,7 @@ PUBLIC_PATHS = (
     "/api/public/live",
     "/api/public/schedules",
     "/api/public/archives",
+    "/api/public/scores",
 )
 
 QUERY_INPUTS = (
@@ -222,6 +223,10 @@ class PublicInputTests(unittest.TestCase):
                                     self.assertNotIn("rights", event)
                             elif path.endswith("/schedules"):
                                 self.assertGreaterEqual(len(payload["schedules"]), 1)
+                            elif path.endswith("/scores"):
+                                self.assertIn("freshness", payload)
+                                self.assertIn("games", payload)
+                                self.assertIn(payload["freshness"], ("fresh", "stale", "unavailable", "not_configured"))
                             else:
                                 self.assertGreaterEqual(len(payload["archives"]), 1)
         finally:

@@ -936,6 +936,12 @@ function renderHealthDashboard(data) {
     strip.appendChild(_pill(liveLabel, liveTone));
     strip.appendChild(_pill(aiOn ? "AI on" : "AI off", aiOn ? "warn" : "ok"));
     strip.appendChild(_pill(motenLabel, motenTone));
+    const feeds = data.sports_feeds || {};
+    const feedFresh = feeds.freshness || (feeds.configured ? "unavailable" : "not_configured");
+    let feedTone = "warn";
+    if (feedFresh === "fresh") feedTone = "ok";
+    if (feedFresh === "unavailable") feedTone = "bad";
+    strip.appendChild(_pill("Scores · " + feedFresh.replace(/_/g, " "), feedTone));
   }
 
   const ev = data.events || {};
@@ -994,6 +1000,20 @@ function renderHealthDashboard(data) {
   Object.keys(outbox).sort().forEach((k) => motenRows.push([k, outbox[k]]));
   if (Object.keys(outbox).length === 0) motenRows.push(["outbox", "empty"]);
   _kv($("#health-moten"), motenRows);
+
+  const feeds = data.sports_feeds || {};
+  const feedRows = [
+    ["Provider", feeds.provider || "balldontlie"],
+    ["Configured", feeds.configured ? "yes" : "no"],
+    ["Freshness", feeds.freshness || "—"],
+    ["Last successful fetch", feeds.last_successful_fetch || "none"],
+  ];
+  const leagues = feeds.leagues || {};
+  Object.keys(leagues).sort().forEach((lg) => {
+    const row = leagues[lg] || {};
+    feedRows.push([lg, (row.freshness || "—") + " · games " + (row.game_count != null ? row.game_count : "—")]);
+  });
+  _kv($("#health-sports-feeds"), feedRows);
 
   const ls = data.live_sessions || {};
   const counts = ls.by_session_state || {};

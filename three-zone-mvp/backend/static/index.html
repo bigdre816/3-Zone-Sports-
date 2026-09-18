@@ -14,6 +14,7 @@
     </a>
     <nav id="section-nav" class="hidden desktop-nav" aria-label="Member">
       <a href="#huddle" data-view="huddle">Huddle</a>
+      <a href="#scores" data-view="scores">My Zone</a>
       <a href="#live" data-view="live">Live</a>
       <a href="#saved" data-view="saved">Saved</a>
       <a href="#studio" data-view="studio">Studio</a>
@@ -74,6 +75,8 @@
         <div id="friends-row" class="friends-row" aria-label="People and clips"></div>
         <div class="section-title huddle-teams-head"><h2>My Teams</h2><span>Follow schools and clubs in Kansas City and your zone.</span></div>
         <div id="my-teams" class="teams-row"></div>
+        <div class="section-title huddle-teams-head"><h2>My Zone</h2><span>Chiefs, Royals, and basketball scores. Scoreboard facts are not a live stream.</span></div>
+        <div id="my-zone-scores" class="my-zone"></div>
         <div id="huddle-live"></div>
         <div class="chip-row" role="tablist" aria-label="Feed mode">
           <button type="button" class="chip active" data-mode="for_you">For you</button>
@@ -99,6 +102,8 @@
         <div id="live-moments" class="moments-list"></div>
         <div class="section-title"><h2>In your zone</h2><span>Lists stay quiet under the hero.</span></div>
         <div id="live-list" class="cards"></div>
+        <div class="section-title"><h2>Pro scores</h2><span>Normalized feed. Not a watch entitlement.</span></div>
+        <div id="live-pro-scores" class="my-zone"></div>
         <div class="columns">
           <section id="schedules">
             <div class="section-title"><h2>Upcoming in your zone</h2></div>
@@ -109,6 +114,27 @@
             <div id="archive-list" class="cards archive"></div>
           </section>
         </div>
+      </section>
+
+      <section id="view-scores" class="view hidden">
+        <div class="section-title"><h2>My Zone</h2><span>Kansas City scores and national basketball. Provider data is not a stream.</span></div>
+        <p id="scores-freshness" class="sub"></p>
+        <div class="section-title"><h2>Local</h2><span>Chiefs and Royals.</span></div>
+        <div id="scores-local" class="score-list"></div>
+        <div class="section-title"><h2>In progress</h2></div>
+        <div id="scores-live" class="score-list"></div>
+        <div class="section-title"><h2>Upcoming</h2></div>
+        <div id="scores-upcoming" class="score-list"></div>
+        <div class="section-title"><h2>Finals</h2></div>
+        <div id="scores-finals" class="score-list"></div>
+        <div class="section-title"><h2>National basketball</h2><span>NBA slate. Follow a team to pin it in My Zone.</span></div>
+        <div id="scores-nba" class="score-list"></div>
+        <p id="scores-gaps" class="sub"></p>
+      </section>
+
+      <section id="view-team" class="view hidden">
+        <div class="section-title"><h2 id="team-page-title">Team</h2><span id="team-page-sub">Normalized games for this catalog team.</span></div>
+        <div id="team-page-list" class="score-list"></div>
       </section>
 
       <section id="view-saved" class="view hidden">

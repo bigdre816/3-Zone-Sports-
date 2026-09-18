@@ -73,6 +73,7 @@ class PublicSiteTests(unittest.TestCase):
         self.assertIn("/api/public/live", config)
         self.assertIn("/api/public/schedules", config)
         self.assertIn("/api/public/archives", config)
+        self.assertIn("/api/public/scores", config)
 
     def test_pages_fetch_public_catalog_automatically(self):
         home = (DOCS / "index.html").read_text(encoding="utf-8")
@@ -129,7 +130,7 @@ class PublicSiteTests(unittest.TestCase):
         try:
             host, port = httpd.server_address
             base = f"http://{host}:{port}"
-            for path in ("/api/health", "/api/public/live", "/api/public/schedules", "/api/public/archives"):
+            for path in ("/api/health", "/api/public/live", "/api/public/schedules", "/api/public/archives", "/api/public/scores"):
                 request = urllib.request.Request(
                     base + path,
                     headers={"Origin": "https://3zonesports.com"},
@@ -139,10 +140,15 @@ class PublicSiteTests(unittest.TestCase):
                     self.assertEqual(resp.headers.get("Access-Control-Allow-Origin"), "https://3zonesports.com")
                 if path == "/api/health":
                     self.assertEqual(payload["status"], "ok")
+                    self.assertIn("sports_feeds", payload)
+                    self.assertIn(payload["sports_feeds"]["freshness"], ("fresh", "stale", "unavailable", "not_configured"))
                 elif path.endswith("live"):
                     self.assertGreaterEqual(len(payload["events"]), 1)
                 elif path.endswith("schedules"):
                     self.assertGreaterEqual(len(payload["schedules"]), 1)
+                elif path.endswith("scores"):
+                    self.assertIn("games", payload)
+                    self.assertEqual(payload["freshness"], "not_configured")
                 else:
                     self.assertGreaterEqual(len(payload["archives"]), 1)
         finally:

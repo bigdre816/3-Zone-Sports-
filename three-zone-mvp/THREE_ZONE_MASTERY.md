@@ -787,6 +787,10 @@ Inventory from `backend/http_server._routes()` plus `ai_gateway_routes.extra_rou
 | GET | `/api/public/live` | Public live cards |
 | GET | `/api/public/schedules` | Public schedules |
 | GET | `/api/public/archives` | Public archives |
+| GET | `/api/public/scores` | Normalized NFL/MLB/NBA scores (not streaming rights) |
+| GET | `/api/public/scores/upcoming` | Upcoming professional games |
+| GET | `/api/public/scores/finals` | Final professional games |
+| GET | `/api/public/scores/teams/{id}` | Games for one catalog team |
 | POST | `/api/auth/demo-login` | Demo account picker |
 | POST | `/api/auth/login` | Password login |
 | POST | `/api/auth/register` | Create viewer only |
@@ -826,6 +830,10 @@ Inventory from `backend/http_server._routes()` plus `ai_gateway_routes.extra_rou
 | GET | `/api/member/live` | Entitled live/upcoming |
 | GET | `/api/member/schedules` | Schedules |
 | GET | `/api/member/archives` | Archives |
+| GET | `/api/member/scores` | My Zone normalized scores |
+| GET | `/api/member/scores/upcoming` | Upcoming professional games |
+| GET | `/api/member/scores/finals` | Finals |
+| GET | `/api/member/scores/teams/{id}` | Team scoreboard page |
 | GET | `/api/member/search` | Discovery `?q=` |
 | POST | `/api/member/events/{evt}/playback` | Lease + media cookie |
 | POST | `/api/member/archive/{id}/playback` | Archive lease |

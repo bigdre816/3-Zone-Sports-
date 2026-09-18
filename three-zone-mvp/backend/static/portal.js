@@ -13,7 +13,7 @@ const escapeText = value => {
 const parseList = value => (value || "").split(",").map(part => part.trim()).filter(Boolean);
 const STAFF = new Set(["operator", "owner", "admin"]);
 const PAGE_VIEWS = new Set(["about", "support", "privacy", "terms", "notifications"]);
-const MEMBER_VIEWS = new Set(["huddle", "feed", "live", "watch", "saved", "studio", "inbox", "profile", "game"]);
+const MEMBER_VIEWS = new Set(["huddle", "feed", "live", "watch", "saved", "studio", "inbox", "profile", "game", "scores", "team"]);
 const HASH_ALIAS = { schedules: "live", archives: "live", feed: "huddle", watch: "live" };
 const state = {
   profile: null, signedIn: false, mode: "for_you", sport: "", kind: "photo", tab: "posts",
@@ -246,12 +246,14 @@ function applyRoute() {
     setView(name);
     if (name === "huddle" || name === "feed") {
       if (!state.bootingPortal) {
-        loadFeed(); loadFriends(); loadTeams(); loadHuddleLive();
+        loadFeed(); loadFriends(); loadTeams(); loadHuddleLive(); loadMyZone();
       }
       startFeedPoll();
     } else stopFeedPoll();
     if (name === "live" || name === "watch") { loadCatalog(); startLivePoll(); }
     else stopLivePoll();
+    if (name === "scores") loadScoresPage();
+    if (name === "team") loadTeamPage();
     if ((location.hash || "").replace(/^#/, "") === "archives") {
       const archives = $("#archives");
       if (archives) archives.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -624,6 +626,7 @@ async function loadCatalog() {
       playMedia(`/api/member/archive/${button.dataset.archive}/playback`, button.closest("article").querySelector("h3").textContent, "Authorized archive playback");
     });
   } catch (error) { toast(error.message); }
+  loadMyZone("#live-pro-scores");
 }
 
 async function loadInbox() {
@@ -719,6 +722,113 @@ async function loadTeams() {
   } catch (_) {
     root.innerHTML = "<p class='empty'>Teams unavailable.</p>";
   }
+}
+
+function scoreSide(side) {
+  const s = side || {};
+  const name = s.abbreviation || s.name || "—";
+  const pts = s.score == null ? "—" : s.score;
+  return { name, pts };
+}
+
+function scoreCard(game) {
+  const home = scoreSide(game.home);
+  const away = scoreSide(game.away);
+  const status = (game.status || "unknown").replace(/_/g, " ");
+  const clock = [game.period_detail, game.clock, game.inning != null ? ("Inn " + game.inning) : "", game.period != null && game.league !== "MLB" ? ("P" + game.period) : ""]
+    .filter(Boolean).join(" · ");
+  const when = game.display_local || "";
+  const teamId = (game.home && game.home.team_id) || (game.away && game.away.team_id) || "";
+  const href = teamId ? `#team/${encodeURIComponent(teamId)}` : "#scores";
+  return `<a class="score-row" href="${href}">
+    <span class="pill">${escapeText((game.league || "").toUpperCase())}</span>
+    <div>
+      <strong>${escapeText(away.name)} ${escapeText(away.pts)} @ ${escapeText(home.name)} ${escapeText(home.pts)}</strong>
+      <small>${escapeText(status)}${clock ? " · " + escapeText(clock) : ""}${when ? " · " + escapeText(when) : ""}</small>
+    </div>
+  </a>`;
+}
+
+function renderScoreList(node, games, emptyText) {
+  if (!node) return;
+  const rows = (games || []).map(scoreCard).join("");
+  node.innerHTML = rows || `<p class='empty'>${escapeText(emptyText)}</p>`;
+}
+
+function scoresUnavailableCopy(data) {
+  const freshness = data && data.freshness;
+  if (freshness === "not_configured") {
+    return "Pro scores are not configured on this host. College and high-school stay on the Three-Zone catalog.";
+  }
+  if (freshness === "unavailable") {
+    return "Pro scores are unavailable. Last known results are not invented.";
+  }
+  if (freshness === "stale") {
+    return "Showing last successful fetch. Feed is stale.";
+  }
+  return "";
+}
+
+async function loadMyZone(selector) {
+  const root = $(selector || "#my-zone-scores");
+  if (!root) return;
+  try {
+    const data = await api("GET", "/api/member/scores");
+    const mine = (data.my_zone && data.my_zone.local) || [];
+    const live = (data.my_zone && data.my_zone.in_progress) || [];
+    const nba = (data.my_zone && (data.my_zone.preferred_nba || []).length)
+      ? data.my_zone.preferred_nba
+      : ((data.my_zone && data.my_zone.nba_national) || []).slice(0, 4);
+    const combined = [...live, ...mine, ...nba].filter((game, idx, arr) =>
+      arr.findIndex(other => other.external_game_id === game.external_game_id) === idx
+    ).slice(0, 8);
+    const note = scoresUnavailableCopy(data);
+    const head = `<p class="sub">${escapeText(note || ((data.freshness || "unavailable") + (data.last_successful_fetch ? " · last fetch " + data.last_successful_fetch : "")))}</p>`;
+    const more = `<p class="sub"><a href="#scores">Full scores, upcoming, and finals</a></p>`;
+    root.innerHTML = head + (combined.length ? combined.map(scoreCard).join("") : `<p class='empty'>No professional games in the current window.</p>`) + more;
+  } catch (_) {
+    root.innerHTML = "<p class='empty'>Scores unavailable.</p>";
+  }
+}
+
+async function loadScoresPage() {
+  try {
+    const data = await api("GET", "/api/member/scores");
+    const note = scoresUnavailableCopy(data) || ((data.freshness || "") + (data.last_successful_fetch ? " · last fetch " + data.last_successful_fetch : ""));
+    const fresh = $("#scores-freshness");
+    if (fresh) fresh.textContent = note + " " + (data.rights_note || "");
+    const sections = data.sections || {};
+    renderScoreList($("#scores-local"), sections.local || (data.my_zone && data.my_zone.local), "No Chiefs or Royals games in this window.");
+    renderScoreList($("#scores-live"), sections.in_progress, "No games in progress.");
+    renderScoreList($("#scores-upcoming"), sections.upcoming, "No upcoming professional games.");
+    renderScoreList($("#scores-finals"), sections.finals, "No finals in this window.");
+    renderScoreList($("#scores-nba"), sections.nba_national, "No NBA games in this window.");
+    const gaps = $("#scores-gaps");
+    if (gaps && data.gaps) {
+      const college = data.gaps.college || {};
+      const hs = data.gaps.high_school || {};
+      gaps.textContent = [college.reason, hs.reason].filter(Boolean).join(" ");
+    }
+  } catch (error) { toast(error.message); }
+}
+
+async function loadTeamPage() {
+  const raw = (location.hash || "").replace(/^#/, "");
+  const teamId = raw.split("/").slice(1).join("/") || "";
+  const title = $("#team-page-title");
+  const list = $("#team-page-list");
+  if (!teamId) {
+    if (title) title.textContent = "Team";
+    if (list) list.innerHTML = "<p class='empty'>Choose a team from My Zone.</p>";
+    return;
+  }
+  try {
+    const data = await api("GET", `/api/member/scores/teams/${encodeURIComponent(teamId)}`);
+    if (title) title.textContent = (data.team && data.team.name) || teamId;
+    const sub = $("#team-page-sub");
+    if (sub) sub.textContent = data.rights_note || "Normalized games. Not a watch button.";
+    renderScoreList(list, data.games, "No games for this team in the current window.");
+  } catch (error) { toast(error.message); }
 }
 
 function huddleLiveCard(event) {
@@ -1043,7 +1153,7 @@ async function loadPortal() {
   }
   state.bootingPortal = true;
   try {
-    await Promise.all([loadFeed(), loadCatalog(), loadNotifications(), loadFriends(), loadTeams(), loadHuddleLive()]);
+    await Promise.all([loadFeed(), loadCatalog(), loadNotifications(), loadFriends(), loadTeams(), loadHuddleLive(), loadMyZone()]);
     if (!state.notifyTimer) {
       state.notifyTimer = setInterval(() => { if (state.signedIn) loadNotifications(); }, 30000);
     }

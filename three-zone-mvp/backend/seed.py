@@ -90,6 +90,7 @@ def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
     if _has_rows(db, "events"):
         _backfill_property_ids(db)
         _backfill_kc_huddle(db)
+        _backfill_pro_catalog(db)
         return False
 
     now = time.time()
@@ -159,6 +160,7 @@ def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
                (now, "system", "seed.loaded", None, dumps({"events": len(events)})))
     _backfill_property_ids(db)
     _backfill_kc_huddle(db)
+    _backfill_pro_catalog(db)
     return True
 
 
@@ -336,3 +338,28 @@ def _backfill_kc_huddle(db: Database) -> None:
     db.execute(
         "UPDATE view_sessions SET event_id='evt_kc_live_bball' WHERE session_id='VS-KC-CHRIS'",
     )
+
+
+def _backfill_pro_catalog(db: Database) -> None:
+    """Professional teams for BALLDONTLIE mapping. Not streaming rights objects."""
+    from .sports_feeds.catalog import PRO_TEAMS
+
+    now = time.time()
+    db.executemany("INSERT OR IGNORE INTO schools VALUES (?,?,?)", [
+        ("org_nfl", "National Football League", "midwest"),
+        ("org_mlb", "Major League Baseball", "midwest"),
+        ("org_nba", "National Basketball Association", "midwest"),
+    ])
+    rows = []
+    for spec in PRO_TEAMS:
+        rows.append((spec.team_id, spec.org_id, spec.name, spec.sport, spec.level))
+    db.executemany("INSERT OR IGNORE INTO teams VALUES (?,?,?,?,?)", rows)
+    follows = [
+        ("prf_demo_viewer", "team_nfl_kc_chiefs", now),
+        ("prf_demo_viewer", "team_mlb_kc_royals", now),
+        ("prf_demo_maya", "team_nfl_kc_chiefs", now),
+        ("prf_demo_chris", "team_nfl_kc_chiefs", now),
+        ("prf_demo_taylor", "team_mlb_kc_royals", now),
+    ]
+    db.executemany("INSERT OR IGNORE INTO team_follows VALUES (?,?,?)", follows)
+
