@@ -458,8 +458,7 @@ class HttpRouteTests(unittest.TestCase):
         self.assertIn("member", payload)
         self.assertIn("my_teams", payload["member"])
         ids = [row["team_id"] for row in payload["member"]["my_teams"]]
-        self.assertIn("team_nfl_kc_chiefs", ids)
-        self.assertIn("team_mlb_kc_royals", ids)
+        self.assertEqual(ids, ["team_nfl_kc_chiefs", "team_mlb_kc_royals"])
         portal = (STATIC / "portal.js").read_text(encoding="utf-8")
         api_js = (STATIC / "api.js").read_text(encoding="utf-8")
         self.assertNotIn("balldontlie.io", portal)

@@ -194,7 +194,7 @@ class SportsFeedService:
                 payload["team"] = {"team_id": team_id, "name": None, "league": None, "market": None}
             return payload
 
-        follows = [tid for tid in (followed_team_ids or []) if tid] or list(DEFAULT_FOLLOW_TEAM_IDS)
+        follows = [tid for tid in (followed_team_ids or []) if team_by_id(tid)] or list(DEFAULT_FOLLOW_TEAM_IDS)
         follow_set = set(follows)
         sports = [s.lower() for s in (sports or []) if s]
         local = [g for g in games if self._is_local(g)]
