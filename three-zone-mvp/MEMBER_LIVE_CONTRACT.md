@@ -1,8 +1,11 @@
-# Member live contract (Lovable handshake)
+# Member live contract (GitHub→Render host)
 
 Plane: Three-Zone Runtime. Constitution: fail closed, rights bind the session,
 dates are provenance-only. This is the application-control channel, not
 production media streaming. Demo env stays `TZ_ENV=demo`.
+
+Production member UI is the in-repo shell on the Render service
+(GitHub → Render). Lovable is preview/sandbox only and must not host `/`.
 
 Live push is **single-instance scoped**. A viewer on Render instance 2 will not
 see an update produced on instance 1 until a shared pub/sub exists. Not in this
@@ -22,15 +25,23 @@ pass.
 `ws_url_base` is the API host that served the request (Render), never
 `0.0.0.0` and never the GitHub Pages marketing origin.
 
-Cross-origin Lovable must be listed exactly on Render `TZ_ALLOWED_ORIGINS`
-(credentialed CORS cannot use `*`). Production allowlist includes
-`https://threezonesport.lovable.app` and the preview origin
+The production member shell is same-origin on this Render service (`/` and
+`/index.html` serve `backend/static/index.html`). `TZ_PUBLIC_APP_URL` should
+be empty or this service's public URL (for example
+`https://three-zone-sports-2.onrender.com`). It must never be a Lovable origin;
+the HTTP layer will not 302 `/` to `*.lovable.app` or to a different host.
+
+Optional Lovable preview may be listed exactly on Render `TZ_ALLOWED_ORIGINS`
+(credentialed CORS cannot use `*`). Those origins are not required for
+production member UX:
+
+`https://threezonesport.lovable.app` and
 `https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app`.
-`TZ_PUBLIC_APP_URL=https://threezonesport.lovable.app` is the member portal;
-the API and `/ops` stay on `https://three-zone-sports-1.onrender.com`.
-Login returns `session_token`; send `Authorization: Bearer <session_token>` on
-every HTTP call. The `tz_member_session` cookie is `SameSite=Lax` and will not
-ride along from a Lovable origin.
+
+Same-origin cookie sessions work on the Render member site. Login returns
+`session_token`; send `Authorization: Bearer <session_token>` on every HTTP
+call. The `tz_member_session` cookie is `SameSite=Lax` and will not ride
+along from a cross-origin Lovable preview.
 
 ## Ticket handshake
 

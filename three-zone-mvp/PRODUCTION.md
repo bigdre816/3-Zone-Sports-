@@ -19,11 +19,14 @@ The full user-friendly deployment guide is in **DEPLOY-3ZONESPORTS.md** at the r
                    │ API calls
                    ▼
 ┌─────────────────────────────────────────┐
-│  Member Backend (Render)                │
+│  Member UI + Backend (Render)           │
+│  GitHub → Render is the production host │
 │  https://[app].onrender.com             │
+│  - Serves / (member shell) and /ops     │
 │  - Python 3.12                          │
 │  - HTTP + WebSocket on $PORT            │
 │  - SQLite on persistent disk            │
+│  Lovable is preview/sandbox only        │
 └─────────────────────────────────────────┘
 ```
 
@@ -64,9 +67,37 @@ The full user-friendly deployment guide is in **DEPLOY-3ZONESPORTS.md** at the r
 ### Database
 - `TZ_DATABASE_PATH=/var/data/three_zone.sqlite3` (persistent disk)
 
-### Origins (CORS)
-- `TZ_ALLOWED_ORIGINS=https://3zonesports.com,https://www.3zonesports.com,https://three-zone-sports.onrender.com,https://three-zone-sports-1.onrender.com,https://threezonesport.lovable.app,https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app`
-- `TZ_PUBLIC_APP_URL=https://threezonesport.lovable.app` (member portal; distinct from `TZ_PUBLIC_BASE_URL`)
+### Origins (CORS) and production member host
+
+GitHub → Render is the production member UI. `GET /` on the Render service
+must return **200** with the in-repo member shell. It must **not** 302 to
+`*.lovable.app`. Lovable origins may stay on the CORS allowlist for optional
+preview; they are not required for production member UX.
+
+Paste these on the live Render service (Environment → Environment Variables).
+Replace the Render hostname with this service's public URL if it is not
+`three-zone-sports-2`:
+
+```
+TZ_ALLOWED_ORIGINS=https://3zonesports.com,https://www.3zonesports.com,https://three-zone-sports.onrender.com,https://three-zone-sports-1.onrender.com,https://three-zone-sports-2.onrender.com,https://threezonesport.lovable.app,https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app
+TZ_PUBLIC_BASE_URL=https://3zonesports.com
+TZ_PUBLIC_APP_URL=https://three-zone-sports-2.onrender.com
+```
+
+`TZ_PUBLIC_APP_URL` may also be left **empty**. Empty, unset, Lovable, or any
+host other than this service does **not** redirect `/`. Never set:
+
+```
+TZ_PUBLIC_APP_URL=https://threezonesport.lovable.app
+```
+
+After save, **Manual Deploy** so the new values load. Confirm:
+
+```
+curl -sI https://three-zone-sports-2.onrender.com/
+```
+
+Expect `HTTP/1.1 200` (or `HTTP/2 200`) and no `Location: https://…lovable.app`.
 
 ### Media Providers
 - `TZ_LIVE_MEDIA_PROVIDER=demo` (or `cloudflare`)

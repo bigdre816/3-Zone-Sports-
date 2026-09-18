@@ -598,7 +598,11 @@ class HuddleExtensions:
             raise ForbiddenError("that destination is not enabled", "share_destination_unavailable")
         clip_id = post.get("clip_id")
         path = f"/moment/{clip_id}" if clip_id else f"/post/{post_id}"
-        base = (self.cp.config.public_app_url or self.cp.config.public_base_url or "").rstrip("/")
+        base = (
+            self.cp.config.external_member_app_url()
+            or self.cp.config.public_base_url
+            or ""
+        ).rstrip("/")
         url = f"{base}{path}" if base else path
         self._audit("POST_SHARE_LINK", post_id, "member", user["user_id"],
                     {"destination": destination, "url": url})

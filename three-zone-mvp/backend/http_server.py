@@ -18,6 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import demo_media
+from .config import is_lovable_host
 from .control_plane import ControlError, ControlPlane
 from .identity import bearer_from_header, resolve_identity, resolve_identity_optional
 from .mastery import article_html, full_page_html, load_markdown
@@ -542,15 +543,23 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         self._send_json(404, {"error": "not found", "code": "not_found"})
 
     def _external_member_app_url(self) -> str:
-        """Off-host member portal, or empty when this process should serve ``/``."""
+        """Off-host member portal, or empty when this process should serve ``/``.
+
+        Production policy: GitHub→Render hosts the in-repo member shell.
+        Skip (do not 302) when ``TZ_PUBLIC_APP_URL`` is empty/unset, a
+        Lovable origin, or any host other than this service. Same-host
+        values are also skipped so a Render URL does not loop.
+        """
         dest = self.cp.config.external_member_app_url()
         if not dest:
             return ""
-        request_host = _request_host_name(self.headers.get("Host") or "")
         target_host = (urlparse(dest).hostname or "").lower()
-        if not target_host or (request_host and target_host == request_host):
+        if not target_host or is_lovable_host(target_host):
             return ""
-        return dest
+        request_host = _request_host_name(self.headers.get("Host") or "")
+        if not request_host or target_host != request_host:
+            return ""
+        return ""
 
     # -- static ------------------------------------------------------------
     def _serve_static(self, name: str):

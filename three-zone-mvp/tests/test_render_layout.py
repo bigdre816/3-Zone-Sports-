@@ -40,6 +40,10 @@ class WorkspaceLayoutTests(unittest.TestCase):
         self.assertNotIn("healthCheckPath: /api/health", text)
         self.assertIn("TZ_PUBLIC_APP_URL", text)
         self.assertIn("https://threezonesport.lovable.app", text)
+        self.assertNotRegex(
+            text,
+            r"key: TZ_PUBLIC_APP_URL\s*\n(?:[^\n]*\n)*?\s*value: https://\S*lovable",
+        )
 
     def test_member_app_is_not_nested_under_itself(self):
         self.assertFalse(

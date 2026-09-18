@@ -197,6 +197,11 @@ class PortalTests(unittest.TestCase):
         self.assertIn("https://threezonesport.lovable.app", blueprint)
         self.assertIn("https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app", blueprint)
         self.assertIn("https://3zonesports.com", blueprint)
+        self.assertIn("https://three-zone-sports-2.onrender.com", blueprint)
+        self.assertNotRegex(
+            blueprint,
+            r"key: TZ_PUBLIC_APP_URL\s*\n(?:[^\n]*\n)*?\s*value: https://\S*lovable",
+        )
 
     def test_member_site_keeps_network_shell_and_wired_watch(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

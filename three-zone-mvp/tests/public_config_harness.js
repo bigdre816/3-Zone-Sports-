@@ -38,6 +38,14 @@ async function main() {
   results.origin.memberPages = load(configSrc, { location: { hostname: '3zonesports.com' } }).memberOrigin();
   results.origin.memberWww = load(configSrc, { location: { hostname: 'www.3zonesports.com' } }).memberOrigin();
   results.origin.memberLocal = load(configSrc, { location: { hostname: 'localhost' } }).memberOrigin();
+  results.origin.memberRender = load(configSrc, {
+    location: {
+      hostname: 'three-zone-sports-2.onrender.com',
+      origin: 'https://three-zone-sports-2.onrender.com',
+      protocol: 'https:',
+      port: '',
+    },
+  }).memberOrigin();
 
   const cfg = load(configSrc, { location: { hostname: '3zonesports.com' } });
   results.memberAppUrl.empty = await cfg.memberAppUrl();

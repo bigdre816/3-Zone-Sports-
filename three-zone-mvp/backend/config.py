@@ -29,6 +29,34 @@ def _split_origins(raw: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def is_lovable_host(hostname: str) -> bool:
+    """True for lovable.app and any subdomain. Never a production member host."""
+    host = (hostname or "").strip().lower().rstrip(".")
+    return host == "lovable.app" or host.endswith(".lovable.app")
+
+
+def is_controlled_member_origin(url: str) -> bool:
+    """True when ``url`` is this Render service or a 3zonesports.com path.
+
+    Lovable origins are never controlled member destinations. Loopback is
+    allowed so local ``TZ_PUBLIC_APP_URL=http://127.0.0.1:8000`` stays valid.
+    """
+    raw = (url or "").strip()
+    parsed = urlparse(raw)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host or is_lovable_host(host):
+        return False
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return True
+    if host.endswith(".onrender.com"):
+        return True
+    if host == "3zonesports.com" or host.endswith(".3zonesports.com"):
+        return True
+    return False
+
+
 def _truthy(raw: str | None, default: bool = False) -> bool:
     if raw is None or raw == "":
         return default
@@ -383,17 +411,23 @@ class Config:
         return bool(self.moten_service_url)
 
     def external_member_app_url(self) -> str:
-        """Member portal origin when hosted off this API (``TZ_PUBLIC_APP_URL``).
+        """Member portal origin for off-host links (``TZ_PUBLIC_APP_URL``).
 
-        Empty when unset or not an http(s) URL. Redirect callers must still
-        skip when the target hostname matches this request, so a local
-        ``TZ_PUBLIC_APP_URL=http://127.0.0.1:8000`` does not loop.
+        Empty when unset, not an http(s) URL, or a Lovable origin. Production
+        member UI is GitHub→Render; Lovable is preview/sandbox only. Redirect
+        callers must still skip when the target hostname matches this request
+        (no loop) or is a different host than this service.
         """
         raw = (self.public_app_url or "").strip().rstrip("/")
         if not raw:
             return ""
         parsed = urlparse(raw)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return ""
+        host = (parsed.hostname or "").lower()
+        if not host or is_lovable_host(host):
+            return ""
+        if not is_controlled_member_origin(raw):
             return ""
         return raw
 

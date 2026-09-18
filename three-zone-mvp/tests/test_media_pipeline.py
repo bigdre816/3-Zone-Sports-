@@ -624,12 +624,36 @@ class ConfigTests(unittest.TestCase):
         try:
             cfg = Config.from_env()
             self.assertEqual(cfg.public_app_url, "https://threezonesport.lovable.app")
-            self.assertEqual(cfg.external_member_app_url(), "https://threezonesport.lovable.app")
+            self.assertEqual(cfg.external_member_app_url(), "")
             self.assertIn("https://3zonesports.com", cfg.allowed_origins)
             self.assertIn("https://threezonesport.lovable.app", cfg.allowed_origins)
         finally:
             os.environ.pop("TZ_ALLOWED_ORIGINS", None)
             os.environ.pop("TZ_PUBLIC_APP_URL", None)
+
+    def test_27e_render_public_app_url_is_member_destination(self):
+        from backend.config import is_controlled_member_origin, is_lovable_host
+
+        self.assertTrue(is_lovable_host("threezonesport.lovable.app"))
+        self.assertTrue(is_lovable_host("id-preview--abc.lovable.app"))
+        self.assertFalse(is_lovable_host("three-zone-sports-2.onrender.com"))
+        self.assertTrue(is_controlled_member_origin("https://three-zone-sports-2.onrender.com"))
+        self.assertTrue(is_controlled_member_origin("https://3zonesports.com/app"))
+        self.assertFalse(is_controlled_member_origin("https://threezonesport.lovable.app"))
+
+        os.environ["TZ_ALLOWED_ORIGINS"] = "https://3zonesports.com"
+        os.environ["TZ_PUBLIC_APP_URL"] = "https://three-zone-sports-2.onrender.com"
+        try:
+            cfg = Config.from_env()
+            self.assertEqual(cfg.external_member_app_url(), "https://three-zone-sports-2.onrender.com")
+            self.assertIn("https://three-zone-sports-2.onrender.com", cfg.allowed_origins)
+        finally:
+            os.environ.pop("TZ_ALLOWED_ORIGINS", None)
+            os.environ.pop("TZ_PUBLIC_APP_URL", None)
+
+        os.environ.pop("TZ_PUBLIC_APP_URL", None)
+        cfg = Config.from_env()
+        self.assertEqual(cfg.external_member_app_url(), "")
 
     def test_27d_render_does_not_bind_separate_ws(self):
         from backend.config import bind_separate_websocket

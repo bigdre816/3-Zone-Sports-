@@ -109,15 +109,16 @@ class PublicInputTests(unittest.TestCase):
         self.assertEqual(origin["pages"], "https://three-zone-sports-1.onrender.com")
         self.assertEqual(origin["www"], "https://three-zone-sports-1.onrender.com")
         self.assertEqual(origin["override"], "https://example.test")
-        self.assertEqual(origin["memberPages"], "https://threezonesport.lovable.app")
-        self.assertEqual(origin["memberWww"], "https://threezonesport.lovable.app")
+        self.assertEqual(origin["memberPages"], "https://three-zone-sports-1.onrender.com")
+        self.assertEqual(origin["memberWww"], "https://three-zone-sports-1.onrender.com")
         self.assertEqual(origin["memberLocal"], "http://localhost:8000")
+        self.assertEqual(origin["memberRender"], "https://three-zone-sports-2.onrender.com")
 
     def test_member_app_url_for_every_path_input(self):
         urls = self.harness["memberAppUrl"]
-        self.assertEqual(urls["empty"], "https://threezonesport.lovable.app/")
-        self.assertEqual(urls["root"], "https://threezonesport.lovable.app/")
-        self.assertEqual(urls["query"], "https://threezonesport.lovable.app/?event=evt_x")
+        self.assertEqual(urls["empty"], "https://three-zone-sports-1.onrender.com/")
+        self.assertEqual(urls["root"], "https://three-zone-sports-1.onrender.com/")
+        self.assertEqual(urls["query"], "https://three-zone-sports-1.onrender.com/?event=evt_x")
         self.assertIn("event=", urls["encoded"])
         self.assertNotIn("<", urls["encoded"])
         self.assertNotIn('"', urls["encoded"].split("event=", 1)[-1])
@@ -326,7 +327,7 @@ class PublicInputTests(unittest.TestCase):
             httpd.shutdown()
             httpd.server_close()
 
-    def test_member_shell_redirects_to_public_app_url(self):
+    def test_member_shell_does_not_redirect_to_lovable(self):
         lovable = "https://threezonesport.lovable.app"
         httpd = self._server(
             ["https://3zonesports.com", lovable],
@@ -336,11 +337,16 @@ class PublicInputTests(unittest.TestCase):
             host, port = httpd.server_address
             base = f"http://{host}:{port}"
             with self._open_no_follow(base + "/") as resp:
-                self.assertEqual(resp.status, 302)
-                self.assertEqual(resp.headers.get("Location"), lovable)
+                self.assertEqual(resp.status, 200)
+                self.assertIsNone(resp.headers.get("Location"))
+                body = resp.read().decode("utf-8", errors="replace")
+                self.assertIn("THREEZONE", body)
+                self.assertNotIn("lovable.app", resp.headers.get("Location") or "")
             with self._open_no_follow(base + "/index.html?event=evt_x") as resp:
-                self.assertEqual(resp.status, 302)
-                self.assertEqual(resp.headers.get("Location"), lovable + "?event=evt_x")
+                self.assertEqual(resp.status, 200)
+                self.assertIsNone(resp.headers.get("Location"))
+                body = resp.read().decode("utf-8", errors="replace")
+                self.assertIn("THREEZONE", body)
             with self._open_no_follow(base + "/ops") as resp:
                 self.assertEqual(resp.status, 200)
                 body = resp.read().decode("utf-8", errors="replace")
@@ -354,6 +360,33 @@ class PublicInputTests(unittest.TestCase):
         finally:
             httpd.shutdown()
             httpd.server_close()
+
+    def test_member_shell_stays_local_when_public_app_url_empty_or_other_host(self):
+        httpd = self._server(
+            ["https://3zonesports.com"],
+            public_app_url="https://other-clone.onrender.com",
+        )
+        try:
+            host, port = httpd.server_address
+            base = f"http://{host}:{port}"
+            with self._open_no_follow(base + "/") as resp:
+                self.assertEqual(resp.status, 200)
+                self.assertIn("text/html", resp.headers.get("Content-Type", ""))
+                self.assertIsNone(resp.headers.get("Location"))
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+        empty = self._server(["https://3zonesports.com"], public_app_url="")
+        try:
+            host, port = empty.server_address
+            base = f"http://{host}:{port}"
+            with self._open_no_follow(base + "/") as resp:
+                self.assertEqual(resp.status, 200)
+                self.assertIn("THREEZONE", resp.read().decode("utf-8", errors="replace"))
+        finally:
+            empty.shutdown()
+            empty.server_close()
 
     def test_member_shell_stays_local_when_public_app_url_is_this_host(self):
         httpd = self._server(["http://127.0.0.1"], public_app_url="http://127.0.0.1:8000")

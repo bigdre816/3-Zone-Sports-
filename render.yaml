@@ -36,13 +36,16 @@ services:
       - key: TZ_DATA_DIR
         value: /data
       - key: TZ_ALLOWED_ORIGINS
-        value: https://3zonesports.com,https://www.3zonesports.com,https://three-zone-sports.onrender.com,https://three-zone-sports-1.onrender.com,https://threezonesport.lovable.app,https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app
+        value: https://3zonesports.com,https://www.3zonesports.com,https://three-zone-sports.onrender.com,https://three-zone-sports-1.onrender.com,https://three-zone-sports-2.onrender.com,https://threezonesport.lovable.app,https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app
         # Exact origins only. Credentialed CORS and the Hub Origin allowlist
-        # fail closed without them. Never use *.
+        # fail closed without them. Never use *. Lovable origins are optional
+        # preview/sandbox CORS only — they are not the production member host.
       - key: TZ_PUBLIC_BASE_URL
         value: https://3zonesports.com
       - key: TZ_PUBLIC_APP_URL
-        value: https://threezonesport.lovable.app
+        # GitHub→Render is the production member UI. Empty = serve this
+        # service's in-repo shell on /. Never set this to *.lovable.app.
+        value: ""
       - key: TZ_LIVE_MEDIA_PROVIDER
         value: demo
       - key: TZ_UGC_MEDIA_PROVIDER

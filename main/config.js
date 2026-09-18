@@ -1,10 +1,12 @@
 /**
- * Public site configuration. Fetch the Render API; send members to Lovable.
- * Do not surface infrastructure origins in page copy, forms, or status badges.
+ * Public site configuration. Fetch the Render API; send members to the
+ * GitHub→Render member shell. Lovable is preview/sandbox only and is never
+ * the production member destination. Do not surface infrastructure origins
+ * in page copy, forms, or status badges.
  */
 
 const PRODUCTION_API_ORIGIN = 'https://three-zone-sports-1.onrender.com';
-const MEMBER_APP_ORIGIN = 'https://threezonesport.lovable.app';
+const MEMBER_APP_ORIGIN = PRODUCTION_API_ORIGIN;
 
 const ThreeZoneConfig = {
   PRODUCTION_API_ORIGIN,
@@ -32,14 +34,32 @@ const ThreeZoneConfig = {
     return PRODUCTION_API_ORIGIN;
   },
 
+  _isLovableHost(host) {
+    const name = String(host || '').toLowerCase().replace(/\.+$/, '');
+    return name === 'lovable.app' || name.endsWith('.lovable.app');
+  },
+
   memberOrigin() {
     if (typeof window !== 'undefined') {
-      const host = String(window.location.hostname || '');
+      const loc = window.location || {};
+      const host = String(loc.hostname || '');
       if (host === 'localhost' || host === '127.0.0.1') {
         return this._origin();
       }
+      // Already on this Render service — stay same-origin. Never bounce to
+      // Lovable or app.3zonesports.com.
+      if (host.endsWith('.onrender.com') && !this._isLovableHost(host)) {
+        if (loc.origin) {
+          return String(loc.origin).replace(/\/+$/, '');
+        }
+        return 'https://' + host;
+      }
     }
-    return MEMBER_APP_ORIGIN;
+    const dest = MEMBER_APP_ORIGIN;
+    if (this._isLovableHost(dest.replace(/^https?:\/\//, '').split('/')[0])) {
+      return PRODUCTION_API_ORIGIN;
+    }
+    return dest;
   },
 
   async memberAppUrl(path) {
