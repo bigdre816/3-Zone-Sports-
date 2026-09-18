@@ -2,13 +2,30 @@
 
 from __future__ import annotations
 
+import http.server
 import os
+import sys
+import threading
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = ROOT / "docs"
+sys.path.insert(0, str(ROOT / "scripts"))
+import check_app_hostname as check  # noqa: E402
+
+
+def _ok_lookups():
+    return {
+        "app_a": {"google": [check.LOVABLE_EDGE_A], "cloudflare": [check.LOVABLE_EDGE_A]},
+        "verify_txt": {
+            "google": [f'"{check.VERIFY_TXT_PREFIX}abc"'],
+            "cloudflare": [f"{check.VERIFY_TXT_PREFIX}abc"],
+        },
+        "apex_a": {"google": ["185.199.108.153"]},
+        "app_aaaa": {"google": [], "cloudflare": []},
+    }
 
 
 class AppHostnameTests(unittest.TestCase):
@@ -37,11 +54,6 @@ class AppHostnameTests(unittest.TestCase):
         )
 
     def test_evaluate_accepts_live_lovable_records(self):
-        import sys
-
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import check_app_hostname as check
-
         ok, warnings = check.evaluate(
             {
                 "app_a": {"google": [check.LOVABLE_EDGE_A], "cloudflare": [check.LOVABLE_EDGE_A]},
@@ -56,17 +68,14 @@ class AppHostnameTests(unittest.TestCase):
             },
             https_status=200,
             acao=check.MEMBER_ORIGIN,
+            alias_status=302,
+            alias_location=check.MEMBER_ORIGIN + "/",
         )
         self.assertEqual(ok, [])
         self.assertTrue(any("216.24.57.1" in item for item in warnings))
         self.assertTrue(any("AAAA" in item for item in warnings))
 
     def test_evaluate_fails_closed_on_missing_app_record(self):
-        import sys
-
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import check_app_hostname as check
-
         failures, warnings = check.evaluate(
             {
                 "app_a": {"google": [], "cloudflare": []},
@@ -82,6 +91,74 @@ class AppHostnameTests(unittest.TestCase):
         self.assertTrue(any("lovable_verify=" in item for item in failures))
         self.assertTrue(any("HTTP 0" in item for item in failures))
         self.assertTrue(any("CORS" in item for item in failures))
+
+    def test_evaluate_fails_when_member_host_redirects_away(self):
+        failures, _ = check.evaluate(
+            _ok_lookups(),
+            https_status=302,
+            acao=check.MEMBER_ORIGIN,
+            member_location=check.LOVABLE_ALIAS + "/",
+            alias_status=302,
+            alias_location=check.MEMBER_ORIGIN + "/",
+        )
+        self.assertTrue(any("without leaving the host" in item for item in failures))
+
+    def test_evaluate_fails_when_lovable_alias_looks_like_200(self):
+        failures, _ = check.evaluate(
+            _ok_lookups(),
+            https_status=200,
+            acao=check.MEMBER_ORIGIN,
+            alias_status=200,
+            alias_location=None,
+        )
+        self.assertTrue(any("Lovable alias" in item for item in failures))
+        self.assertTrue(any("expected a redirect" in item for item in failures))
+
+    def test_evaluate_fails_when_lovable_alias_stays_on_lovable(self):
+        failures, _ = check.evaluate(
+            _ok_lookups(),
+            https_status=200,
+            acao=check.MEMBER_ORIGIN,
+            alias_status=302,
+            alias_location=check.LOVABLE_ALIAS + "/",
+        )
+        self.assertTrue(any("Lovable alias" in item for item in failures))
+
+    def test_request_does_not_follow_redirects(self):
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == "/from":
+                    self.send_response(302)
+                    self.send_header("Location", "http://evil.example/followed")
+                    self.end_headers()
+                    self.wfile.write(b"redirect-body")
+                    return
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"followed")
+
+            def log_message(self, format, *args):
+                return
+
+        httpd = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = httpd.server_address[1]
+            status, headers, body = check._request(f"http://127.0.0.1:{port}/from")
+            self.assertEqual(status, 302)
+            self.assertEqual(check._header(headers, "Location"), "http://evil.example/followed")
+            self.assertNotIn(b"followed", body)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_opener_installs_no_redirect_handler(self):
+        opener = check._opener()
+        self.assertTrue(any(isinstance(handler, check.NoRedirectHandler) for handler in opener.handlers))
+        self.assertIsNone(
+            check.NoRedirectHandler().redirect_request(None, None, 302, "Found", {}, "https://evil.example/")
+        )
 
 
 if __name__ == "__main__":

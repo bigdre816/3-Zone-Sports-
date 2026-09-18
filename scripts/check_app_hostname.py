@@ -18,6 +18,7 @@ import sys
 import urllib.error
 import urllib.request
 from typing import Any
+from urllib.parse import urlparse
 
 
 MEMBER_HOST = "app.3zonesports.com"
@@ -41,6 +42,8 @@ DOH = {
 BROWSER_UA = (
     "Mozilla/5.0 (compatible; ThreeZoneHostnameCheck/1.0; +https://3zonesports.com/)"
 )
+REDIRECT_CODES = {301, 302, 303, 307, 308}
+LOVABLE_ALIAS = "https://threezonesport.lovable.app"
 
 
 def _doh(url: str) -> dict[str, Any]:
@@ -61,6 +64,33 @@ def lookup(name: str, rrtype: str = "A") -> dict[str, list[str]]:
     return answers
 
 
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep 3xx responses so a bounce off the member host cannot look like 200."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _opener() -> urllib.request.OpenerDirector:
+    https = urllib.request.HTTPSHandler(context=ssl.create_default_context())
+    return urllib.request.build_opener(https, NoRedirectHandler)
+
+
+def _header(headers: dict[str, str], name: str) -> str:
+    lower = name.lower()
+    for key, value in headers.items():
+        if str(key).lower() == lower:
+            return str(value).strip()
+    return ""
+
+
+def _origin(url: str | None) -> str:
+    parsed = urlparse((url or "").strip())
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
 def _request(url: str, *, method: str = "GET", headers: dict[str, str] | None = None):
     req = urllib.request.Request(
         url,
@@ -68,17 +98,27 @@ def _request(url: str, *, method: str = "GET", headers: dict[str, str] | None = 
         headers={"User-Agent": BROWSER_UA, **(headers or {})},
     )
     try:
-        with urllib.request.urlopen(req, timeout=20, context=ssl.create_default_context()) as resp:
-            body = resp.read()
-            return resp.status, dict(resp.headers), body
+        with _opener().open(req, timeout=20) as resp:
+            return resp.status, dict(resp.headers), resp.read()
     except urllib.error.HTTPError as err:
         return err.code, dict(err.headers), err.read()
 
 
 def evaluate(
-    lookups: dict[str, dict[str, list[str]]], https_status: int, acao: str | None
+    lookups: dict[str, dict[str, list[str]]],
+    https_status: int,
+    acao: str | None,
+    *,
+    member_location: str | None = None,
+    alias_status: int | None = None,
+    alias_location: str | None = None,
 ) -> tuple[list[str], list[str]]:
-    """Return (failures, warnings). Empty failures means the app hostname is live."""
+    """Return (failures, warnings). Empty failures means the app hostname is live.
+
+    Redirects are not followed. A 302 off ``app.3zonesports.com`` is a failure,
+    even if the hop would have landed on 200. The Lovable alias must 3xx to the
+    first-party member origin; a 200 on ``lovable.app`` is not live-on-app.
+    """
     failures: list[str] = []
     warnings: list[str] = []
     a_records = lookups["app_a"]
@@ -104,12 +144,28 @@ def evaluate(
     aaaa = lookups.get("app_aaaa") or {}
     if aaaa and not any(aaaa.values()):
         warnings.append("no AAAA for app.3zonesports.com; IPv4-only is expected")
-    if https_status != 200:
+    member_loc = (member_location or "").strip() or None
+    if https_status in REDIRECT_CODES:
+        loc_origin = _origin(member_loc)
+        if loc_origin != MEMBER_ORIGIN:
+            failures.append(
+                f"GET {MEMBER_ORIGIN}/ returned HTTP {https_status} to {member_loc!r}; "
+                f"expected 200 on {MEMBER_ORIGIN} without leaving the host"
+            )
+    elif https_status != 200:
         failures.append(f"GET {MEMBER_ORIGIN}/ returned HTTP {https_status}, expected 200")
     if acao != MEMBER_ORIGIN:
         failures.append(
             f"API CORS for {MEMBER_ORIGIN} is {acao!r}, expected the member origin"
         )
+    if alias_status is not None:
+        alias_loc = (alias_location or "").strip() or None
+        alias_origin = _origin(alias_loc)
+        if alias_status not in REDIRECT_CODES or alias_origin != MEMBER_ORIGIN:
+            failures.append(
+                f"Lovable alias returned HTTP {alias_status} Location {alias_loc!r}; "
+                f"expected a redirect to {MEMBER_ORIGIN}"
+            )
     return failures, warnings
 
 
@@ -126,16 +182,20 @@ def main() -> int:
         "ns": lookup("3zonesports.com", "NS"),
     }
     status, headers, body = _request(MEMBER_ORIGIN + "/")
-    alias_status, alias_headers, _ = _request("https://threezonesport.lovable.app/")
+    alias_status, alias_headers, _ = _request(LOVABLE_ALIAS + "/")
     cors_status, cors_headers, _ = _request(
         API_ORIGIN + "/api/health",
         headers={"Origin": MEMBER_ORIGIN},
     )
+    member_location = _header(headers, "Location") or None
+    alias_location = _header(alias_headers, "Location") or None
     failures, warnings = evaluate(
         lookups,
         https_status=status,
-        acao=cors_headers.get("Access-Control-Allow-Origin")
-        or cors_headers.get("access-control-allow-origin"),
+        acao=_header(cors_headers, "Access-Control-Allow-Origin") or None,
+        member_location=member_location,
+        alias_status=alias_status,
+        alias_location=alias_location,
     )
     html = body.decode("utf-8", "replace")
     report = {
@@ -143,12 +203,12 @@ def main() -> int:
         "dns_provider": "IONOS (ui-dns nameservers), not Cloudflare DNS",
         "lookups": lookups,
         "https_status": status,
-        "https_server": headers.get("Server") or headers.get("server"),
+        "https_server": _header(headers, "Server") or None,
         "lovable_alias_status": alias_status,
-        "lovable_alias_location": alias_headers.get("Location") or alias_headers.get("location"),
+        "lovable_alias_location": alias_location,
+        "member_location": member_location,
         "api_cors_status": cors_status,
-        "api_cors_allow_origin": cors_headers.get("Access-Control-Allow-Origin")
-        or cors_headers.get("access-control-allow-origin"),
+        "api_cors_allow_origin": _header(cors_headers, "Access-Control-Allow-Origin") or None,
         "lovable_badge": "lovable-badge" in html,
         "twitter_site_lovable": "@Lovable" in html,
         "public_origin": PUBLIC_ORIGIN,
@@ -163,6 +223,8 @@ def main() -> int:
         print(f"A {MEMBER_HOST}: {lookups['app_a']}")
         print(f"TXT {VERIFY_TXT_HOST}: {lookups['verify_txt']}")
         print(f"HTTPS {MEMBER_ORIGIN}/ → {status} server={report['https_server']}")
+        if member_location:
+            print(f"member Location: {member_location}")
         print(f"Lovable alias → {alias_status} {report['lovable_alias_location']}")
         print(f"API CORS allow-origin: {report['api_cors_allow_origin']}")
         if report["lovable_badge"]:
