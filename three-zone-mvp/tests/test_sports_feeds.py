@@ -19,8 +19,8 @@ from backend.control_plane import ControlPlane, SITE_ROUTES
 from backend.db import Database
 from backend.http_server import make_http_server
 from backend.seed import seed_if_empty
-from backend.sports_feeds.catalog import match_provider_team, team_by_id
-from backend.sports_feeds.client import BalldontlieClient, FeedClientError
+from backend.sports_feeds.catalog import default_provider_ids, match_provider_team, team_by_id
+from backend.sports_feeds.client import BalldontlieClient, FeedClientError, NotConfiguredError
 from backend.sports_feeds.normalize import chicago_fields, normalize_game, parse_datetime
 from backend.sports_feeds.service import GAPS, RIGHTS_NOTE, SportsFeedService
 
@@ -46,7 +46,7 @@ NFL_RAVENS = {
     "abbreviation": "BAL",
 }
 MLB_ROYALS = {
-    "id": 11,
+    "id": 12,
     "slug": "kansas-city-royals",
     "abbreviation": "KC",
     "display_name": "Kansas City Royals",
@@ -217,6 +217,16 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(match_provider_team("NFL", NFL_CHIEFS).team_id, "team_nfl_kc_chiefs")
         self.assertEqual(match_provider_team("MLB", MLB_ROYALS).team_id, "team_mlb_kc_royals")
         self.assertIsNone(match_provider_team("NFL", MLB_ROYALS))
+        self.assertEqual(match_provider_team("NFL", {"id": 14, "abbreviation": "XX"}).team_id, "team_nfl_kc_chiefs")
+        self.assertEqual(match_provider_team("MLB", {"id": 12}).team_id, "team_mlb_kc_royals")
+        self.assertIsNone(match_provider_team("NBA", {"id": 14, "name": "not-a-team"}))
+
+    def test_hardwired_kc_provider_ids(self):
+        ids = default_provider_ids()
+        self.assertEqual(ids["team_nfl_kc_chiefs"], "14")
+        self.assertEqual(ids["team_mlb_kc_royals"], "12")
+        self.assertEqual(team_by_id("team_nfl_kc_chiefs").provider_team_id, "14")
+        self.assertEqual(team_by_id("team_mlb_kc_royals").provider_team_id, "12")
 
 
 class FeedServiceTests(unittest.TestCase):
@@ -231,6 +241,51 @@ class FeedServiceTests(unittest.TestCase):
         self.assertEqual(snap["gaps"]["college"]["status"], "not_configured")
         self.assertEqual(snap["gaps"]["high_school"]["status"], "not_configured")
         self.assertIn("not a streaming entitlement", snap["rights_note"].lower())
+        health = svc.health()
+        self.assertFalse(health["configured"])
+        self.assertEqual(health["freshness"], "not_configured")
+        self.assertIsNone(health["last_successful_fetch"])
+        self.assertIsNone(health["last_attempt_at"])
+        for league in ("NFL", "MLB", "NBA"):
+            self.assertEqual(health["leagues"][league]["freshness"], "not_configured")
+            self.assertIsNone(health["leagues"][league]["last_successful_fetch"])
+            self.assertIsNone(health["leagues"][league]["last_attempt_at"])
+
+    def test_health_last_fetch_fields_without_secrets(self):
+        svc, fake, cfg, db = _svc(key="super-secret-key")
+        health = svc.refresh()
+        self.assertTrue(health["configured"])
+        self.assertEqual(health["freshness"], "fresh")
+        self.assertIsNotNone(health["last_successful_fetch"])
+        self.assertIsNotNone(health["last_attempt_at"])
+        self.assertTrue(str(health["last_successful_fetch"]).endswith("Z"))
+        self.assertTrue(str(health["last_attempt_at"]).endswith("Z"))
+        blob = json.dumps(health)
+        self.assertNotIn("super-secret-key", blob)
+        self.assertNotIn("Authorization", blob)
+        for league in ("NFL", "MLB", "NBA"):
+            row = health["leagues"][league]
+            self.assertIn(row["freshness"], ("fresh", "stale", "unavailable", "not_configured"))
+            self.assertIsNotNone(row["last_successful_fetch"])
+            self.assertIsNotNone(row["last_attempt_at"])
+
+    def test_hardwired_kc_ids_used_when_catalog_fetch_fails(self):
+        fake = FakeClient()
+
+        def boom(league):
+            fake.calls.append(("teams", league))
+            raise FeedClientError("timeout", "provider timeout")
+
+        fake.list_teams = boom
+        svc, fake, cfg, db = _svc(client=fake, key="test-key")
+        svc.refresh()
+        nfl = [c for c in fake.calls if c[0] == "games" and c[1] == "NFL"]
+        mlb = [c for c in fake.calls if c[0] == "games" and c[1] == "MLB"]
+        self.assertTrue(nfl)
+        self.assertTrue(mlb)
+        self.assertIn("14", nfl[0][3])
+        self.assertIn("12", mlb[0][3])
+        self.assertIsNotNone(svc.health()["last_attempt_at"])
 
     def test_mocked_provider_normalizes_and_prioritizes_kc(self):
         svc, fake, cfg, db = _svc(key="test-key")
@@ -246,6 +301,10 @@ class FeedServiceTests(unittest.TestCase):
         self.assertTrue(any(g["league"] == "MLB" for g in snap["sections"]["local"]))
         self.assertEqual(snap["sections"]["nba_preferred"][0]["away"]["team_id"], "team_nba_bos")
         self.assertIn("NFL", [c[1] for c in fake.calls if c[0] == "games"])
+        nfl = [c for c in fake.calls if c[0] == "games" and c[1] == "NFL"]
+        mlb = [c for c in fake.calls if c[0] == "games" and c[1] == "MLB"]
+        self.assertIn("14", nfl[0][3])
+        self.assertIn("12", mlb[0][3])
 
     def test_failure_does_not_invent_demo_scores(self):
         svc, fake, cfg, db = _svc(key="test-key")
@@ -305,6 +364,15 @@ class RateLimitClientTests(unittest.TestCase):
         payload = client.get("/nfl/v1/teams")
         self.assertEqual(payload["data"][0]["abbreviation"], "KC")
         self.assertTrue(sleeps)
+        self.assertNotIn("k", repr(client))
+
+    def test_unconfigured_client_does_not_call_network(self):
+        called = []
+        client = BalldontlieClient("", opener=lambda *a, **k: called.append(True))
+        with self.assertRaises(NotConfiguredError):
+            client.get("/nfl/v1/teams")
+        self.assertEqual(called, [])
+        self.assertIn("configured=False", repr(client))
 
 
 class HttpRouteTests(unittest.TestCase):
@@ -352,6 +420,9 @@ class HttpRouteTests(unittest.TestCase):
         self.assertNotIn("Authorization", blob)
         self.assertIn("sports_feeds", payload)
         self.assertEqual(payload["sports_feeds"]["freshness"], "not_configured")
+        self.assertIsNone(payload["sports_feeds"]["last_successful_fetch"])
+        self.assertIsNone(payload["sports_feeds"]["last_attempt_at"])
+        self.assertFalse(payload["sports_feeds"]["configured"])
 
     def test_member_scores_and_browser_never_calls_provider(self):
         login = urllib.request.Request(
@@ -392,8 +463,19 @@ class HttpRouteTests(unittest.TestCase):
             self.assertEqual(payload["configured"], True)
             self.assertGreaterEqual(len(payload["games"]), 1)
             self.assertTrue(any(g["league"] == "NFL" for g in payload["games"]))
+            self.assertIsNotNone(payload["last_successful_fetch"])
+            self.assertIsNotNone(payload["last_attempt_at"])
             finals = json.loads(urllib.request.urlopen(f"http://{host}:{port}/api/public/scores/finals", timeout=5).read())
             self.assertEqual(finals["bucket"], "finals")
+            health = json.loads(urllib.request.urlopen(f"http://{host}:{port}/api/health", timeout=5).read())
+            feeds = health["sports_feeds"]
+            self.assertTrue(feeds["configured"])
+            self.assertEqual(feeds["freshness"], "fresh")
+            self.assertIsNotNone(feeds["last_successful_fetch"])
+            self.assertIsNotNone(feeds["last_attempt_at"])
+            blob = json.dumps(health)
+            self.assertNotIn("balldontlie_api_key", blob)
+            self.assertNotIn("Authorization", blob)
         finally:
             httpd.shutdown()
             httpd.server_close()
@@ -418,9 +500,16 @@ class CatalogAndDocsTests(unittest.TestCase):
         cp = ControlPlane(db, cfg)
         payload = cp.ops_dashboard(cp.get_user("demo-worker"))
         self.assertIn("sports_feeds", payload)
+        feeds = payload["sports_feeds"]
+        self.assertEqual(feeds["freshness"], "not_configured")
+        self.assertIn("last_successful_fetch", feeds)
+        self.assertIn("last_attempt_at", feeds)
+        self.assertIsNone(feeds["last_successful_fetch"])
+        self.assertIsNone(feeds["last_attempt_at"])
         blob = json.dumps(payload).lower()
         self.assertNotIn("api_token", blob)
         self.assertNotIn("signing_secret", blob)
+        self.assertNotIn("balldontlie_api_key", blob)
 
 
 if __name__ == "__main__":

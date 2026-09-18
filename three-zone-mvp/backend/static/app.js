@@ -1007,11 +1007,14 @@ function renderHealthDashboard(data) {
     ["Configured", feeds.configured ? "yes" : "no"],
     ["Freshness", feeds.freshness || "—"],
     ["Last successful fetch", feeds.last_successful_fetch || "none"],
+    ["Last attempt", feeds.last_attempt_at || "none"],
   ];
   const leagues = feeds.leagues || {};
   Object.keys(leagues).sort().forEach((lg) => {
     const row = leagues[lg] || {};
-    feedRows.push([lg, (row.freshness || "—") + " · games " + (row.game_count != null ? row.game_count : "—")]);
+    const bits = [(row.freshness || "—"), "games " + (row.game_count != null ? row.game_count : "—")];
+    if (row.last_successful_fetch) bits.push("last " + row.last_successful_fetch);
+    feedRows.push([lg, bits.join(" · ")]);
   });
   _kv($("#health-sports-feeds"), feedRows);
 

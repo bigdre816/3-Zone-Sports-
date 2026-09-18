@@ -12,6 +12,7 @@ from .catalog import (
     LOCAL_PRIORITY_TEAM_IDS,
     PRO_TEAMS,
     catalog_public,
+    default_provider_ids,
     match_provider_team,
     team_by_id,
 )
@@ -64,6 +65,12 @@ def chicago_dates(now: datetime | None = None) -> list[str]:
     return [day.isoformat() for day in days]
 
 
+def _iso_ts(ts: float | None) -> str | None:
+    if ts is None:
+        return None
+    return iso_utc(datetime.fromtimestamp(ts, tz=timezone.utc))
+
+
 def _freshness_for(last_ok: float | None, *, in_progress: bool, configured: bool, now_ts: float) -> str:
     if not configured:
         return "not_configured"
@@ -97,7 +104,7 @@ class SportsFeedService:
         self._poller: threading.Thread | None = None
         self._stop = threading.Event()
         self._mem: dict[str, dict] = {}
-        self._provider_ids: dict[str, str] = {}
+        self._provider_ids: dict[str, str] = dict(default_provider_ids())
         self._teams_fetched_at: float | None = None
         self._load_persisted()
 
@@ -120,20 +127,25 @@ class SportsFeedService:
         leagues = {}
         any_in_progress = False
         last_ok = None
+        last_attempt = None
         for league in LEAGUES:
             row = self._mem.get(league) or {}
             games = list(row.get("games") or [])
-            if any(g.get("status") == "in_progress" for g in games):
+            in_progress = any(g.get("status") == "in_progress" for g in games)
+            if in_progress:
                 any_in_progress = True
             ok = row.get("last_successful_fetch")
+            attempt = row.get("last_attempt_at") if row.get("last_attempt_at") is not None else row.get("updated_at")
             if ok is not None:
                 last_ok = ok if last_ok is None else max(last_ok, ok)
+            if attempt is not None:
+                last_attempt = attempt if last_attempt is None else max(last_attempt, attempt)
             leagues[league] = {
                 "freshness": _freshness_for(
-                    ok, in_progress=any(g.get("status") == "in_progress" for g in games),
-                    configured=self.configured, now_ts=now_ts,
+                    ok, in_progress=in_progress, configured=self.configured, now_ts=now_ts,
                 ),
-                "last_successful_fetch": iso_utc(datetime.fromtimestamp(ok, tz=timezone.utc)) if ok else None,
+                "last_successful_fetch": _iso_ts(ok),
+                "last_attempt_at": _iso_ts(attempt),
                 "game_count": len(games),
                 "last_error_class": row.get("last_error_class"),
             }
@@ -144,7 +156,8 @@ class SportsFeedService:
             "provider": PROVIDER,
             "configured": self.configured,
             "freshness": freshness,
-            "last_successful_fetch": iso_utc(datetime.fromtimestamp(last_ok, tz=timezone.utc)) if last_ok else None,
+            "last_successful_fetch": _iso_ts(last_ok),
+            "last_attempt_at": _iso_ts(last_attempt),
             "leagues": leagues,
             "rights_note": RIGHTS_NOTE,
             "gaps": GAPS,
@@ -217,6 +230,7 @@ class SportsFeedService:
                         "games": [],
                         "freshness": "not_configured",
                         "last_successful_fetch": None,
+                        "last_attempt_at": None,
                         "last_error_class": None,
                     })
                 return self.health()
@@ -291,18 +305,21 @@ class SportsFeedService:
             and (now_ts - self._teams_fetched_at) < TEAM_TTL_SECONDS
         ):
             return
+        fetched_any = False
         for league in LEAGUES:
             try:
                 teams = self.client.list_teams(league)
             except FeedClientError:
                 continue
+            fetched_any = True
             for raw in teams:
                 spec = match_provider_team(league, raw)
                 if spec and raw.get("id") is not None:
                     pid = str(raw["id"])
                     self._provider_ids[spec.team_id] = pid
                     self._persist_team_map(spec.team_id, league, pid, spec.name)
-        self._teams_fetched_at = now_ts
+        if fetched_any:
+            self._teams_fetched_at = now_ts
 
     def _store_league(self, league: str, games: list[dict] | None, now: datetime, error_class: str | None) -> None:
         existing = self._mem.get(league) or {}
@@ -329,6 +346,7 @@ class SportsFeedService:
             "games": stored,
             "freshness": freshness,
             "last_successful_fetch": last_ok,
+            "last_attempt_at": now_ts,
             "last_error_class": err,
             "updated_at": now_ts,
         }
@@ -353,6 +371,7 @@ class SportsFeedService:
             "bucket": bucket,
             "freshness": health["freshness"],
             "last_successful_fetch": health["last_successful_fetch"],
+            "last_attempt_at": health["last_attempt_at"],
             "configured": health["configured"],
             "games": games,
             "leagues": health["leagues"],
@@ -401,10 +420,17 @@ class SportsFeedService:
             games = loads(row["payload"], [])
             if not isinstance(games, list):
                 games = []
+            try:
+                attempt = row["last_attempt_at"]
+            except (KeyError, IndexError):
+                attempt = None
+            if attempt is None:
+                attempt = row["updated_at"]
             self._mem[league] = {
                 "games": games,
                 "freshness": row["freshness"],
                 "last_successful_fetch": row["last_successful_fetch"],
+                "last_attempt_at": attempt,
                 "last_error_class": row["last_error_class"],
                 "updated_at": row["updated_at"],
             }
@@ -430,7 +456,7 @@ class SportsFeedService:
                     dumps(row.get("games") or []),
                     row.get("freshness") or "unavailable",
                     row.get("last_successful_fetch"),
-                    row.get("updated_at"),
+                    row.get("last_attempt_at") if row.get("last_attempt_at") is not None else row.get("updated_at"),
                     row.get("last_error_class"),
                     row.get("updated_at") or time.time(),
                 ),

@@ -22,6 +22,7 @@ class ProTeam:
     sport: str = ""
     level: str = "professional"
     org_id: str = ""
+    provider_team_id: str | None = None
 
 
 def _nfl(**kwargs) -> ProTeam:
@@ -45,6 +46,7 @@ PRO_TEAMS: tuple[ProTeam, ...] = (
         location="Kansas City",
         market="kansas_city",
         priority=1,
+        provider_team_id="14",
     ),
     _mlb(
         team_id="team_mlb_kc_royals",
@@ -54,6 +56,7 @@ PRO_TEAMS: tuple[ProTeam, ...] = (
         location="Kansas City",
         market="kansas_city",
         priority=1,
+        provider_team_id="12",
     ),
     _nba(team_id="team_nba_atl", name="Atlanta Hawks", abbreviations=("ATL",), aliases=("hawks",), location="Atlanta"),
     _nba(team_id="team_nba_bos", name="Boston Celtics", abbreviations=("BOS",), aliases=("celtics",), location="Boston"),
@@ -102,10 +105,26 @@ def teams_for_league(league: str) -> tuple[ProTeam, ...]:
     return tuple(spec for spec in PRO_TEAMS if spec.league == league)
 
 
+def default_provider_ids() -> dict[str, str]:
+    """Hard-wired BALLDONTLIE team IDs for KC defaults. Not streaming rights."""
+    return {
+        spec.team_id: spec.provider_team_id
+        for spec in PRO_TEAMS
+        if spec.provider_team_id
+    }
+
+
 def match_provider_team(league: str, provider_team: dict | None) -> ProTeam | None:
     """Map a BALLDONTLIE team object onto the Three-Zone catalog, or None."""
     if not isinstance(provider_team, dict):
         return None
+    candidates = teams_for_league(league)
+    raw_id = provider_team.get("id")
+    if raw_id is not None:
+        pid = str(raw_id)
+        for spec in candidates:
+            if spec.provider_team_id and spec.provider_team_id == pid:
+                return spec
     abbr = str(provider_team.get("abbreviation") or "").strip().upper()
     full = " ".join(
         str(provider_team.get(key) or "")
@@ -119,7 +138,6 @@ def match_provider_team(league: str, provider_team: dict | None) -> ProTeam | No
         or ""
     ).strip().lower()
 
-    candidates = teams_for_league(league)
     for spec in candidates:
         spec_name = spec.name.lower()
         if display and display == spec_name:

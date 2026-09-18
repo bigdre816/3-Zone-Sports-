@@ -72,6 +72,9 @@ class BalldontlieClient:
     def configured(self) -> bool:
         return bool(self.api_key)
 
+    def __repr__(self) -> str:
+        return f"BalldontlieClient(configured={self.configured!r}, base_url={self.base_url!r})"
+
     def get(self, path: str, params: dict | None = None) -> dict:
         if not self.configured:
             raise NotConfiguredError()

@@ -142,6 +142,8 @@ class PublicSiteTests(unittest.TestCase):
                     self.assertEqual(payload["status"], "ok")
                     self.assertIn("sports_feeds", payload)
                     self.assertIn(payload["sports_feeds"]["freshness"], ("fresh", "stale", "unavailable", "not_configured"))
+                    self.assertIn("last_successful_fetch", payload["sports_feeds"])
+                    self.assertIn("last_attempt_at", payload["sports_feeds"])
                 elif path.endswith("live"):
                     self.assertGreaterEqual(len(payload["events"]), 1)
                 elif path.endswith("schedules"):

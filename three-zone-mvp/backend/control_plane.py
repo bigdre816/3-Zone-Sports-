@@ -1563,10 +1563,19 @@ class ControlPlane(PipelineMixin):
             "sports_feeds": sports_feeds.health() if sports_feeds is not None else {
                 "provider": "balldontlie",
                 "configured": bool((getattr(self.config, "balldontlie_api_key", "") or "").strip()),
-                "freshness": "not_configured",
+                "freshness": (
+                    "not_configured"
+                    if not (getattr(self.config, "balldontlie_api_key", "") or "").strip()
+                    else "unavailable"
+                ),
                 "last_successful_fetch": None,
+                "last_attempt_at": None,
                 "leagues": {},
                 "rights_note": "Scoreboard facts are not streaming rights.",
+                "gaps": {
+                    "college": {"status": "not_configured"},
+                    "high_school": {"status": "not_configured"},
+                },
             },
         }
 

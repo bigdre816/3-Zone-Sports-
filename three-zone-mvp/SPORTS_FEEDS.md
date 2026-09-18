@@ -39,6 +39,14 @@ remain on:
 
 The API repeats this under `gaps.college` and `gaps.high_school`.
 
+Kansas City defaults (not streaming rights): NFL Chiefs provider team id `14`,
+MLB Royals provider team id `12`. NBA teams resolve from the live `/nba/v1/teams`
+catalog plus member preferences / national section.
+
+`GET /api/health` and `/api/ops/dashboard` expose `sports_feeds.configured`,
+`freshness` (`fresh|stale|unavailable|not_configured`), `last_successful_fetch`,
+and `last_attempt_at` (ISO-8601 UTC or null). They never include the API key.
+
 ## Member UI
 
 The member portal is `three-zone-mvp/backend/static` on the same host. There is
