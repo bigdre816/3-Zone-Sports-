@@ -23,9 +23,14 @@ pass.
 `0.0.0.0` and never the GitHub Pages marketing origin.
 
 Cross-origin Lovable must be listed exactly on Render `TZ_ALLOWED_ORIGINS`
-(credentialed CORS cannot use `*`). Login returns `session_token`; send
-`Authorization: Bearer <session_token>` on every HTTP call. The `tz_member_session`
-cookie is `SameSite=Lax` and will not ride along from a Lovable origin.
+(credentialed CORS cannot use `*`). Production allowlist includes
+`https://threezonesport.lovable.app` and the preview origin
+`https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app`.
+`TZ_PUBLIC_APP_URL=https://threezonesport.lovable.app` is the member portal;
+the API and `/ops` stay on `https://three-zone-sports-1.onrender.com`.
+Login returns `session_token`; send `Authorization: Bearer <session_token>` on
+every HTTP call. The `tz_member_session` cookie is `SameSite=Lax` and will not
+ride along from a Lovable origin.
 
 ## Ticket handshake
 

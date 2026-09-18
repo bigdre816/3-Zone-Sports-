@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 
 # Obvious demo values. They are safe for a local pilot only and are rejected in
 # production by :meth:`Config.validate`.
@@ -274,6 +275,13 @@ class Config:
         for extra in _render_service_origins():
             if extra not in allowed:
                 allowed.append(extra)
+        public_app_url = os.environ.get("TZ_PUBLIC_APP_URL", "").strip().rstrip("/")
+        if public_app_url:
+            parsed_app = urlparse(public_app_url)
+            if parsed_app.scheme in ("http", "https") and parsed_app.netloc:
+                app_origin = f"{parsed_app.scheme}://{parsed_app.netloc}"
+                if app_origin not in allowed:
+                    allowed.append(app_origin)
         cf_origins = _split_origins(os.environ.get("TZ_CLOUDFLARE_ALLOWED_ORIGINS", ",".join(allowed)))
         lease_raw = os.environ.get("TZ_PLAYBACK_LEASE_SECONDS") or os.environ.get("TZ_LEASE_TTL") or "60"
         xrpl_account = os.environ.get("TZ_XRPL_ACCOUNT") or os.environ.get("XRPL_AUDIT_ACCOUNT", "")
@@ -339,7 +347,7 @@ class Config:
             min_game_clip_seconds=int(os.environ.get("TZ_MIN_GAME_CLIP_SECONDS", "5")),
             max_game_bytes=int(os.environ.get("TZ_MAX_GAME_BYTES", str(8 * 1024 * 1024 * 1024))),
             max_photo_bytes=int(os.environ.get("TZ_MAX_PHOTO_BYTES", str(8 * 1024 * 1024))),
-            public_app_url=os.environ.get("TZ_PUBLIC_APP_URL", ""),
+            public_app_url=public_app_url,
             fake_webhook_secret=os.environ.get("TZ_FAKE_WEBHOOK_SECRET", "fake-webhook-secret"),
             photo_storage=os.environ.get("TZ_PHOTO_STORAGE", "fake").strip().lower(),
             photo_s3_endpoint=os.environ.get("TZ_PHOTO_S3_ENDPOINT", ""),
@@ -374,6 +382,22 @@ class Config:
     def moten_enabled(self) -> bool:
         return bool(self.moten_service_url)
 
+    def external_member_app_url(self) -> str:
+        """Member portal origin when hosted off this API (``TZ_PUBLIC_APP_URL``).
+
+        Empty when unset or not an http(s) URL. Redirect callers must still
+        skip when the target hostname matches this request, so a local
+        ``TZ_PUBLIC_APP_URL=http://127.0.0.1:8000`` does not loop.
+        """
+        raw = (self.public_app_url or "").strip().rstrip("/")
+        if not raw:
+            return ""
+        parsed = urlparse(raw)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return ""
+        return raw
+
+
     def moten_embed_frame_sources(self) -> list[str]:
         """Origins allowed in CSP frame-src for Moten panes inside /ops."""
         origins = []
@@ -381,7 +405,6 @@ class Config:
             if not url:
                 continue
             # Allow exact origin (scheme + host [+port])
-            from urllib.parse import urlparse
             parsed = urlparse(url)
             if parsed.scheme and parsed.netloc:
                 origins.append(f"{parsed.scheme}://{parsed.netloc}")

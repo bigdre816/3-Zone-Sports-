@@ -107,12 +107,15 @@ class PublicInputTests(unittest.TestCase):
         self.assertEqual(origin["pages"], "https://three-zone-sports-1.onrender.com")
         self.assertEqual(origin["www"], "https://three-zone-sports-1.onrender.com")
         self.assertEqual(origin["override"], "https://example.test")
+        self.assertEqual(origin["memberPages"], "https://threezonesport.lovable.app")
+        self.assertEqual(origin["memberWww"], "https://threezonesport.lovable.app")
+        self.assertEqual(origin["memberLocal"], "http://localhost:8000")
 
     def test_member_app_url_for_every_path_input(self):
         urls = self.harness["memberAppUrl"]
-        self.assertEqual(urls["empty"], "https://three-zone-sports-1.onrender.com/")
-        self.assertEqual(urls["root"], "https://three-zone-sports-1.onrender.com/")
-        self.assertEqual(urls["query"], "https://three-zone-sports-1.onrender.com/?event=evt_x")
+        self.assertEqual(urls["empty"], "https://threezonesport.lovable.app/")
+        self.assertEqual(urls["root"], "https://threezonesport.lovable.app/")
+        self.assertEqual(urls["query"], "https://threezonesport.lovable.app/?event=evt_x")
         self.assertIn("event=", urls["encoded"])
         self.assertNotIn("<", urls["encoded"])
         self.assertNotIn('"', urls["encoded"].split("event=", 1)[-1])
@@ -165,7 +168,7 @@ class PublicInputTests(unittest.TestCase):
             self.assertEqual(parsed.inputs, [])
             self.assertNotIn("/ops", path.read_text(encoding="utf-8"))
 
-    def _server(self, origins):
+    def _server(self, origins, **cfg_kw):
         from backend.config import Config
         from backend.control_plane import ControlPlane
         from backend.db import Database
@@ -179,6 +182,7 @@ class PublicInputTests(unittest.TestCase):
             http_host="127.0.0.1",
             http_port=0,
             allowed_origins=origins,
+            **cfg_kw,
         )
         cp = ControlPlane(db, cfg)
         httpd = make_http_server(cfg, cp, "/tmp")
@@ -237,7 +241,14 @@ class PublicInputTests(unittest.TestCase):
                 with self._open(base + path, "https://3zonesports.com", method="OPTIONS") as resp:
                     self.assertEqual(resp.status, 204)
                     self.assertEqual(resp.headers.get("Access-Control-Allow-Origin"), "https://3zonesports.com")
+                    self.assertEqual(resp.headers.get("Access-Control-Allow-Credentials"), "true")
                     self.assertIn("GET", resp.headers.get("Access-Control-Allow-Methods", ""))
+                    self.assertIn("POST", resp.headers.get("Access-Control-Allow-Methods", ""))
+                    self.assertIn(
+                        "Authorization",
+                        resp.headers.get("Access-Control-Allow-Headers", ""),
+                    )
+                    self.assertNotEqual(resp.headers.get("Access-Control-Allow-Origin"), "*")
                 with self.assertRaises(urllib.error.HTTPError):
                     # urllib follows nothing; OPTIONS to evil still returns 204 with no ACAO
                     # because do_OPTIONS always sends 204. Confirm GET is the reject path.
@@ -254,6 +265,92 @@ class PublicInputTests(unittest.TestCase):
         text = (DOCS / "site.js").read_text(encoding="utf-8")
         self.assertIn("encodeURIComponent(eventId)", text)
         self.assertIn("encodeURIComponent(archiveId)", text)
+
+    def _open_no_follow(self, url, origin=None, method="GET"):
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            def http_error_302(self, req, fp, code, msg, headers):
+                result = urllib.response.addinfourl(fp, headers, req.get_full_url(), code)
+                result.status = code
+                result.code = code
+                return result
+
+            http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
+
+        headers = {}
+        if origin is not None:
+            headers["Origin"] = origin
+        request = urllib.request.Request(url, headers=headers, method=method)
+        opener = urllib.request.build_opener(_NoRedirect)
+        return opener.open(request, timeout=5)
+
+    def test_lovable_origin_is_accepted_when_listed(self):
+        lovable = "https://threezonesport.lovable.app"
+        preview = "https://id-preview--e1c1692a-52f7-4996-b306-bb996baa123b.lovable.app"
+        httpd = self._server([lovable, preview])
+        try:
+            host, port = httpd.server_address
+            base = f"http://{host}:{port}"
+            for origin in (lovable, preview):
+                with self._open(base + "/api/health", origin, method="OPTIONS") as resp:
+                    self.assertEqual(resp.status, 204)
+                    self.assertEqual(resp.headers.get("Access-Control-Allow-Origin"), origin)
+                    self.assertEqual(resp.headers.get("Access-Control-Allow-Credentials"), "true")
+                    self.assertNotEqual(resp.headers.get("Access-Control-Allow-Origin"), "*")
+                    self.assertIn("Authorization", resp.headers.get("Access-Control-Allow-Headers", ""))
+                    self.assertIn("POST", resp.headers.get("Access-Control-Allow-Methods", ""))
+                with self._open(base + "/api/auth/login", origin, method="OPTIONS") as resp:
+                    self.assertEqual(resp.status, 204)
+                    self.assertEqual(resp.headers.get("Access-Control-Allow-Origin"), origin)
+                    self.assertIn("Authorization", resp.headers.get("Access-Control-Allow-Headers", ""))
+                with self._open(base + "/api/health", origin) as resp:
+                    payload = json.loads(resp.read())
+                    self.assertEqual(payload["status"], "ok")
+                    self.assertEqual(resp.headers.get("Access-Control-Allow-Origin"), origin)
+                    self.assertEqual(resp.headers.get("Access-Control-Allow-Credentials"), "true")
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_member_shell_redirects_to_public_app_url(self):
+        lovable = "https://threezonesport.lovable.app"
+        httpd = self._server(
+            ["https://3zonesports.com", lovable],
+            public_app_url=lovable,
+        )
+        try:
+            host, port = httpd.server_address
+            base = f"http://{host}:{port}"
+            with self._open_no_follow(base + "/") as resp:
+                self.assertEqual(resp.status, 302)
+                self.assertEqual(resp.headers.get("Location"), lovable)
+            with self._open_no_follow(base + "/index.html?event=evt_x") as resp:
+                self.assertEqual(resp.status, 302)
+                self.assertEqual(resp.headers.get("Location"), lovable + "?event=evt_x")
+            with self._open_no_follow(base + "/ops") as resp:
+                self.assertEqual(resp.status, 200)
+                body = resp.read().decode("utf-8", errors="replace")
+                self.assertIn("ops", body.lower())
+            with self._open_no_follow(base + "/api/health") as resp:
+                self.assertEqual(resp.status, 200)
+                self.assertEqual(json.loads(resp.read())["status"], "ok")
+            with self._open_no_follow(base + "/healthz") as resp:
+                self.assertEqual(resp.status, 200)
+                self.assertEqual(json.loads(resp.read())["status"], "ok")
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_member_shell_stays_local_when_public_app_url_is_this_host(self):
+        httpd = self._server(["http://127.0.0.1"], public_app_url="http://127.0.0.1:8000")
+        try:
+            host, port = httpd.server_address
+            base = f"http://{host}:{port}"
+            with self._open_no_follow(base + "/") as resp:
+                self.assertEqual(resp.status, 200)
+                self.assertIn("text/html", resp.headers.get("Content-Type", ""))
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
 
 
 if __name__ == "__main__":
