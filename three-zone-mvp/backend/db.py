@@ -745,6 +745,50 @@ CREATE TABLE IF NOT EXISTS sports_feed_teams (
     priority INTEGER NOT NULL DEFAULT 100,
     updated_at REAL NOT NULL
 );
+-- City place layer (Getting There). Sports venues resolve through city_place_id.
+CREATE TABLE IF NOT EXISTS city_places (
+    city_place_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    address TEXT NOT NULL,
+    locality TEXT NOT NULL,
+    region TEXT NOT NULL,
+    postal_code TEXT,
+    country TEXT NOT NULL DEFAULT 'US',
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    timezone TEXT NOT NULL DEFAULT 'America/Chicago',
+    category TEXT NOT NULL,
+    vertical TEXT,
+    aliases TEXT NOT NULL DEFAULT '[]',
+    google_place_id TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    home_team_ids TEXT NOT NULL DEFAULT '[]',
+    created_at REAL NOT NULL,
+    recorded_at REAL NOT NULL,
+    legal_effect TEXT NOT NULL DEFAULT 'provenance_only'
+);
+CREATE TABLE IF NOT EXISTS city_place_links (
+    link_id TEXT PRIMARY KEY,
+    city_place_id TEXT NOT NULL,
+    subject_type TEXT NOT NULL,
+    subject_key TEXT NOT NULL,
+    recorded_at REAL NOT NULL,
+    UNIQUE(subject_type, subject_key)
+);
+CREATE TABLE IF NOT EXISTS city_signals (
+    signal_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    member_id TEXT NOT NULL,
+    city_place_id TEXT,
+    object_id TEXT,
+    request_id TEXT,
+    dedupe_key TEXT NOT NULL UNIQUE,
+    payload TEXT NOT NULL,
+    recorded_at REAL NOT NULL,
+    legal_effect TEXT NOT NULL DEFAULT 'provenance_only'
+);
+CREATE INDEX IF NOT EXISTS idx_city_signals_member ON city_signals(member_id, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_city_places_status ON city_places(status);
 CREATE INDEX IF NOT EXISTS idx_profiles_handle ON profiles(handle);
 CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_profile_id, published_at);
 CREATE INDEX IF NOT EXISTS idx_posts_feed ON posts(publication_status, published_at);

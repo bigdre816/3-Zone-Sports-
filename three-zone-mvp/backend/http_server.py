@@ -89,6 +89,11 @@ def _routes():
         ("GET", re.compile(r"^/api/member/sports/finals$"), "h_member_sports_finals", "member"),
         ("GET", re.compile(r"^/api/member/sports/browse$"), "h_member_sports_browse", "member"),
         ("GET", re.compile(r"^/api/member/sports/teams/(?P<team_id>[A-Za-z0-9_-]+)$"), "h_member_sports_team", "member"),
+        ("GET", re.compile(r"^/api/member/city/places$"), "h_member_city_places", "member"),
+        ("GET", re.compile(r"^/api/member/city/places/(?P<city_place_id>plc_[A-Za-z0-9_]+)$"), "h_member_city_place", "member"),
+        ("POST", re.compile(r"^/api/member/city/routes/plan$"), "h_member_city_route_plan", "member"),
+        ("POST", re.compile(r"^/api/member/city/directions-url$"), "h_member_city_directions_url", "member"),
+        ("GET", re.compile(r"^/api/member/city/navigation/capability$"), "h_member_city_nav_capability", "member"),
         ("GET", re.compile(r"^/api/member/search$"), "h_member_search", "member"),
         ("GET", re.compile(r"^/api/member/feed$"), "h_member_feed", "optional"),
         ("GET", re.compile(r"^/api/member/notifications$"), "h_member_notifications", "member"),
@@ -236,6 +241,11 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
     moten: MotenIntakeService = None  # type: ignore
     live_sessions: LiveSessionService = None  # type: ignore
     media_dir: str = "data/media"
+    sports_feeds = None
+    city_places = None
+    city_signals = None
+    navigation = None
+    route_planning = None
     routes = _routes()
 
     # -- logging: method + path + status only, never headers or bodies ----
@@ -594,6 +604,9 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         }
         if feeds is not None:
             payload["sports_feeds"] = feeds.health()
+        planner = getattr(self, "route_planning", None)
+        if planner is not None:
+            payload["getting_there"] = planner.health()
         self._send_json(200, payload)
 
     def h_live_readiness(self, p, b, u):
@@ -730,45 +743,79 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
             followed, sports = [], []
         return followed, sports
 
+    def _sports_snapshot(self, **kwargs):
+        payload = self.sports_feeds.snapshot(**kwargs)
+        places = getattr(self, "city_places", None)
+        if places is not None:
+            places.annotate_sports_payload(payload)
+        return payload
+
     def h_member_sports(self, p, b, u):
         followed, sports = self._scores_prefs(u)
         qs = self._qs()
-        self._send_json(200, self.sports_feeds.snapshot(
+        self._send_json(200, self._sports_snapshot(
             followed_team_ids=followed, sports=sports, bucket=qs.get("bucket"),
             league=qs.get("league"), team_id=qs.get("team_id"),
         ))
 
     def h_member_sports_live(self, p, b, u):
         followed, sports = self._scores_prefs(u)
-        self._send_json(200, self.sports_feeds.snapshot(
+        self._send_json(200, self._sports_snapshot(
             followed_team_ids=followed, sports=sports, bucket="live_now",
         ))
 
     def h_member_sports_upcoming(self, p, b, u):
         followed, sports = self._scores_prefs(u)
-        self._send_json(200, self.sports_feeds.snapshot(
+        self._send_json(200, self._sports_snapshot(
             followed_team_ids=followed, sports=sports, bucket="upcoming",
         ))
 
     def h_member_sports_finals(self, p, b, u):
         followed, sports = self._scores_prefs(u)
-        self._send_json(200, self.sports_feeds.snapshot(
+        self._send_json(200, self._sports_snapshot(
             followed_team_ids=followed, sports=sports, bucket="finals",
         ))
 
     def h_member_sports_browse(self, p, b, u):
         followed, sports = self._scores_prefs(u)
         qs = self._qs()
-        self._send_json(200, self.sports_feeds.snapshot(
+        self._send_json(200, self._sports_snapshot(
             followed_team_ids=followed, sports=sports, bucket="browse",
             league=qs.get("league"), team_id=qs.get("team_id"),
         ))
 
     def h_member_sports_team(self, p, b, u):
         followed, sports = self._scores_prefs(u)
-        self._send_json(200, self.sports_feeds.snapshot(
+        self._send_json(200, self._sports_snapshot(
             followed_team_ids=followed, sports=sports, team_id=p["team_id"],
         ))
+
+    def h_member_city_places(self, p, b, u):
+        qs = self._qs()
+        vertical = qs.get("vertical")
+        self._send_json(200, {
+            "places": self.city_places.list_places(vertical=vertical),
+            "signals": self.city_signals.vocabulary(),
+            "navigation": self.navigation.capability(),
+        })
+
+    def h_member_city_place(self, p, b, u):
+        place = self.city_places.get(p["city_place_id"])
+        if not place:
+            self._send_json(404, {"error": "city place not found", "code": "city_place_not_found"})
+            return
+        self._send_json(200, {"place": place})
+
+    def h_member_city_route_plan(self, p, b, u):
+        self._send_json(200, self.route_planning.plan(
+            u, b or {}, sports_feeds=getattr(self, "sports_feeds", None),
+        ))
+
+    def h_member_city_directions_url(self, p, b, u):
+        self._send_json(200, self.route_planning.directions_url(u, b or {}))
+
+    def h_member_city_nav_capability(self, p, b, u):
+        self._send_json(200, self.navigation.capability())
 
     def h_login(self, p, b, u):
         result = self.cp.demo_login((b or {}).get("account", ""))
@@ -976,7 +1023,11 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         self._send_json(200, {"events": self.portal.live(u)})
 
     def h_member_schedules(self, p, b, u):
-        self._send_json(200, {"schedules": self.portal.schedules(u)})
+        rows = self.portal.schedules(u)
+        places = getattr(self, "city_places", None)
+        if places is not None:
+            rows = places.annotate_schedules(rows)
+        self._send_json(200, {"schedules": rows})
 
     def h_member_archives(self, p, b, u):
         self._send_json(200, {"archives": self.portal.archives(u)})
@@ -1599,10 +1650,25 @@ def make_http_server(config, cp: ControlPlane, media_dir: str,
         sports_feeds = SportsFeedService(config, cp.db)
     if start_feed_poller:
         sports_feeds.start_poller()
+    from .city.navigation import NavigationService
+    from .city.places import CityPlaceService
+    from .city.route_planning import RoutePlanningService
+    from .city.signals import CitySignalService
+    city_places = CityPlaceService(cp.db)
+    city_places.ensure_seeded()
+    city_signals = CitySignalService(cp.db)
+    navigation = NavigationService()
+    route_planning = RoutePlanningService(
+        config, city_places, city_signals, navigation=navigation,
+    )
     handler = type("BoundHandler", (_Handler,), {
         "cp": cp, "portal": portal, "network": network, "moten": moten,
         "live_sessions": live_sessions, "media_dir": media_dir,
         "sports_feeds": sports_feeds,
+        "city_places": city_places,
+        "city_signals": city_signals,
+        "navigation": navigation,
+        "route_planning": route_planning,
     })
     host = config.http_host if bind_host is None else bind_host
     port = config.http_port if bind_port is None else bind_port
