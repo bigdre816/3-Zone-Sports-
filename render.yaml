@@ -57,3 +57,7 @@ services:
         generateValue: true
       - key: BALLDONTLIE_API_KEY
         sync: false
+      # Server-side Routes API credential for City / Getting There.
+      # Keep this separate from future Android/iOS Navigation SDK app keys.
+      - key: TZ_GOOGLE_ROUTES_API_KEY
+        sync: false
