@@ -195,10 +195,8 @@
       early_arrival_minutes: Number(byId('early-minutes').value || 0),
       parking_walking_minutes: Number(byId('parking-minutes').value || 0),
     };
-    if (!eventId) {
-      const arrival = byId('arrival-target').value;
-      if (arrival) body.desired_arrival_at = new Date(arrival).toISOString();
-    }
+    const arrival = byId('arrival-target').value;
+    if (arrival) body.desired_arrival_at = new Date(arrival).toISOString();
     const button = byId('calculate-route');
     try {
       button.disabled = true;
