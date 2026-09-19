@@ -97,16 +97,18 @@ class CityPlaceService:
             )
             if not existing:
                 self.db.execute(
-                    "INSERT INTO city_places(city_place_id,name,address,locality,region,postal_code,"
-                    "country,latitude,longitude,timezone,category,vertical,aliases,google_place_id,"
-                    "status,home_team_ids,created_at,recorded_at,legal_effect) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO city_places(city_place_id,name,type,latitude,longitude,address,"
+                    "neighborhood,source,source_ids,last_verified_at,created_at,updated_at,"
+                    "locality,region,postal_code,country,timezone,category,vertical,aliases,"
+                    "google_place_id,status,home_team_ids,recorded_at,legal_effect) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
-                        spec["city_place_id"], spec["name"], spec["address"], spec["locality"],
-                        spec["region"], spec["postal_code"], spec["country"], spec["latitude"],
-                        spec["longitude"], spec["timezone"], spec["category"], spec["vertical"],
+                        spec["city_place_id"], spec["name"], spec["category"], spec["latitude"],
+                        spec["longitude"], spec["address"], "", "seed", "{}", stamp, stamp, stamp,
+                        spec["locality"], spec["region"], spec["postal_code"], spec["country"],
+                        spec["timezone"], spec["category"], spec["vertical"],
                         dumps(list(spec["aliases"])), spec["google_place_id"], "active",
-                        dumps(list(spec["home_team_ids"])), stamp, stamp, "provenance_only",
+                        dumps(list(spec["home_team_ids"])), stamp, "provenance_only",
                     ),
                 )
                 written += 1

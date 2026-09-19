@@ -745,26 +745,35 @@ CREATE TABLE IF NOT EXISTS sports_feed_teams (
     priority INTEGER NOT NULL DEFAULT 100,
     updated_at REAL NOT NULL
 );
--- City place layer (Getting There). Sports venues resolve through city_place_id.
+-- City place layer (Getting There). One table shared with CityRepository.
+-- Operator upserts keep type/source/last_verified_at; member seeds keep status/vertical.
 CREATE TABLE IF NOT EXISTS city_places (
     city_place_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    address TEXT NOT NULL,
-    locality TEXT NOT NULL,
-    region TEXT NOT NULL,
-    postal_code TEXT,
-    country TEXT NOT NULL DEFAULT 'US',
+    type TEXT NOT NULL DEFAULT 'venue',
     latitude REAL NOT NULL,
     longitude REAL NOT NULL,
+    address TEXT NOT NULL,
+    neighborhood TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'seed',
+    source_ids TEXT NOT NULL DEFAULT '{}',
+    provenance TEXT NOT NULL DEFAULT '{}',
+    last_verified_at REAL NOT NULL DEFAULT 0,
+    rights_use_class TEXT NOT NULL DEFAULT 'unknown',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL DEFAULT 0,
+    locality TEXT NOT NULL DEFAULT '',
+    region TEXT NOT NULL DEFAULT '',
+    postal_code TEXT,
+    country TEXT NOT NULL DEFAULT 'US',
     timezone TEXT NOT NULL DEFAULT 'America/Chicago',
-    category TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'venue',
     vertical TEXT,
     aliases TEXT NOT NULL DEFAULT '[]',
     google_place_id TEXT,
     status TEXT NOT NULL DEFAULT 'active',
     home_team_ids TEXT NOT NULL DEFAULT '[]',
-    created_at REAL NOT NULL,
-    recorded_at REAL NOT NULL,
+    recorded_at REAL NOT NULL DEFAULT 0,
     legal_effect TEXT NOT NULL DEFAULT 'provenance_only'
 );
 CREATE TABLE IF NOT EXISTS city_place_links (
@@ -788,7 +797,6 @@ CREATE TABLE IF NOT EXISTS city_signals (
     legal_effect TEXT NOT NULL DEFAULT 'provenance_only'
 );
 CREATE INDEX IF NOT EXISTS idx_city_signals_member ON city_signals(member_id, recorded_at);
-CREATE INDEX IF NOT EXISTS idx_city_places_status ON city_places(status);
 CREATE INDEX IF NOT EXISTS idx_profiles_handle ON profiles(handle);
 CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_profile_id, published_at);
 CREATE INDEX IF NOT EXISTS idx_posts_feed ON posts(publication_status, published_at);
@@ -992,6 +1000,7 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_private_rewind_session_created "
             "ON private_rewind_chunks(live_session_id, created_at)"
         )
+        self._migrate_city_places()
         self._seed_point_rules()
         self._conn.commit()
 
@@ -1052,8 +1061,56 @@ class Database:
             )
         except Exception:
             pass
+        self._migrate_city_places()
         self._seed_point_rules()
         self._conn.commit()
+
+    def _city_place_columns(self) -> set[str]:
+        if self._is_postgres:
+            rows = self._conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND table_name = 'city_places'"
+            ).fetchall()
+            return {(row["column_name"] if isinstance(row, dict) else row[0]) for row in rows}
+        return {row[1] for row in self._conn.execute("PRAGMA table_info(city_places)").fetchall()}
+
+    def _migrate_city_places(self) -> None:
+        """Add missing city_places columns so CityRepository and CityPlaceService share one table."""
+        existing = self._city_place_columns()
+        if not existing:
+            return
+        real = "DOUBLE PRECISION" if self._is_postgres else "REAL"
+        alters = {
+            "type": "TEXT NOT NULL DEFAULT 'venue'",
+            "neighborhood": "TEXT NOT NULL DEFAULT ''",
+            "source": "TEXT NOT NULL DEFAULT 'seed'",
+            "source_ids": "TEXT NOT NULL DEFAULT '{}'",
+            "provenance": "TEXT NOT NULL DEFAULT '{}'",
+            "last_verified_at": f"{real} NOT NULL DEFAULT 0",
+            "rights_use_class": "TEXT NOT NULL DEFAULT 'unknown'",
+            "updated_at": f"{real} NOT NULL DEFAULT 0",
+            "locality": "TEXT NOT NULL DEFAULT ''",
+            "region": "TEXT NOT NULL DEFAULT ''",
+            "postal_code": "TEXT",
+            "country": "TEXT NOT NULL DEFAULT 'US'",
+            "timezone": "TEXT NOT NULL DEFAULT 'America/Chicago'",
+            "category": "TEXT NOT NULL DEFAULT 'venue'",
+            "vertical": "TEXT",
+            "aliases": "TEXT NOT NULL DEFAULT '[]'",
+            "google_place_id": "TEXT",
+            "status": "TEXT NOT NULL DEFAULT 'active'",
+            "home_team_ids": "TEXT NOT NULL DEFAULT '[]'",
+            "recorded_at": f"{real} NOT NULL DEFAULT 0",
+            "legal_effect": "TEXT NOT NULL DEFAULT 'provenance_only'",
+        }
+        for name, decl in alters.items():
+            if name in existing:
+                continue
+            try:
+                self._conn.execute(f"ALTER TABLE city_places ADD COLUMN {name} {decl}")
+            except Exception:
+                pass
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_city_places_status ON city_places(status)")
 
     def _seed_point_rules(self) -> None:
         rows = (

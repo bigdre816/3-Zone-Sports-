@@ -746,11 +746,7 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         return followed, sports
 
     def _sports_snapshot(self, **kwargs):
-        payload = self.sports_feeds.snapshot(**kwargs)
-        places = getattr(self, "city_places", None)
-        if places is not None:
-            places.annotate_sports_payload(payload)
-        return payload
+        return self.sports_feeds.snapshot(**kwargs)
 
     def h_member_sports(self, p, b, u):
         followed, sports = self._scores_prefs(u)
@@ -809,9 +805,7 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         self._send_json(200, {"place": place})
 
     def h_member_city_route_plan(self, p, b, u):
-        self._send_json(200, self.route_planning.plan(
-            u, b or {}, sports_feeds=getattr(self, "sports_feeds", None),
-        ))
+        self._send_json(200, self.route_planning.plan(u, b or {}))
 
     def h_member_city_directions_url(self, p, b, u):
         self._send_json(200, self.route_planning.directions_url(u, b or {}))
@@ -1025,11 +1019,7 @@ class _Handler(AiGatewayHandlers, BaseHTTPRequestHandler):
         self._send_json(200, {"events": self.portal.live(u)})
 
     def h_member_schedules(self, p, b, u):
-        rows = self.portal.schedules(u)
-        places = getattr(self, "city_places", None)
-        if places is not None:
-            rows = places.annotate_schedules(rows)
-        self._send_json(200, {"schedules": rows})
+        self._send_json(200, {"schedules": self.portal.schedules(u)})
 
     def h_member_archives(self, p, b, u):
         self._send_json(200, {"archives": self.portal.archives(u)})

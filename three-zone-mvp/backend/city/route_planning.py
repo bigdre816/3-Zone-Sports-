@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Callable
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..control_plane import NotFoundError, ValidationError
 from .departure import (
@@ -28,13 +28,13 @@ from .navigation import NavigationService
 from .routes_provider import GoogleRoutesProvider, NotConfiguredError, RoutesProviderError
 from .signals import DIRECTIONS_REQUESTED, NAVIGATION_ROUTE_READY
 
-MAX_DEPARTURE_ITERS = 3
+MAX_DEPARTURE_ITERS = 2
 CONVERGE_SECONDS = 45
 
 
 def _utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        raise ValidationError("timezone is required for local time", "timezone_required")
     return dt.astimezone(timezone.utc)
 
 
@@ -72,23 +72,31 @@ def local_fields(dt: datetime | None, tz_name: str) -> dict:
     }
 
 
-def parse_event_time(value) -> datetime | None:
+def parse_event_time(value, *, default_timezone: str | None = None) -> datetime | None:
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
-        return _utc(value)
-    if isinstance(value, (int, float)):
+        dt = value
+    elif isinstance(value, (int, float)):
         return datetime.fromtimestamp(float(value), tz=timezone.utc)
-    text = str(value).strip()
-    if not text:
-        return None
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        dt = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    return _utc(dt)
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        if not default_timezone:
+            raise ValidationError("timezone is required for local time", "timezone_required")
+        try:
+            dt = dt.replace(tzinfo=ZoneInfo(default_timezone))
+        except ZoneInfoNotFoundError as exc:
+            raise ValidationError("invalid timezone", "invalid_timezone") from exc
+    return dt.astimezone(timezone.utc)
 
 
 def normalize_plan_request(body: dict | None) -> dict:
@@ -207,12 +215,12 @@ class RoutePlanningService:
             "legal_effect": "provenance_only",
         }
 
-    def plan(self, user: dict, body: dict | None, *, sports_feeds=None) -> dict:
+    def plan(self, user: dict, body: dict | None) -> dict:
         body = normalize_plan_request(body)
         member_id = user["user_id"]
         request_id = str(body.get("request_id") or "").strip() or None
         origin_lat, origin_lng, origin_label = parse_origin(body.get("origin"))
-        place, event_time, event_ref = self._resolve_destination(body, sports_feeds=sports_feeds)
+        place, event_time, event_ref = self._resolve_destination(body)
         try:
             early = clamp_allowance_minutes(
                 body.get("desired_arrival_offset_minutes"),
@@ -357,7 +365,7 @@ class RoutePlanningService:
                 origin_lat, origin_lng, _ = parse_origin(origin)
             except ValidationError:
                 origin_lat = origin_lng = None
-        place, _, event_ref = self._resolve_destination(body, sports_feeds=None)
+        place, _, event_ref = self._resolve_destination(body)
         request_id = str(body.get("request_id") or "").strip() or f"url_{place['city_place_id']}"
         self.signals.emit(
             DIRECTIONS_REQUESTED,
@@ -393,48 +401,20 @@ class RoutePlanningService:
             "legal_effect": "provenance_only",
         }
 
-    def _resolve_destination(self, body: dict, *, sports_feeds=None) -> tuple[dict, datetime | None, str | None]:
+    def _resolve_destination(self, body: dict) -> tuple[dict, datetime | None, str | None]:
         city_place_id = str(body.get("city_place_id") or "").strip()
-        event_ref = (
-            str(body.get("external_game_id") or body.get("schedule_event_id") or body.get("event_id") or "")
-            .strip() or None
-        )
-        event_time = parse_event_time(body.get("event_starts_at") or body.get("event_time"))
-        place = None
-        if sports_feeds is not None and event_ref:
-            game = self._find_game(sports_feeds, event_ref)
-            if game:
-                resolved = self.places.annotate_game(game)
-                if not event_time:
-                    event_time = parse_event_time(resolved.get("scheduled_start"))
-                if resolved.get("city_place_id"):
-                    if city_place_id and city_place_id != resolved["city_place_id"]:
-                        raise ValidationError(
-                            "city_place_id does not match the resolved sports venue",
-                            "city_place_mismatch",
-                        )
-                    city_place_id = resolved["city_place_id"]
+        event_ref = str(body.get("city_event_id") or "").strip() or None
         if not city_place_id:
             raise ValidationError("city_place_id is required", "city_place_required")
         place = self.places.get(city_place_id)
         if not place:
             raise NotFoundError("city place not found", "city_place_not_found")
+        tz_name = str(body.get("timezone") or place.get("timezone") or "").strip() or None
+        event_time = parse_event_time(
+            body.get("event_starts_at") or body.get("event_time"),
+            default_timezone=tz_name,
+        )
         return place, event_time, event_ref
-
-    @staticmethod
-    def _find_game(sports_feeds, event_ref: str) -> dict | None:
-        try:
-            games = sports_feeds._all_games()
-        except Exception:
-            return None
-        for game in games:
-            if event_ref in {
-                game.get("external_game_id"),
-                game.get("provider_game_id"),
-                game.get("source_ref"),
-            }:
-                return game
-        return None
 
     def _estimate_drive(
         self,
@@ -462,38 +442,50 @@ class RoutePlanningService:
         # 30-minute seed is only a first traffic probe, never a leave-now decision.
         trial = arrive_by - timedelta(minutes=parking) - timedelta(minutes=30)
         used = trial if trial > now else now
-        estimate = None
-        iterations = 0
-        for _ in range(MAX_DEPARTURE_ITERS):
-            iterations += 1
-            estimate = self.provider.compute_drive(
-                origin_lat=origin_lat,
-                origin_lng=origin_lng,
-                dest_lat=dest_lat,
-                dest_lng=dest_lng,
-                departure_time=used,
-            )
-            nxt = suggested_departure(
-                event_time,
-                desired_arrival_offset_minutes=early,
-                parking_or_walk_minutes=parking,
-                drive_duration_seconds=estimate.duration_seconds,
-            )
-            if nxt <= now:
-                if used != now:
-                    estimate = self.provider.compute_drive(
-                        origin_lat=origin_lat,
-                        origin_lng=origin_lng,
-                        dest_lat=dest_lat,
-                        dest_lng=dest_lng,
-                        departure_time=now,
-                    )
-                    iterations += 1
-                return estimate, iterations, now, True
-            if abs((nxt - used).total_seconds()) <= CONVERGE_SECONDS:
-                used = nxt
-                break
-            used = nxt
+        estimate = self.provider.compute_drive(
+            origin_lat=origin_lat,
+            origin_lng=origin_lng,
+            dest_lat=dest_lat,
+            dest_lng=dest_lng,
+            departure_time=used,
+        )
+        iterations = 1
+        nxt = suggested_departure(
+            event_time,
+            desired_arrival_offset_minutes=early,
+            parking_or_walk_minutes=parking,
+            drive_duration_seconds=estimate.duration_seconds,
+        )
+        if nxt <= now:
+            if used != now:
+                estimate = self.provider.compute_drive(
+                    origin_lat=origin_lat,
+                    origin_lng=origin_lng,
+                    dest_lat=dest_lat,
+                    dest_lng=dest_lng,
+                    departure_time=now,
+                )
+                iterations += 1
+            return estimate, iterations, now, True
+        if abs((nxt - used).total_seconds()) <= CONVERGE_SECONDS:
+            return estimate, iterations, nxt, False
+        estimate = self.provider.compute_drive(
+            origin_lat=origin_lat,
+            origin_lng=origin_lng,
+            dest_lat=dest_lat,
+            dest_lng=dest_lng,
+            departure_time=nxt,
+        )
+        iterations += 1
+        used = nxt
+        nxt = suggested_departure(
+            event_time,
+            desired_arrival_offset_minutes=early,
+            parking_or_walk_minutes=parking,
+            drive_duration_seconds=estimate.duration_seconds,
+        )
+        if nxt <= now:
+            return estimate, iterations, now, True
         return estimate, iterations, used, False
 
     def _base(
