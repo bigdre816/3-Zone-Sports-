@@ -105,6 +105,34 @@ def test_city_repository_adds_missing_columns_on_preexisting_table():
     assert "source" in cols
 
 
+def test_city_repository_adds_insert_columns_on_city_schema_table():
+    """CITY_SCHEMA omits locality/region/category/recorded_at; insert still needs them."""
+    db = Database(":memory:")
+    db.execute("DROP TABLE city_places")
+    db.execute(
+        "CREATE TABLE city_places ("
+        "city_place_id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, "
+        "latitude DOUBLE PRECISION NOT NULL, longitude DOUBLE PRECISION NOT NULL, "
+        "address TEXT NOT NULL, neighborhood TEXT NOT NULL DEFAULT '', source TEXT NOT NULL, "
+        "source_ids TEXT NOT NULL DEFAULT '{}', provenance TEXT NOT NULL DEFAULT '{}', "
+        "last_verified_at DOUBLE PRECISION NOT NULL, rights_use_class TEXT NOT NULL DEFAULT 'unknown', "
+        "created_at DOUBLE PRECISION NOT NULL, updated_at DOUBLE PRECISION NOT NULL)"
+    )
+    repo = CityRepository(db)
+    place = repo.match_or_create_place(
+        city_place_id="cp_city_schema_arena",
+        name="City Schema Arena",
+        place_type="sports_venue",
+        latitude=39.0997,
+        longitude=-94.5786,
+        address="100 Schema Way",
+        source="fixture",
+    )
+    assert place["type"] == "sports_venue"
+    cols = {row["name"] for row in db.query("PRAGMA table_info(city_places)")}
+    assert {"locality", "region", "category", "recorded_at"} <= cols
+
+
 def test_acceptance_fixture_departure_is_315_pm():
     db, _, _ = setup_city()
     fake = FakeRoutes((25 * 60, 25 * 60))

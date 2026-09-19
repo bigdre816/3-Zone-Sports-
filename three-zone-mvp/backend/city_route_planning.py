@@ -200,6 +200,10 @@ class CityRepository:
             "last_verified_at": "REAL",
             "rights_use_class": "TEXT NOT NULL DEFAULT 'unknown'",
             "updated_at": "REAL",
+            "locality": "TEXT NOT NULL DEFAULT ''",
+            "region": "TEXT NOT NULL DEFAULT ''",
+            "category": "TEXT NOT NULL DEFAULT ''",
+            "recorded_at": "REAL NOT NULL DEFAULT 0",
         }
         try:
             rows = self.db.query("PRAGMA table_info(city_places)")

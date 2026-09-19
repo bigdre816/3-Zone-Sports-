@@ -976,6 +976,10 @@ class Database:
             "last_verified_at": "REAL",
             "rights_use_class": "TEXT NOT NULL DEFAULT 'unknown'",
             "updated_at": "REAL",
+            "locality": "TEXT NOT NULL DEFAULT ''",
+            "region": "TEXT NOT NULL DEFAULT ''",
+            "category": "TEXT NOT NULL DEFAULT ''",
+            "recorded_at": "REAL NOT NULL DEFAULT 0",
         }
         for name, decl in city_place_alters.items():
             if name not in city_place_cols:
@@ -1060,6 +1064,10 @@ class Database:
             "ALTER TABLE city_places ADD COLUMN last_verified_at DOUBLE PRECISION",
             "ALTER TABLE city_places ADD COLUMN rights_use_class TEXT NOT NULL DEFAULT 'unknown'",
             "ALTER TABLE city_places ADD COLUMN updated_at DOUBLE PRECISION",
+            "ALTER TABLE city_places ADD COLUMN locality TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE city_places ADD COLUMN region TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE city_places ADD COLUMN category TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE city_places ADD COLUMN recorded_at DOUBLE PRECISION NOT NULL DEFAULT 0",
         ):
             try:
                 self._conn.execute(stmt)
