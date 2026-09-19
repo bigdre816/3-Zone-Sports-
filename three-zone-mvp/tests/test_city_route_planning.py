@@ -67,6 +67,44 @@ def setup_city(start_local: str = "2026-09-19T16:00:00"):
     return db, repo, place
 
 
+def test_city_places_schema_accepts_repository_insert_after_database_init():
+    """db.py creates city_places first; CityRepository must still be able to write."""
+    db, repo, place = setup_city()
+    assert place["city_place_id"] == "cp_kc_test_arena"
+    assert place["type"] == "sports_venue"
+    stored = repo.get_place("cp_kc_test_arena")
+    assert stored["source"] == "fixture"
+    assert repo.get_event("ce_kc_test_game")["title"] == "Kansas City Test Game"
+    cols = {row["name"] for row in db.query("PRAGMA table_info(city_places)")}
+    assert {"type", "neighborhood", "source", "locality", "category"} <= cols
+
+
+def test_city_repository_adds_missing_columns_on_preexisting_table():
+    db = Database(":memory:")
+    db.execute("DROP TABLE city_places")
+    db.execute(
+        "CREATE TABLE city_places ("
+        "city_place_id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT NOT NULL, "
+        "locality TEXT NOT NULL, region TEXT NOT NULL, latitude REAL NOT NULL, "
+        "longitude REAL NOT NULL, timezone TEXT NOT NULL DEFAULT 'America/Chicago', "
+        "category TEXT NOT NULL, created_at REAL NOT NULL, recorded_at REAL NOT NULL)"
+    )
+    repo = CityRepository(db)
+    place = repo.match_or_create_place(
+        city_place_id="cp_legacy_arena",
+        name="Legacy Arena",
+        place_type="sports_venue",
+        latitude=39.0997,
+        longitude=-94.5786,
+        address="100 Legacy Way",
+        source="fixture",
+    )
+    assert place["type"] == "sports_venue"
+    cols = {row["name"] for row in db.query("PRAGMA table_info(city_places)")}
+    assert "type" in cols
+    assert "source" in cols
+
+
 def test_acceptance_fixture_departure_is_315_pm():
     db, _, _ = setup_city()
     fake = FakeRoutes((25 * 60, 25 * 60))
