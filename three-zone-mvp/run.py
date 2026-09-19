@@ -20,6 +20,7 @@ import threading
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from backend.city_http import install_city_http
+from backend.city_route_planning import CityRepository
 from backend.config import Config
 from backend.control_plane import ControlPlane
 from backend.db import Database
@@ -51,6 +52,12 @@ def main() -> int:
     db = Database(config.database_locator)
     if seed_if_empty(db, config.seed_passwords):
         print(f"[three-zone] seeded demo inventory into {config.database_locator}")
+
+    # City tables are part of the running application schema for milestone A.
+    # Initialize them at startup so every City endpoint, including source-event
+    # planning-anchor lookup, sees a known schema before its first query.
+    CityRepository(db)
+
     cp = ControlPlane(db, config)
     media_dir = _media_dir(config.database_locator, config.data_dir)
     os.makedirs(media_dir, exist_ok=True)
