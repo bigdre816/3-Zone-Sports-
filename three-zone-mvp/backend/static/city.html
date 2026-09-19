@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#050505" />
+  <title>THREEZONE · City</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/city.css" />
+</head>
+<body class="city-page">
+  <header class="topbar city-topbar">
+    <a class="brand" href="/" aria-label="THREEZONE home"><span>THREEZONE</span><span class="brand-dot">.</span></a>
+    <nav class="city-primary-nav" aria-label="Primary">
+      <a href="/">My Zone</a><a href="/#live">Live</a><a class="active" href="/city">City</a><a href="/#saved">Clips</a><a href="/#profile">Me</a>
+    </nav>
+  </header>
+  <main class="city-shell">
+    <section class="city-hero">
+      <p class="eyebrow">CITY · GETTING THERE</p>
+      <h1>Find it. Time it. Get there.</h1>
+      <p class="sub">Plan a traffic-aware departure to a verified THREEZONE place. Native turn-by-turn stays off until the real mobile integration is verified.</p>
+    </section>
+    <section class="city-card" aria-labelledby="destination-title">
+      <div class="section-title"><h2 id="destination-title">Destination</h2><span>Canonical place required</span></div>
+      <div class="city-grid two">
+        <label>City event ID <input id="city-event-id" placeholder="ce_..." autocomplete="off" /></label>
+        <label>City place ID <input id="city-place-id" placeholder="cp_..." autocomplete="off" /></label>
+      </div>
+      <button id="load-destination" type="button">Load destination</button>
+      <div id="destination-summary" class="city-result muted" aria-live="polite">Choose an event or place.</div>
+    </section>
+    <section class="city-card" aria-labelledby="origin-title">
+      <div class="section-title"><h2 id="origin-title">Your start</h2><span>Precise only when you ask</span></div>
+      <p class="location-purpose">THREEZONE uses your location during navigation to provide directions, arrival estimates, and route progress.</p>
+      <div class="city-actions">
+        <button id="use-location" type="button">Use my location</button>
+        <span class="muted">or</span>
+        <label class="grow">Starting address <input id="manual-origin" placeholder="Enter an address" autocomplete="street-address" /></label>
+      </div>
+      <p id="origin-status" class="sub" aria-live="polite">No precise location requested.</p>
+    </section>
+    <section class="city-card" aria-labelledby="allowances-title">
+      <div class="section-title"><h2 id="allowances-title">Planning allowances</h2><span>Editable</span></div>
+      <div class="city-grid two">
+        <label>Arrive before event start (minutes)<input id="early-minutes" type="number" min="0" max="120" step="1" value="10" /></label>
+        <label>Parking / walking (minutes)<input id="parking-minutes" type="number" min="0" max="120" step="1" value="10" /></label>
+      </div>
+      <label>Arrival target for places or events without an exact start<input id="arrival-target" type="datetime-local" /></label>
+      <button id="calculate-route" type="button">Calculate Getting There</button>
+    </section>
+    <section id="route-card" class="city-card hidden" aria-labelledby="route-title">
+      <div class="section-title"><h2 id="route-title">Getting There</h2><span id="route-freshness">—</span></div>
+      <div class="departure-block"><span class="eyebrow">SUGGESTED DEPARTURE</span><strong id="suggested-departure">—</strong></div>
+      <p id="route-explanation" class="sub"></p>
+      <dl class="route-facts">
+        <div><dt>Drive</dt><dd id="route-drive">—</dd></div>
+        <div><dt>Distance</dt><dd id="route-distance">—</dd></div>
+        <div><dt>Estimated arrival</dt><dd id="route-arrival">—</dd></div>
+        <div><dt>Estimate status</dt><dd id="route-status">—</dd></div>
+      </dl>
+      <div class="city-actions">
+        <button id="start-navigation" type="button" disabled aria-disabled="true">Start Navigation</button>
+        <a id="directions-fallback" class="button-link" href="#" target="_blank" rel="noopener">Open directions</a>
+      </div>
+      <p class="sub">Start Navigation is enabled only after embedded native guidance is integrated and verified on a physical device.</p>
+    </section>
+    <section id="city-error" class="city-card error-card hidden" role="alert"></section>
+  </main>
+  <script src="/city.js" defer></script>
+</body>
+</html>
