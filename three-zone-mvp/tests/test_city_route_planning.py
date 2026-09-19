@@ -96,6 +96,21 @@ def test_future_departure_is_rechecked_once_and_bounded():
     assert (final_local.hour, final_local.minute) == (15, 15)
 
 
+def test_future_recheck_crossing_now_uses_current_leave_now_estimate():
+    db, _, _ = setup_city()
+    fake = FakeRoutes((20 * 60, 60 * 60))
+    svc = RoutePlanningService(db, routes_client=fake, clock=fixed_clock("2026-09-19T15:00:00"))
+    result = svc.estimate_getting_there({
+        "city_event_id": "ce_kc_test_game",
+        "origin": {"address": "1 Main St"},
+    })
+    assert len(fake.calls) == 2
+    assert result["leave_now"] is True
+    assert result["route"]["duration_minutes"] == 20
+    assert result["route"]["estimated_for_departure_at"] == "2026-09-19T20:00:00Z"
+    assert result["suggested_departure_at"] == "2026-09-19T20:00:00Z"
+
+
 def test_past_preferred_departure_leaves_now_and_explains_lateness():
     db, _, _ = setup_city()
     fake = FakeRoutes((25 * 60,))
@@ -139,6 +154,26 @@ def test_missing_destination_coordinates_are_rejected():
     with pytest.raises(RoutePlanningError) as caught:
         repo.match_or_create_place(city_place_id="cp_bad", name="Bad Place", place_type="venue", latitude=None, longitude=None, address="100 Somewhere", source="fixture")
     assert caught.value.code == "missing_destination_coordinates"
+
+
+def test_existing_canonical_place_id_can_be_renamed_or_moved():
+    db, repo, _ = setup_city()
+    updated = repo.match_or_create_place(
+        city_place_id="cp_kc_test_arena",
+        name="Renamed Test Arena",
+        place_type="sports_venue",
+        latitude=39.125,
+        longitude=-94.61,
+        address="200 New Test Way, Kansas City, MO 64108",
+        neighborhood="Crossroads",
+        source="fixture",
+        rights_use_class="internal_test",
+        verified_at=1_700_000_200,
+    )
+    assert updated["city_place_id"] == "cp_kc_test_arena"
+    assert updated["name"] == "Renamed Test Arena"
+    assert updated["latitude"] == pytest.approx(39.125)
+    assert updated["address"].startswith("200 New Test Way")
 
 
 def test_provider_failure_is_explicit():
