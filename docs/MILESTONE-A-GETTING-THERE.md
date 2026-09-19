@@ -38,7 +38,9 @@ All require `Authorization: Bearer <session_token>` (or same-origin member cooki
 | --- | --- | --- |
 | GET | `/api/member/city/places` | Active canonical places (`?vertical=sports`) |
 | GET | `/api/member/city/places/{city_place_id}` | One place (name, address, timezone, coordinates) |
-| POST | `/api/member/city/routes/plan` | Traffic-aware drive plan. Emits `directions_requested`; emits `navigation.route_ready` only when a usable route is returned |
+| POST | `/api/member/city/routes/plan` | Canonical traffic-aware drive plan. Emits `directions_requested`; emits `navigation.route_ready` only when a usable route is returned |
+| POST | `/api/member/getting-there` | Lovable Member Gateway alias of `city/routes/plan` (same handler) |
+| POST | `/api/member/route-plan` | Lovable fallback alias of `city/routes/plan` (same handler) |
 | POST | `/api/member/city/directions-url` | External Google Maps dir URL. Emits `directions_requested` only. **Does not** emit `navigation.started` |
 | GET | `/api/member/city/navigation/capability` | `{ native: false }` Milestone B stub |
 
@@ -61,6 +63,10 @@ Sports member snapshots (`/api/member/sports*`) and `/api/member/schedules` atta
   "request_id": "client-dedupe-id"
 }
 ```
+
+Lovable Member Gateway aliases (same planner): `desired_arrival_offset_min`, `parking_walk_min`, `arrive_by` (maps to event time). `origin.address` is accepted only as a label; address-only origin still fails closed (`origin_coordinates_required`) because this host does not geocode.
+
+Gateway-readable response fields (in addition to the canonical names): `drive_minutes` / `duration_minutes`, `suggested_departure` / `leave_at`, `calculated_at`, `leave_now`, `explanation` / `message`, `state` (`ok` | `leave_now` | `unavailable`). Provider unavailable → `status=hold`, `state=unavailable`, null times, no invented minutes.
 
 `city_place_id` is required (or resolved from a sports `external_game_id` that maps to a place). Event time is optional; when present it is labeled `date_kind: event_local` in the place timezone (default `America/Chicago`).
 

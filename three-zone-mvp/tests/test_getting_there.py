@@ -205,8 +205,16 @@ class PlanningServiceTests(unittest.TestCase):
         })
         self.assertEqual(result["status"], "hold")
         self.assertEqual(result["code"], "routes_not_configured")
+        self.assertEqual(result["state"], "unavailable")
+        self.assertFalse(result["leave_now"])
         self.assertIsNone(result["suggested_departure"])
+        self.assertIsNone(result["leave_at"])
         self.assertIsNone(result["drive"])
+        self.assertIsNone(result["drive_minutes"])
+        self.assertIsNone(result["duration_minutes"])
+        self.assertIsNone(result["calculated_at"])
+        self.assertIn("not invented", result["message"])
+        self.assertEqual(result["message"], result["explanation"])
         self.assertEqual(fake.calls, [])
         types = [r["event_type"] for r in db.query("SELECT event_type FROM city_signals")]
         self.assertIn(DIRECTIONS_REQUESTED, types)
@@ -225,7 +233,9 @@ class PlanningServiceTests(unittest.TestCase):
         })
         self.assertEqual(result["status"], "hold")
         self.assertEqual(result["code"], "provider_error")
+        self.assertEqual(result["state"], "unavailable")
         self.assertIsNone(result["suggested_departure"])
+        self.assertIsNone(result["drive_minutes"])
         self.assertIsNone(result["drive"])
         types = [r["event_type"] for r in db.query("SELECT event_type FROM city_signals")]
         self.assertNotIn(NAVIGATION_ROUTE_READY, types)
@@ -244,7 +254,13 @@ class PlanningServiceTests(unittest.TestCase):
             "request_id": "ok-1",
         })
         self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["state"], "ok")
+        self.assertFalse(result["leave_now"])
         self.assertEqual(result["drive"]["duration_seconds"], 1500)
+        self.assertEqual(result["drive_minutes"], 25)
+        self.assertEqual(result["duration_minutes"], 25)
+        self.assertEqual(result["leave_at"], result["suggested_departure"])
+        self.assertEqual(result["calculated_at"], result["last_successful_estimate_at"])
         self.assertEqual(result["allowances"]["label"], "planning allowances")
         local = datetime.fromisoformat(result["suggested_departure_local"])
         self.assertEqual(local.hour, 15)
@@ -274,8 +290,12 @@ class PlanningServiceTests(unittest.TestCase):
             "request_id": "late-1",
         })
         self.assertEqual(result["status"], "leave_now")
+        self.assertEqual(result["state"], "leave_now")
+        self.assertTrue(result["leave_now"])
         self.assertEqual(result["code"], "departure_passed")
         self.assertIn("already passed", result["explanation"])
+        self.assertEqual(result["message"], result["explanation"])
+        self.assertEqual(result["drive_minutes"], 25)
         self.assertIsNotNone(result["likely_arrival"])
         self.assertGreater(result["late_by_seconds"], 0)
         self.assertEqual(result["drive"]["duration_seconds"], 1500)
@@ -414,6 +434,7 @@ class GettingThereHttpTests(unittest.TestCase):
         status, cap = self._get("/api/member/city/navigation/capability", token)
         self.assertEqual(status, 200)
         self.assertFalse(cap["native"])
+        self.assertIs(cap["native"], False)
         health = json.loads(urllib.request.urlopen(self.base + "/api/health", timeout=5).read())
         self.assertIn("getting_there", health)
         self.assertNotIn("GOOGLE_MAPS", json.dumps(health))
@@ -429,13 +450,54 @@ class GettingThereHttpTests(unittest.TestCase):
         }, expect=400)
         self.assertEqual(status, 400)
         self.assertEqual(payload["code"], "origin_coordinates_required")
+        status, payload = self._post("/api/member/getting-there", token, {
+            "city_place_id": "plc_kc_arrowhead",
+            "origin": {"address": "123 Main St, Kansas City, MO"},
+        }, expect=400)
+        self.assertEqual(status, 400)
+        self.assertEqual(payload["code"], "origin_coordinates_required")
+
+    def test_lovable_aliases_same_planner(self):
+        token = self._login()
+        body = {
+            "city_place_id": "plc_kc_arrowhead",
+            "origin": {"lat": 38.9822, "lng": -94.6708},
+            "desired_arrival_offset_min": 10,
+            "parking_walk_min": 10,
+            "arrive_by": "2026-09-20T21:00:00Z",
+            "request_id": "lovable-alias",
+        }
+        status, via_canonical = self._post("/api/member/city/routes/plan", token, body)
+        status_gt, via_getting = self._post("/api/member/getting-there", token, body)
+        status_rp, via_fallback = self._post("/api/member/route-plan", token, body)
+        self.assertEqual(status, 200)
+        self.assertEqual(status_gt, 200)
+        self.assertEqual(status_rp, 200)
+        for plan in (via_canonical, via_getting, via_fallback):
+            self.assertEqual(plan["status"], "ok")
+            self.assertEqual(plan["state"], "ok")
+            self.assertFalse(plan["leave_now"])
+            self.assertEqual(plan["drive_minutes"], 25)
+            self.assertEqual(plan["duration_minutes"], 25)
+            self.assertEqual(plan["leave_at"], plan["suggested_departure"])
+            self.assertIsNotNone(plan["calculated_at"])
+            self.assertIsNotNone(plan["suggested_departure_local"])
+            local = datetime.fromisoformat(plan["suggested_departure_local"])
+            self.assertEqual((local.hour, local.minute), (15, 15))
+            self.assertFalse(plan["navigation"]["native"])
+        status, cap = self._get("/api/member/city/navigation/capability", token)
+        self.assertEqual(status, 200)
+        self.assertIs(cap["native"], False)
 
 
 class ContractTests(unittest.TestCase):
     def test_routes_and_env_names(self):
         paths = {r["path"] for r in SITE_ROUTES}
         self.assertIn("/api/member/city/routes/plan", paths)
+        self.assertIn("/api/member/getting-there", paths)
+        self.assertIn("/api/member/route-plan", paths)
         self.assertIn("/api/member/city/directions-url", paths)
+        self.assertIn("/api/member/city/navigation/capability", paths)
         env = (MVP / "config.example.env").read_text(encoding="utf-8")
         self.assertIn("GOOGLE_MAPS_API_KEY=", env)
         self.assertIn("GOOGLE_ROUTES_API_KEY=", env)

@@ -91,6 +91,58 @@ def parse_event_time(value) -> datetime | None:
     return _utc(dt)
 
 
+def normalize_plan_request(body: dict | None) -> dict:
+    """Accept Lovable Gateway aliases without changing the canonical planner."""
+    data = dict(body or {})
+    if data.get("desired_arrival_offset_minutes") is None:
+        alias = data.get("desired_arrival_offset_min")
+        if alias is not None:
+            data["desired_arrival_offset_minutes"] = alias
+    if data.get("parking_or_walk_minutes") is None:
+        alias = data.get("parking_walk_min", data.get("parking_or_walk_min"))
+        if alias is not None:
+            data["parking_or_walk_minutes"] = alias
+    if not data.get("event_starts_at") and not data.get("event_time"):
+        arrive_by = data.get("arrive_by")
+        if arrive_by:
+            data["event_starts_at"] = arrive_by
+    origin = data.get("origin")
+    if isinstance(origin, dict):
+        origin = dict(origin)
+        if not origin.get("label"):
+            address = str(origin.get("address") or "").strip()
+            if address:
+                origin["label"] = address
+        data["origin"] = origin
+    return data
+
+
+def attach_gateway_fields(envelope: dict) -> dict:
+    """Fields the Lovable Member Gateway reads, plus canonical names."""
+    drive = envelope.get("drive") if isinstance(envelope.get("drive"), dict) else None
+    seconds = drive.get("duration_seconds") if drive else None
+    minutes = None if seconds is None else int(round(int(seconds) / 60))
+    status = envelope.get("status")
+    explanation = envelope.get("explanation") or envelope.get("error")
+    envelope["drive_minutes"] = minutes
+    envelope["duration_minutes"] = minutes
+    envelope["leave_at"] = envelope.get("suggested_departure")
+    envelope["leave_at_local"] = envelope.get("suggested_departure_local")
+    envelope["calculated_at"] = envelope.get("last_successful_estimate_at") if status != "hold" else None
+    envelope["leave_now"] = status == "leave_now"
+    envelope["explanation"] = explanation
+    envelope["message"] = explanation
+    if status == "hold":
+        envelope["state"] = "unavailable"
+        envelope["drive_minutes"] = None
+        envelope["duration_minutes"] = None
+        envelope["leave_at"] = None
+        envelope["suggested_departure"] = None
+    else:
+        envelope["state"] = status
+    return envelope
+
+
 def parse_origin(origin) -> tuple[float, float, str | None]:
     if not isinstance(origin, dict) or not origin:
         raise ValidationError(
@@ -156,7 +208,7 @@ class RoutePlanningService:
         }
 
     def plan(self, user: dict, body: dict | None, *, sports_feeds=None) -> dict:
-        body = body or {}
+        body = normalize_plan_request(body)
         member_id = user["user_id"]
         request_id = str(body.get("request_id") or "").strip() or None
         origin_lat, origin_lng, origin_label = parse_origin(body.get("origin"))
@@ -294,7 +346,7 @@ class RoutePlanningService:
                 "drive_duration_seconds": estimate.duration_seconds,
             },
         )
-        return envelope
+        return attach_gateway_fields(envelope)
 
     def directions_url(self, user: dict, body: dict | None) -> dict:
         body = body or {}
@@ -497,4 +549,4 @@ class RoutePlanningService:
         envelope["drive"] = None
         if provider_kind:
             envelope["provider_error_class"] = provider_kind
-        return envelope
+        return attach_gateway_fields(envelope)

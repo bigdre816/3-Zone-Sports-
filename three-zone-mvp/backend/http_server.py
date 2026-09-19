@@ -92,6 +92,8 @@ def _routes():
         ("GET", re.compile(r"^/api/member/city/places$"), "h_member_city_places", "member"),
         ("GET", re.compile(r"^/api/member/city/places/(?P<city_place_id>plc_[A-Za-z0-9_]+)$"), "h_member_city_place", "member"),
         ("POST", re.compile(r"^/api/member/city/routes/plan$"), "h_member_city_route_plan", "member"),
+        ("POST", re.compile(r"^/api/member/getting-there$"), "h_member_city_route_plan", "member"),
+        ("POST", re.compile(r"^/api/member/route-plan$"), "h_member_city_route_plan", "member"),
         ("POST", re.compile(r"^/api/member/city/directions-url$"), "h_member_city_directions_url", "member"),
         ("GET", re.compile(r"^/api/member/city/navigation/capability$"), "h_member_city_nav_capability", "member"),
         ("GET", re.compile(r"^/api/member/search$"), "h_member_search", "member"),

@@ -36,7 +36,10 @@ SIGNAL_VOCABULARY = {
             "Member explicitly requested Getting There planning or an external "
             "directions URL. Requires an authenticated member action."
         ),
-        "evidence": "HTTP POST to /api/member/city/routes/plan or /api/member/city/directions-url",
+        "evidence": (
+            "HTTP POST to /api/member/city/routes/plan, /api/member/getting-there, "
+            "/api/member/route-plan, or /api/member/city/directions-url"
+        ),
         "emits_in_milestone_a": True,
         "includes_precise_coordinates": False,
     },
