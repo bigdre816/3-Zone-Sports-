@@ -57,7 +57,13 @@ services:
         generateValue: true
       - key: BALLDONTLIE_API_KEY
         sync: false
+      # Server-side Routes / Maps credentials for City / Getting There.
+      # Keep these separate from future Android/iOS Navigation SDK app keys.
+      # This branch accepts GOOGLE_* and TZ_GOOGLE_* names; main's planner
+      # reads TZ_GOOGLE_ROUTES_API_KEY. Dashboard must supply the names in use.
       - key: GOOGLE_MAPS_API_KEY
         sync: false
       - key: GOOGLE_ROUTES_API_KEY
+        sync: false
+      - key: TZ_GOOGLE_ROUTES_API_KEY
         sync: false
