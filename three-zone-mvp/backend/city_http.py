@@ -8,10 +8,17 @@ from __future__ import annotations
 
 import re
 
-from .city_route_planning import CityRepository, GoogleRoutesClient, RoutePlanningError, RoutePlanningService
+from .city_route_planning import (
+    CityRepository,
+    GoogleRoutesClient,
+    RoutePlanningError,
+    RoutePlanningService,
+    _parse_datetime,
+)
 
 _CITY_ROUTES = [
     ("GET", re.compile(r"^/city$"), "h_city_page", "none"),
+    ("GET", re.compile(r"^/city\.(?P<asset>css|js)$"), "h_city_asset", "none"),
     ("GET", re.compile(r"^/api/member/city/config$"), "h_city_config", "member"),
     ("GET", re.compile(r"^/api/member/city/places/(?P<city_place_id>cp_[A-Za-z0-9_-]+)$"), "h_city_place_get", "member"),
     ("GET", re.compile(r"^/api/member/city/events/(?P<city_event_id>ce_[A-Za-z0-9_-]+)$"), "h_city_event_get", "member"),
@@ -31,6 +38,14 @@ def _send_city_error(handler, exc: RoutePlanningError) -> None:
 
 def h_city_page(self, p, b, u):
     self._serve_static("city.html")
+
+
+def h_city_asset(self, p, b, u):
+    asset = p.get("asset")
+    if asset not in ("css", "js"):
+        self._send_json(404, {"error": "not found", "code": "not_found"})
+        return
+    self._serve_static(f"city.{asset}")
 
 
 def h_city_config(self, p, b, u):
@@ -100,13 +115,17 @@ def h_city_place_upsert(self, p, b, u):
 
 def h_city_event_upsert(self, p, b, u):
     body = b or {}
+    timezone_name = str(body.get("timezone") or "America/Chicago")
+    starts_at = body.get("starts_at")
     try:
+        if isinstance(starts_at, str) and starts_at.strip():
+            starts_at = _parse_datetime(starts_at, default_timezone=timezone_name)
         event = _repo(self).upsert_event(
             city_event_id=str(body.get("city_event_id") or ""),
             title=str(body.get("title") or ""),
             city_place_id=str(body.get("city_place_id") or ""),
-            starts_at=body.get("starts_at"),
-            timezone_name=str(body.get("timezone") or "America/Chicago"),
+            starts_at=starts_at,
+            timezone_name=timezone_name,
             source=str(body.get("source") or "threezone"),
             source_event_id=(str(body.get("source_event_id")) if body.get("source_event_id") is not None else None),
             status=str(body.get("status") or "scheduled"),
@@ -122,6 +141,7 @@ def install_city_http(handler_cls) -> None:
         return
     for name, func in {
         "h_city_page": h_city_page,
+        "h_city_asset": h_city_asset,
         "h_city_config": h_city_config,
         "h_city_place_get": h_city_place_get,
         "h_city_event_get": h_city_event_get,
