@@ -7,9 +7,12 @@ a slogan. Seeded KC sports anchors are public stadium locations.
 
 from __future__ import annotations
 
+import re
 import time
 
 from ..db import dumps, loads
+
+_PUNCT = re.compile(r"[^a-z0-9]+")
 
 # Public stadium locations (not secret). Used as KC sports vertical anchors.
 KC_SPORTS_ANCHORS = (
@@ -67,7 +70,14 @@ def _now() -> float:
 
 
 def _norm(text: str | None) -> str:
-    return " ".join((text or "").strip().lower().split())
+    return " ".join(_PUNCT.sub(" ", (text or "").lower()).split())
+
+
+def _phrase_in(phrase: str, haystack: str) -> bool:
+    """Whole-phrase match so short aliases like 'the k' cannot substring-hijack."""
+    if not phrase or not haystack:
+        return False
+    return f" {phrase} " in f" {haystack} "
 
 
 class CityPlaceService:
@@ -161,15 +171,25 @@ class CityPlaceService:
         )
         if row:
             return self._public(row)
-        # Loose contains match against stored aliases when the feed venue is longer.
         for place in self.list_places():
-            aliases = [_norm(a) for a in (place.get("aliases") or [])]
-            name = _norm(place.get("name"))
-            if key == name or key in aliases:
-                return place
-            if any(alias and alias in key for alias in aliases if len(alias) >= 4):
+            if self._alias_matches(key, place):
                 return place
         return None
+
+    @staticmethod
+    def _alias_matches(key: str, place: dict) -> bool:
+        name = _norm(place.get("name"))
+        aliases = [_norm(a) for a in (place.get("aliases") or [])]
+        if key == name or key in aliases:
+            return True
+        if name and _phrase_in(name, key):
+            return True
+        # Longer feed strings may include a multi-word venue alias.
+        # Single-token / short aliases stay exact-match only.
+        for alias in aliases:
+            if " " in alias and len(alias) >= 8 and _phrase_in(alias, key):
+                return True
+        return False
 
     def resolve_for_game(self, game: dict | None) -> dict | None:
         """Home-team stadium when the home side is a linked team; else venue alias."""

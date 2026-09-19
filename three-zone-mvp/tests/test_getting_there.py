@@ -128,6 +128,15 @@ class PlaceSeedTests(unittest.TestCase):
             "away": {"team_id": "team_nfl_kc_chiefs"},
         }
         self.assertIsNone(places.resolve_for_game(away))
+        self.assertEqual(places.resolve_for_alias("the k")["city_place_id"], "plc_kc_kauffman")
+        self.assertEqual(places.resolve_for_alias("Kauffman Stadium")["city_place_id"], "plc_kc_kauffman")
+        self.assertEqual(
+            places.resolve_for_alias("Kauffman Stadium, Kansas City, MO")["city_place_id"],
+            "plc_kc_kauffman",
+        )
+        self.assertIsNone(places.resolve_for_alias("The Kansas City Convention Center"))
+        self.assertIsNone(places.resolve_for_alias("Kauffman Center for the Performing Arts"))
+        self.assertIsNone(places.resolve_for_schedule({"location": "The Kansas City Convention Center"}))
         game = normalize_game(
             "NFL",
             {
@@ -172,6 +181,36 @@ class SignalTests(unittest.TestCase):
         self.assertNotIn("lat", payload)
         self.assertNotIn("lng", payload)
         self.assertEqual(payload["city_place_id"], "plc_kc_arrowhead")
+
+    def test_concurrent_emit_dedupes_instead_of_error(self):
+        _, db, _, signals, _ = _stack()
+        results = [None, None]
+        errors = []
+
+        def _emit(idx):
+            try:
+                results[idx] = signals.emit(
+                    DIRECTIONS_REQUESTED,
+                    member_id="demo-viewer",
+                    city_place_id="plc_kc_arrowhead",
+                    request_id="plan_plc_kc_arrowhead",
+                )
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=_emit, args=(i,)) for i in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(errors, [])
+        self.assertTrue(any(row["deduped"] for row in results))
+        self.assertEqual(results[0]["signal_id"], results[1]["signal_id"])
+        rows = db.query(
+            "SELECT signal_id FROM city_signals WHERE request_id=?",
+            ("plan_plc_kc_arrowhead",),
+        )
+        self.assertEqual(len(rows), 1)
 
 
 class PlanningServiceTests(unittest.TestCase):
@@ -277,6 +316,45 @@ class PlanningServiceTests(unittest.TestCase):
             payload = loads(row["payload"])
             self.assertNotIn("lat", json.dumps(payload))
             self.assertNotIn("38.9822", json.dumps(payload))
+
+    def test_short_drive_does_not_leave_now_on_guess(self):
+        event = datetime(2026, 9, 20, 16, 0, tzinfo=CHICAGO)
+        now = datetime(2026, 9, 20, 15, 20, tzinfo=CHICAGO)
+        clock = lambda: now
+        fake = FakeRoutesProvider(duration_seconds=10 * 60)
+        _, _, _, _, planner = _stack(key="k", provider=fake, clock=clock)
+        result = planner.plan(_member(), {
+            "city_place_id": "plc_kc_arrowhead",
+            "origin": ORIGIN_OP,
+            "event_starts_at": event.isoformat(),
+            "request_id": "short-drive",
+        })
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["state"], "ok")
+        self.assertFalse(result["leave_now"])
+        local = datetime.fromisoformat(result["suggested_departure_local"])
+        self.assertEqual((local.hour, local.minute), (15, 30))
+        self.assertGreater(
+            datetime.fromisoformat(result["suggested_departure"].replace("Z", "+00:00")),
+            now,
+        )
+
+    def test_iteration_leave_now_requeries_current_traffic(self):
+        event = datetime(2026, 9, 20, 16, 0, tzinfo=CHICAGO)
+        now = datetime(2026, 9, 20, 15, 5, tzinfo=CHICAGO)
+        clock = lambda: now
+        fake = FakeRoutesProvider(duration_seconds=40 * 60)
+        _, _, _, _, planner = _stack(key="k", provider=fake, clock=clock)
+        result = planner.plan(_member(), {
+            "city_place_id": "plc_kc_arrowhead",
+            "origin": ORIGIN_OP,
+            "event_starts_at": event.isoformat(),
+            "request_id": "iter-now",
+        })
+        self.assertEqual(result["status"], "leave_now")
+        self.assertTrue(result["leave_now"])
+        self.assertEqual(fake.calls[-1]["departure_time"], now)
+        self.assertGreaterEqual(len(fake.calls), 2)
 
     def test_past_deadline_leave_now(self):
         event = datetime(2026, 9, 20, 16, 0, tzinfo=CHICAGO)

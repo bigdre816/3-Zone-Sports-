@@ -18,7 +18,7 @@ import hashlib
 import time
 import uuid
 
-from ..db import dumps
+from ..db import IntegrityError, dumps
 
 DIRECTIONS_REQUESTED = "directions_requested"
 NAVIGATION_ROUTE_READY = "navigation.route_ready"
@@ -142,35 +142,56 @@ class CitySignalService:
         safe.setdefault("city_place_id", city_place_id)
         safe["event_type"] = event_type
         key = _dedupe_key(event_type, member_id, city_place_id, req)
-        existing = self.db.query_one(
-            "SELECT signal_id, event_type, recorded_at FROM city_signals WHERE dedupe_key=?",
-            (key,),
-        )
-        if existing:
-            return {
-                "signal_id": existing["signal_id"],
-                "event_type": existing["event_type"],
-                "deduped": True,
-                "recorded_at": existing["recorded_at"],
-            }
         signal_id = _id()
         stamp = time.time()
-        self.db.execute(
-            "INSERT INTO city_signals(signal_id,event_type,member_id,city_place_id,object_id,"
-            "request_id,dedupe_key,payload,recorded_at,legal_effect) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (
-                signal_id, event_type, member_id, city_place_id, object_id, req,
-                key, dumps(safe), stamp, "provenance_only",
-            ),
-        )
-        return {
-            "signal_id": signal_id,
-            "event_type": event_type,
-            "deduped": False,
-            "recorded_at": stamp,
-            "legal_effect": "provenance_only",
-        }
+
+        def _write(conn):
+            sql = self.db._prepare_sql
+            existing = conn.execute(
+                sql("SELECT signal_id, event_type, recorded_at FROM city_signals WHERE dedupe_key=?"),
+                (key,),
+            ).fetchone()
+            if existing:
+                return {
+                    "signal_id": existing["signal_id"],
+                    "event_type": existing["event_type"],
+                    "deduped": True,
+                    "recorded_at": existing["recorded_at"],
+                }
+            conn.execute(
+                sql(
+                    "INSERT INTO city_signals(signal_id,event_type,member_id,city_place_id,object_id,"
+                    "request_id,dedupe_key,payload,recorded_at,legal_effect) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)"
+                ),
+                (
+                    signal_id, event_type, member_id, city_place_id, object_id, req,
+                    key, dumps(safe), stamp, "provenance_only",
+                ),
+            )
+            return {
+                "signal_id": signal_id,
+                "event_type": event_type,
+                "deduped": False,
+                "recorded_at": stamp,
+                "legal_effect": "provenance_only",
+            }
+
+        try:
+            return self.db.write_transaction(_write)
+        except IntegrityError:
+            raced = self.db.query_one(
+                "SELECT signal_id, event_type, recorded_at FROM city_signals WHERE dedupe_key=?",
+                (key,),
+            )
+            if raced:
+                return {
+                    "signal_id": raced["signal_id"],
+                    "event_type": raced["event_type"],
+                    "deduped": True,
+                    "recorded_at": raced["recorded_at"],
+                }
+            raise
 
     def vocabulary(self) -> dict:
         return {

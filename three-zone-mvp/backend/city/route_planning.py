@@ -448,7 +448,6 @@ class RoutePlanningService:
     ):
         dest_lat = float(place["latitude"])
         dest_lng = float(place["longitude"])
-        guess = timedelta(minutes=30)
         if event_time is None:
             estimate = self.provider.compute_drive(
                 origin_lat=origin_lat,
@@ -460,19 +459,9 @@ class RoutePlanningService:
             return estimate, 1, now, False
 
         arrive_by = desired_arrival(event_time, early)
-        trial = arrive_by - timedelta(minutes=parking) - guess
-        leave_now = trial <= now
-        if leave_now:
-            estimate = self.provider.compute_drive(
-                origin_lat=origin_lat,
-                origin_lng=origin_lng,
-                dest_lat=dest_lat,
-                dest_lng=dest_lng,
-                departure_time=now,
-            )
-            return estimate, 1, now, True
-
-        used = trial
+        # 30-minute seed is only a first traffic probe, never a leave-now decision.
+        trial = arrive_by - timedelta(minutes=parking) - timedelta(minutes=30)
+        used = trial if trial > now else now
         estimate = None
         iterations = 0
         for _ in range(MAX_DEPARTURE_ITERS):
@@ -491,7 +480,16 @@ class RoutePlanningService:
                 drive_duration_seconds=estimate.duration_seconds,
             )
             if nxt <= now:
-                return estimate, iterations, used, True
+                if used != now:
+                    estimate = self.provider.compute_drive(
+                        origin_lat=origin_lat,
+                        origin_lng=origin_lng,
+                        dest_lat=dest_lat,
+                        dest_lng=dest_lng,
+                        departure_time=now,
+                    )
+                    iterations += 1
+                return estimate, iterations, now, True
             if abs((nxt - used).total_seconds()) <= CONVERGE_SECONDS:
                 used = nxt
                 break
