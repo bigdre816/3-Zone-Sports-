@@ -489,7 +489,13 @@ class RoutePlanningService:
                         departure_time=now,
                     )
                     iterations += 1
-                return estimate, iterations, now, True
+                    nxt = suggested_departure(
+                        event_time,
+                        desired_arrival_offset_minutes=early,
+                        parking_or_walk_minutes=parking,
+                        drive_duration_seconds=estimate.duration_seconds,
+                    )
+                return estimate, iterations, now, nxt <= now
             if abs((nxt - used).total_seconds()) <= CONVERGE_SECONDS:
                 used = nxt
                 break

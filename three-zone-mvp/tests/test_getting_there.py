@@ -356,6 +356,34 @@ class PlanningServiceTests(unittest.TestCase):
         self.assertEqual(fake.calls[-1]["departure_time"], now)
         self.assertGreaterEqual(len(fake.calls), 2)
 
+    def test_refreshed_duration_does_not_keep_probe_leave_now(self):
+        event = datetime(2026, 9, 20, 16, 0, tzinfo=CHICAGO)
+        now = datetime(2026, 9, 20, 15, 5, tzinfo=CHICAGO)
+        clock = lambda: now
+        # Seed probe (~3:10) is 40 min → suggested 3:00 (already past).
+        # Current traffic is 10 min → suggested 3:30 (still ahead).
+        fake = FakeRoutesProvider(sequence=[40 * 60, 10 * 60])
+        _, _, _, _, planner = _stack(key="k", provider=fake, clock=clock)
+        result = planner.plan(_member(), {
+            "city_place_id": "plc_kc_arrowhead",
+            "origin": ORIGIN_OP,
+            "event_starts_at": event.isoformat(),
+            "request_id": "refresh-ok",
+        })
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["state"], "ok")
+        self.assertFalse(result["leave_now"])
+        self.assertEqual(result["drive"]["duration_seconds"], 600)
+        local = datetime.fromisoformat(result["suggested_departure_local"])
+        self.assertEqual((local.hour, local.minute), (15, 30))
+        self.assertGreater(
+            datetime.fromisoformat(result["suggested_departure"].replace("Z", "+00:00")),
+            now,
+        )
+        self.assertNotIn("late_by_seconds", result)
+        self.assertEqual(fake.calls[-1]["departure_time"], now)
+        self.assertEqual(len(fake.calls), 2)
+
     def test_past_deadline_leave_now(self):
         event = datetime(2026, 9, 20, 16, 0, tzinfo=CHICAGO)
         clock = lambda: datetime(2026, 9, 20, 15, 40, tzinfo=CHICAGO)
