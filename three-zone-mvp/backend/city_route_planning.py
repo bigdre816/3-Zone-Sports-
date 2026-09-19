@@ -186,6 +186,36 @@ class CityRepository:
     def ensure_schema(self) -> None:
         for statement in CITY_SCHEMA:
             self.db.execute(statement)
+        # db.py may have created city_places first (different column set).
+        # CREATE TABLE IF NOT EXISTS is then a no-op — add missing columns.
+        self._ensure_place_columns()
+
+    def _ensure_place_columns(self) -> None:
+        needed = {
+            "type": "TEXT NOT NULL DEFAULT ''",
+            "neighborhood": "TEXT NOT NULL DEFAULT ''",
+            "source": "TEXT NOT NULL DEFAULT ''",
+            "source_ids": "TEXT NOT NULL DEFAULT '{}'",
+            "provenance": "TEXT NOT NULL DEFAULT '{}'",
+            "last_verified_at": "REAL",
+            "rights_use_class": "TEXT NOT NULL DEFAULT 'unknown'",
+            "updated_at": "REAL",
+        }
+        try:
+            rows = self.db.query("PRAGMA table_info(city_places)")
+            existing = {row["name"] for row in rows}
+        except Exception:
+            existing = set()
+        if not existing:
+            for name, decl in needed.items():
+                try:
+                    self.db.execute(f"ALTER TABLE city_places ADD COLUMN {name} {decl}")
+                except Exception:
+                    continue
+            return
+        for name, decl in needed.items():
+            if name not in existing:
+                self.db.execute(f"ALTER TABLE city_places ADD COLUMN {name} {decl}")
 
     def get_place(self, city_place_id: str) -> dict[str, Any]:
         row = _row_dict(self.db.query_one("SELECT * FROM city_places WHERE city_place_id=?", (city_place_id,)))
@@ -283,11 +313,14 @@ class CityRepository:
 
         self.db.execute(
             "INSERT INTO city_places(city_place_id,name,type,latitude,longitude,address,neighborhood,source,source_ids,"
-            "provenance,last_verified_at,rights_use_class,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "provenance,last_verified_at,rights_use_class,created_at,updated_at,"
+            "locality,region,category,recorded_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 city_place_id, name, place_type, lat, lon, address, neighborhood, source,
                 json.dumps(ids, sort_keys=True), json.dumps(prov, sort_keys=True), now,
                 rights_use_class, now, now,
+                "", "", "", now,
             ),
         )
         return self.get_place(city_place_id)

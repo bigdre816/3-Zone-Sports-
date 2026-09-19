@@ -230,6 +230,8 @@ class Config:
     ws_ticket_ttl: int = 45
     ws_gateway_enabled: bool = True
     balldontlie_api_key: str = ""
+    google_maps_api_key: str = ""
+    google_routes_api_key: str = ""
 
     def __post_init__(self) -> None:
         """Keep live/UGC provider names and Cloudflare credential aliases in sync."""
@@ -379,6 +381,12 @@ class Config:
             moten_shared_secret=os.environ.get("TZ_MOTEN_SHARED_SECRET", ""),
             moten_timeout_seconds=int(os.environ.get("TZ_MOTEN_TIMEOUT_SECONDS", "5")),
             balldontlie_api_key=os.environ.get("BALLDONTLIE_API_KEY", "").strip(),
+            google_maps_api_key=_first_env(
+                "GOOGLE_MAPS_API_KEY", "TZ_GOOGLE_MAPS_API_KEY",
+            ),
+            google_routes_api_key=_first_env(
+                "GOOGLE_ROUTES_API_KEY", "TZ_GOOGLE_ROUTES_API_KEY",
+            ),
         )
         cfg.validate()
         return cfg
@@ -400,6 +408,15 @@ class Config:
     @property
     def moten_enabled(self) -> bool:
         return bool(self.moten_service_url)
+
+    @property
+    def routes_api_key(self) -> str:
+        """Routes key, preferring a dedicated Routes secret over the shared Maps key."""
+        return (self.google_routes_api_key or self.google_maps_api_key or "").strip()
+
+    @property
+    def routes_configured(self) -> bool:
+        return bool(self.routes_api_key)
 
     def external_member_app_url(self) -> str:
         """Member portal origin when hosted off this API (``TZ_PUBLIC_APP_URL``).
@@ -560,4 +577,11 @@ class Config:
             "feed_ranking": "sports-relevance (follow, friend, zone, live, recency; not machine learning)",
             "sports_feeds_configured": bool((self.balldontlie_api_key or "").strip()),
             "sports_feeds_timezone": "America/Chicago",
+            "getting_there": {
+                "routes_configured": self.routes_configured,
+                "native_navigation": False,
+                "city_place_required": True,
+                "default_desired_arrival_offset_minutes": 10,
+                "default_parking_or_walk_minutes": 10,
+            },
         }

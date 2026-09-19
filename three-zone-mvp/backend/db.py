@@ -745,6 +745,71 @@ CREATE TABLE IF NOT EXISTS sports_feed_teams (
     priority INTEGER NOT NULL DEFAULT 100,
     updated_at REAL NOT NULL
 );
+-- City place layer (Getting There). Sports venues resolve through city_place_id.
+CREATE TABLE IF NOT EXISTS city_places (
+    city_place_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    address TEXT NOT NULL,
+    locality TEXT NOT NULL DEFAULT '',
+    region TEXT NOT NULL DEFAULT '',
+    postal_code TEXT,
+    country TEXT NOT NULL DEFAULT 'US',
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    timezone TEXT NOT NULL DEFAULT 'America/Chicago',
+    category TEXT NOT NULL DEFAULT '',
+    vertical TEXT,
+    aliases TEXT NOT NULL DEFAULT '[]',
+    google_place_id TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    home_team_ids TEXT NOT NULL DEFAULT '[]',
+    created_at REAL NOT NULL,
+    recorded_at REAL NOT NULL DEFAULT 0,
+    legal_effect TEXT NOT NULL DEFAULT 'provenance_only',
+    type TEXT NOT NULL DEFAULT '',
+    neighborhood TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT '',
+    source_ids TEXT NOT NULL DEFAULT '{}',
+    provenance TEXT NOT NULL DEFAULT '{}',
+    last_verified_at REAL,
+    rights_use_class TEXT NOT NULL DEFAULT 'unknown',
+    updated_at REAL
+);
+CREATE TABLE IF NOT EXISTS city_events (
+    city_event_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    city_place_id TEXT NOT NULL,
+    starts_at REAL,
+    timezone TEXT NOT NULL DEFAULT 'America/Chicago',
+    status TEXT NOT NULL DEFAULT 'scheduled',
+    source TEXT NOT NULL,
+    source_event_id TEXT,
+    last_verified_at REAL NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS city_place_links (
+    link_id TEXT PRIMARY KEY,
+    city_place_id TEXT NOT NULL,
+    subject_type TEXT NOT NULL,
+    subject_key TEXT NOT NULL,
+    recorded_at REAL NOT NULL,
+    UNIQUE(subject_type, subject_key)
+);
+CREATE TABLE IF NOT EXISTS city_signals (
+    signal_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    member_id TEXT NOT NULL,
+    city_place_id TEXT,
+    object_id TEXT,
+    request_id TEXT,
+    dedupe_key TEXT NOT NULL UNIQUE,
+    payload TEXT NOT NULL,
+    recorded_at REAL NOT NULL,
+    legal_effect TEXT NOT NULL DEFAULT 'provenance_only'
+);
+CREATE INDEX IF NOT EXISTS idx_city_signals_member ON city_signals(member_id, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_city_places_status ON city_places(status);
 CREATE INDEX IF NOT EXISTS idx_profiles_handle ON profiles(handle);
 CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_profile_id, published_at);
 CREATE INDEX IF NOT EXISTS idx_posts_feed ON posts(publication_status, published_at);
@@ -901,6 +966,20 @@ class Database:
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_view_sessions_one_open "
             "ON view_sessions(event_id, user_id) WHERE state='open'"
         )
+        city_place_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(city_places)").fetchall()}
+        city_place_alters = {
+            "type": "TEXT NOT NULL DEFAULT ''",
+            "neighborhood": "TEXT NOT NULL DEFAULT ''",
+            "source": "TEXT NOT NULL DEFAULT ''",
+            "source_ids": "TEXT NOT NULL DEFAULT '{}'",
+            "provenance": "TEXT NOT NULL DEFAULT '{}'",
+            "last_verified_at": "REAL",
+            "rights_use_class": "TEXT NOT NULL DEFAULT 'unknown'",
+            "updated_at": "REAL",
+        }
+        for name, decl in city_place_alters.items():
+            if name not in city_place_cols:
+                self._conn.execute(f"ALTER TABLE city_places ADD COLUMN {name} {decl}")
         job_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(upload_jobs)").fetchall()}
         if job_cols and "upload_url" not in job_cols:
             self._conn.execute("ALTER TABLE upload_jobs ADD COLUMN upload_url TEXT")
@@ -972,6 +1051,20 @@ class Database:
             self._conn.execute("ALTER TABLE comments ADD COLUMN parent_comment_id TEXT")
         except Exception:
             pass
+        for stmt in (
+            "ALTER TABLE city_places ADD COLUMN type TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE city_places ADD COLUMN neighborhood TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE city_places ADD COLUMN source TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE city_places ADD COLUMN source_ids TEXT NOT NULL DEFAULT '{}'",
+            "ALTER TABLE city_places ADD COLUMN provenance TEXT NOT NULL DEFAULT '{}'",
+            "ALTER TABLE city_places ADD COLUMN last_verified_at DOUBLE PRECISION",
+            "ALTER TABLE city_places ADD COLUMN rights_use_class TEXT NOT NULL DEFAULT 'unknown'",
+            "ALTER TABLE city_places ADD COLUMN updated_at DOUBLE PRECISION",
+        ):
+            try:
+                self._conn.execute(stmt)
+            except Exception:
+                pass
         for stmt in (
             "ALTER TABLE live_sessions ADD COLUMN private_ingest_id TEXT",
             "ALTER TABLE live_sessions ADD COLUMN private_ingest_state TEXT NOT NULL DEFAULT 'NONE'",

@@ -91,6 +91,7 @@ def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
         _backfill_property_ids(db)
         _backfill_kc_huddle(db)
         _backfill_pro_catalog(db)
+        _backfill_city_places(db)
         return False
 
     now = time.time()
@@ -161,6 +162,7 @@ def seed_if_empty(db: Database, seed_passwords: dict | None = None) -> bool:
     _backfill_property_ids(db)
     _backfill_kc_huddle(db)
     _backfill_pro_catalog(db)
+    _backfill_city_places(db)
     return True
 
 
@@ -362,4 +364,11 @@ def _backfill_pro_catalog(db: Database) -> None:
         ("prf_demo_taylor", "team_mlb_kc_royals", now),
     ]
     db.executemany("INSERT OR IGNORE INTO team_follows VALUES (?,?,?)", follows)
+
+
+def _backfill_city_places(db: Database) -> None:
+    """Canonical City places for Getting There. Public KC sports anchors only."""
+    from .city.places import CityPlaceService
+
+    CityPlaceService(db).ensure_seeded()
 
