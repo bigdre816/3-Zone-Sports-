@@ -19,11 +19,12 @@ import threading
 # Allow ``python run.py`` from inside the project directory.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from backend.city_http import install_city_http
 from backend.config import Config
 from backend.control_plane import ControlPlane
 from backend.db import Database
 from backend.gateway import run_gateway
-from backend.http_server import make_http_server
+from backend.http_server import _Handler, make_http_server
 from backend.portal import PortalService
 from backend.seed import seed_if_empty
 from backend.ws_server import Hub
@@ -54,6 +55,11 @@ def main() -> int:
     media_dir = _media_dir(config.database_locator, config.data_dir)
     os.makedirs(media_dir, exist_ok=True)
 
+    # Milestone A: attach City/Getting There routes to the established handler.
+    # The routes keep the existing member/operator auth classes; no parallel
+    # session system or native-navigation claim is introduced here.
+    install_city_http(_Handler)
+
     internal_port = int(os.environ.get("TZ_HTTP_INTERNAL_PORT") or "0")
     httpd = make_http_server(config, cp, media_dir, bind_host="127.0.0.1", bind_port=internal_port)
     loopback_port = httpd.server_address[1]
@@ -69,7 +75,7 @@ def main() -> int:
         f"  env   {config.env}   db {config.database_locator if '://' not in config.database_locator else 'configured remote database'}\n"
         f"  origins {', '.join(config.allowed_origins)}\n"
         "  sign in with username + password (see README)\n"
-        "  member site  /     control plane  /ops\n"
+        "  member site  /     city /city     control plane /ops\n"
     )
     print(banner, flush=True)
     try:
