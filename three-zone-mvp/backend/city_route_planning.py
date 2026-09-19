@@ -222,7 +222,7 @@ class CityRepository:
         rights_use_class: str = "unknown",
         verified_at: float | None = None,
     ) -> dict[str, Any]:
-        """Resolve provider ID first, then coordinate + name evidence.
+        """Resolve canonical ID first, then provider ID, then coordinate/name evidence.
 
         Similar names alone never merge. A proximity/name match requires <=150 m and
         a normalized-name similarity >=0.72. Provider IDs are remembered after a
@@ -236,8 +236,11 @@ class CityRepository:
             raise RoutePlanningError("place id, name, address, and source are required", "invalid_city_place")
 
         rows = [_row_dict(r) or {} for r in self.db.query("SELECT * FROM city_places")]
-        selected: dict[str, Any] | None = None
-        if source_id:
+        selected: dict[str, Any] | None = next(
+            (candidate for candidate in rows if candidate.get("city_place_id") == city_place_id),
+            None,
+        )
+        if selected is None and source_id:
             for candidate in rows:
                 ids = _json_object(candidate.get("source_ids"))
                 if str(ids.get(source) or "") == str(source_id):
@@ -519,8 +522,19 @@ class RoutePlanningService:
         if candidate > now + timedelta(seconds=60) and request_count < MAX_ROUTE_REQUESTS:
             future = self.routes.estimate(origin=origin, destination=destination, departure_time=candidate)
             request_count += 1
-            selected = future
-            candidate = desired_arrival - timedelta(minutes=parking_minutes, seconds=future.duration_seconds)
+            future_candidate = desired_arrival - timedelta(
+                minutes=parking_minutes,
+                seconds=future.duration_seconds,
+            )
+            if future_candidate <= now:
+                # The future-traffic recheck says waiting would miss the target.
+                # Reuse the already-fetched leave-now estimate rather than applying
+                # a future traffic duration to a leave-now recommendation.
+                selected = first
+                candidate = now
+            else:
+                selected = future
+                candidate = future_candidate
 
         leave_now = candidate <= now
         recommended_departure = now if leave_now else candidate
