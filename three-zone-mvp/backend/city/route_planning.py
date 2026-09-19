@@ -260,7 +260,7 @@ class RoutePlanningService:
             )
 
         try:
-            estimate, iterations, used_departure, leave_now = self._estimate_drive(
+            estimate, iterations, used_departure, _leave_now = self._estimate_drive(
                 origin_lat, origin_lng, place, event_time, early, parking, now,
             )
         except NotConfiguredError:
@@ -316,7 +316,7 @@ class RoutePlanningService:
                 "No event time was provided. Drive duration is a leave-now "
                 "traffic snapshot, not a suggested departure."
             )
-        elif leave_now or (drive_dep is not None and drive_dep <= now):
+        elif drive_dep is not None and drive_dep <= now:
             likely = now + timedelta(seconds=estimate.duration_seconds + parking * 60)
             likely_fields = local_fields(likely, tz_name)
             late = late_by_seconds(likely, arrive_by) if arrive_by is not None else None
@@ -461,18 +461,9 @@ class RoutePlanningService:
 
         arrive_by = desired_arrival(event_time, early)
         trial = arrive_by - timedelta(minutes=parking) - guess
-        leave_now = trial <= now
-        if leave_now:
-            estimate = self.provider.compute_drive(
-                origin_lat=origin_lat,
-                origin_lng=origin_lng,
-                dest_lat=dest_lat,
-                dest_lng=dest_lng,
-                departure_time=now,
-            )
-            return estimate, 1, now, True
-
-        used = trial
+        # The 30-minute guess only seeds iteration. Leave-now is decided from
+        # the provider duration, not from that guess being in the past.
+        used = now if trial <= now else trial
         estimate = None
         iterations = 0
         for _ in range(MAX_DEPARTURE_ITERS):
@@ -491,7 +482,16 @@ class RoutePlanningService:
                 drive_duration_seconds=estimate.duration_seconds,
             )
             if nxt <= now:
-                return estimate, iterations, used, True
+                if used != now:
+                    estimate = self.provider.compute_drive(
+                        origin_lat=origin_lat,
+                        origin_lng=origin_lng,
+                        dest_lat=dest_lat,
+                        dest_lng=dest_lng,
+                        departure_time=now,
+                    )
+                    iterations += 1
+                return estimate, iterations, now, True
             if abs((nxt - used).total_seconds()) <= CONVERGE_SECONDS:
                 used = nxt
                 break

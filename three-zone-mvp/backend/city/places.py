@@ -70,6 +70,25 @@ def _norm(text: str | None) -> str:
     return " ".join((text or "").strip().lower().split())
 
 
+def _words(text: str | None) -> list[str]:
+    buf = []
+    for ch in (text or "").lower():
+        buf.append(ch if ch.isalnum() else " ")
+    return "".join(buf).split()
+
+
+def _alias_in_venue(alias: str, key: str) -> bool:
+    """Whole-phrase match so short aliases cannot prefix a different venue."""
+    alias_words = _words(alias)
+    if len(alias_words) < 2:
+        return False
+    key_words = _words(key)
+    span = len(alias_words)
+    if span > len(key_words):
+        return False
+    return any(key_words[i:i + span] == alias_words for i in range(len(key_words) - span + 1))
+
+
 class CityPlaceService:
     """Read/seed canonical places. Never invents a destination."""
 
@@ -167,7 +186,7 @@ class CityPlaceService:
             name = _norm(place.get("name"))
             if key == name or key in aliases:
                 return place
-            if any(alias and alias in key for alias in aliases if len(alias) >= 4):
+            if any(_alias_in_venue(alias, key) for alias in aliases):
                 return place
         return None
 
