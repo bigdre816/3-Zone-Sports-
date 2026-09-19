@@ -356,6 +356,33 @@ class PlanningServiceTests(unittest.TestCase):
         self.assertEqual(fake.calls[-1]["departure_time"], now)
         self.assertGreaterEqual(len(fake.calls), 2)
 
+    def test_shorter_live_traffic_requery_does_not_keep_stale_leave_now(self):
+        event = datetime(2026, 9, 20, 16, 0, tzinfo=CHICAGO)
+        now = datetime(2026, 9, 20, 15, 5, tzinfo=CHICAGO)
+        clock = lambda: now
+        fake = FakeRoutesProvider(
+            duration_seconds=10 * 60,
+            sequence=[40 * 60, 10 * 60, 10 * 60],
+        )
+        _, _, _, _, planner = _stack(key="k", provider=fake, clock=clock)
+        result = planner.plan(_member(), {
+            "city_place_id": "plc_kc_arrowhead",
+            "origin": ORIGIN_OP,
+            "event_starts_at": event.isoformat(),
+            "request_id": "iter-now-shorter",
+        })
+        dep = datetime.fromisoformat(result["suggested_departure"].replace("Z", "+00:00"))
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["state"], "ok")
+        self.assertFalse(result["leave_now"])
+        self.assertNotEqual(result["code"], "departure_passed")
+        self.assertNotIn("already passed", result["explanation"] or "")
+        self.assertGreater(dep, now)
+        self.assertIsNone(result.get("late_by_seconds"))
+        self.assertEqual(result["drive"]["duration_seconds"], 600)
+        self.assertGreaterEqual(len(fake.calls), 2)
+        self.assertEqual(fake.calls[1]["departure_time"], now)
+
     def test_past_deadline_leave_now(self):
         event = datetime(2026, 9, 20, 16, 0, tzinfo=CHICAGO)
         clock = lambda: datetime(2026, 9, 20, 15, 40, tzinfo=CHICAGO)

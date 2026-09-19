@@ -260,7 +260,7 @@ class RoutePlanningService:
             )
 
         try:
-            estimate, iterations, used_departure, leave_now = self._estimate_drive(
+            estimate, iterations, used_departure, _ = self._estimate_drive(
                 origin_lat, origin_lng, place, event_time, early, parking, now,
             )
         except NotConfiguredError:
@@ -316,7 +316,11 @@ class RoutePlanningService:
                 "No event time was provided. Drive duration is a leave-now "
                 "traffic snapshot, not a suggested departure."
             )
-        elif leave_now or (drive_dep is not None and drive_dep <= now):
+        elif drive_dep is not None and drive_dep <= now:
+            # Leave-now is decided from the duration we actually return, not a
+            # prior probe. Otherwise a shorter live-traffic requery can leave
+            # suggested_departure in the future while late_by / explanation say
+            # the departure already passed.
             likely = now + timedelta(seconds=estimate.duration_seconds + parking * 60)
             likely_fields = local_fields(likely, tz_name)
             late = late_by_seconds(likely, arrive_by) if arrive_by is not None else None
@@ -489,7 +493,19 @@ class RoutePlanningService:
                         departure_time=now,
                     )
                     iterations += 1
-                return estimate, iterations, now, True
+                    nxt = suggested_departure(
+                        event_time,
+                        desired_arrival_offset_minutes=early,
+                        parking_or_walk_minutes=parking,
+                        drive_duration_seconds=estimate.duration_seconds,
+                    )
+                    used = now
+                    if nxt <= now:
+                        return estimate, iterations, now, True
+                    # Live traffic is short enough that departure is still ahead.
+                    # Fall through and converge / re-probe from this duration.
+                else:
+                    return estimate, iterations, now, True
             if abs((nxt - used).total_seconds()) <= CONVERGE_SECONDS:
                 used = nxt
                 break
